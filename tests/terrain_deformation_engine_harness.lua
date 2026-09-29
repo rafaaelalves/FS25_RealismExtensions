@@ -111,7 +111,7 @@ local vehicle = {
 }
 
 RealismExtensionsTerrainDeformationEngine.onLoad(vehicle)
-RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 
 assert(contexts == 2)
 assert(enqueued == 2)
@@ -120,7 +120,7 @@ assert(RealismExtensionsTerrainRuntime.history.count == 2)
 -- Move each wheel forward: only this vehicle's two wheels are processed.
 wheelA.testX = 0.4
 wheelB.testX = 0.9
-RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == 4)
 assert(enqueued > 2)
 
@@ -130,20 +130,20 @@ bodySpeedKph = 0
 wheelA.physics.mrLastWheelSpeed = 2.5
 wheelB.physics.mrLastWheelSpeed = 2.5
 local beforeStationary = contexts
-RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
-RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 
 -- Client vehicles never write terrain.
 RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
-RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 
 print("terrain_deformation_engine_harness: OK")
