@@ -38,6 +38,26 @@ function RealismExtensionsCore:loadMap()
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
 
+    if tdEnabled
+        and g_server ~= nil
+        and RealismExtensionsTerrainPersistence ~= nil
+        and RealismExtensionsTerrainRuntime ~= nil
+        and RealismExtensionsTerrainRuntime.history ~= nil then
+        local ok, detail = RealismExtensionsTerrainPersistence.load(
+            g_currentMission ~= nil and g_currentMission.missionInfo or nil,
+            RealismExtensionsTerrainRuntime.history
+        )
+        if ok then
+            RealismExtensionsDiagnostics.info(
+                "restored terrain history cells=" .. tostring(detail)
+            )
+        elseif detail ~= "no persisted terrain history" then
+            RealismExtensionsDiagnostics.verbose(
+                "terrain history not restored: " .. tostring(detail)
+            )
+        end
+    end
+
     RealismExtensionsDiagnostics.info(
         "v" .. tostring(RealismExtensionsConfig.version)
         .. " loaded; TerrainDeformation="
@@ -123,3 +143,34 @@ function RealismExtensionsCore:deleteMap()
 end
 
 addModEventListener(RealismExtensionsCore)
+
+
+function RealismExtensionsCore.saveToXMLFile(missionInfo)
+    if RealismExtensionsConfig == nil
+        or RealismExtensionsConfig.modules == nil
+        or RealismExtensionsConfig.modules.TerrainDeformation ~= true
+        or RealismExtensionsTerrainPersistence == nil
+        or RealismExtensionsTerrainRuntime == nil
+        or RealismExtensionsTerrainRuntime.history == nil then
+        return
+    end
+
+    local ok, detail = RealismExtensionsTerrainPersistence.save(
+        missionInfo,
+        RealismExtensionsTerrainRuntime.history
+    )
+    if ok then
+        RealismExtensionsDiagnostics.verbose(
+            "saved terrain history cells=" .. tostring(detail)
+        )
+    else
+        RealismExtensionsDiagnostics.verbose(
+            "terrain history not saved: " .. tostring(detail)
+        )
+    end
+end
+
+FSCareerMissionInfo.saveToXMLFile = Utils.appendedFunction(
+    FSCareerMissionInfo.saveToXMLFile,
+    RealismExtensionsCore.saveToXMLFile
+)
