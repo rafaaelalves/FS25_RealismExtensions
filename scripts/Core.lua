@@ -1,6 +1,7 @@
 RealismExtensionsCore = {
     providerRetryMs = 1000,
-    providerElapsedMs = 1000
+    providerElapsedMs = 1000,
+    terrainDiagElapsedMs = 0
 }
 
 function RealismExtensionsCore:tryDiscoverProvider()
@@ -62,13 +63,37 @@ function RealismExtensionsCore:update(dt)
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsTerrainRuntime ~= nil then
-        RealismExtensionsTerrainRuntime.flush()
+        local brushes, jobs = RealismExtensionsTerrainRuntime.flush()
+        self.terrainDiagElapsedMs = (self.terrainDiagElapsedMs or 0)
+            + math.max(tonumber(dt) or 0, 0)
+
+        if self.terrainDiagElapsedMs >= 5000 then
+            self.terrainDiagElapsedMs = 0
+            local writer = RealismExtensionsTerrainRuntime.writer
+            local history = RealismExtensionsTerrainRuntime.history
+            local stats = writer ~= nil and writer.stats or {}
+
+            RealismExtensionsDiagnostics.verbose(string.format(
+                "TerrainDeformation runtime | cells=%d queue=%d enqueued=%d submittedBrushes=%d submittedJobs=%d droppedInvalid=%d droppedOverflow=%d failedJobs=%d lastFlush=%d/%d",
+                history ~= nil and (history.count or 0) or 0,
+                writer ~= nil and #(writer.queue or {}) or 0,
+                stats.enqueued or 0,
+                stats.submittedBrushes or 0,
+                stats.submittedJobs or 0,
+                stats.droppedInvalid or 0,
+                stats.droppedOverflow or 0,
+                stats.failedJobs or 0,
+                brushes or 0,
+                jobs or 0
+            ))
+        end
     end
 end
 
 function RealismExtensionsCore:deleteMap()
     RealismExtensionsState.clearProvider()
     self.providerElapsedMs = self.providerRetryMs
+    self.terrainDiagElapsedMs = 0
 
     if RealismExtensionsTerrainRuntime ~= nil then
         RealismExtensionsTerrainRuntime.clear()
