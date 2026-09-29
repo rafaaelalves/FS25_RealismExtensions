@@ -6,8 +6,8 @@ Updated: 2026-09-29
 
 - Version: `0.0.1.0`
 - Phase: project foundation + capability/absorption audit
-- Gameplay effects: none
-- Active implementation branch: `chore/project-foundation`
+- Gameplay effects: TerrainDeformation active only in runtime test branches; production default remains disabled.
+- Active implementation branch: `feat/terrain-geometry-v5`
 
 ## Completed
 
@@ -46,11 +46,11 @@ Updated: 2026-09-29
 
 - Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
-- Runtime-calibrate TerrainDeformation brush scale and slip-sinkage response; queue callbacks are now runtime-validated.
+- Runtime-calibrate TerrainDeformation geometry against actual heightmap lowering. v4 proved the model continues producing work but user-visible excavation remains shallow; v5 now measures requested depth vs observed heightmap lowering and matches TerraFarm's explicit deformation constraints.
 - Validate player, attached implement, GIANTS AI and Courseplay behavior before replacing True AI Tracks.
-- Design savegame persistence or another safe reconciliation strategy for spatial response history.
-- Measure TerrainDeformation cost and persistence behavior.
-- Implement a small player-wheel deformation prototype behind a disabled-by-default feature flag.
+- Validate geometry persistence separately from domain-history persistence. The v4 sidecar successfully saved/restored model history, but user observation indicates visible heightmap ruts do not survive reload; v5 stores sampled surface heights and rejects stale history when geometry mismatches.
+- Measure TerrainDeformation cost and persistence behavior. Conservative brush coalescing saved ~18% of native brush submissions in v4 with no observed visual regression and zero failed jobs.
+- Resolve shallow-rut geometry before treating TerrainDeformation as feature-complete; SnowRunner-like progressive stationary excavation remains the target behavior.
 
 ## Not goals for the first prototype
 
