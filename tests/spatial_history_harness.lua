@@ -28,20 +28,28 @@ assert(h:get(3.0, 0) ~= nil)
 
 -- Snapshot round-trip preserves only stable physical history fields and is
 -- deterministic regardless of Lua table iteration order.
+-- Capture the material cells before deliberately adding runtime-only state.
+local expectedZeroRut = h:get(0, 0).rutDepthM
+local expectedTwoPasses = h:get(2.0, 0).passCount
+
 -- Runtime bookkeeping may contain a touched-but-physically-empty cell; it
--- must not bloat the savegame sidecar.
+-- must not bloat the savegame sidecar. maxCells=3 means this insert may evict
+-- an older runtime cell, so snapshot expectations must follow actual LRU
+-- state rather than assuming persistence changes pruning semantics.
 h:commit(9.0, 9.0, {})
+assert(h.count == 3)
 local snapshot = h:exportSnapshot()
 assert(snapshot.version == RealismExtensionsSpatialHistory.VERSION)
 assert(snapshot.cellSizeM == 0.2)
-assert(#snapshot.cells == 3)
+assert(#snapshot.cells == 2)
 
 local restored = RealismExtensionsSpatialHistory.new({ cellSizeM = 0.2, maxCells = 10 })
 local ok, reason = restored:importSnapshot(snapshot)
 assert(ok == true, reason)
-assert(restored.count == 3)
-assert(restored:get(0, 0).rutDepthM == h:get(0, 0).rutDepthM)
-assert(restored:get(2.0, 0).passCount == h:get(2.0, 0).passCount)
+assert(restored.count == 2)
+assert(restored:get(0, 0).rutDepthM == expectedZeroRut)
+assert(restored:get(2.0, 0).passCount == expectedTwoPasses)
+assert(restored:get(9.0, 9.0) == nil)
 
 -- A tuning change to the spatial grid must fail closed rather than silently
 -- shifting persisted ruts to different terrain cells.
