@@ -103,7 +103,8 @@ local wheelB = { physics = {}, testX = 0.5 }
 local vehicle = {
     isServer = true,
     spec_wheels = { wheels = { wheelA, wheelB } },
-    getWheels = function(self) return self.spec_wheels.wheels end
+    getWheels = function(self) return self.spec_wheels.wheels end,
+    getLastSpeed = function(self) return 5 end
 }
 
 RealismExtensionsTerrainDeformationEngine.onLoad(vehicle)
