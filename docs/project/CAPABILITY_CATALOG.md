@@ -19,7 +19,7 @@ Status vocabulary:
 | tire/track wear state | Reifenverschleiss | CANDIDATE_ABSORB | audit logic, persistence, visuals and workshop separately |
 | visual tire/track wear | Reifenverschleiss custom shader/material path | EVALUATE | asset/shader strategy required before replacement |
 | mechanical system degradation | RMS | EXTERNAL | keep specialist; Extensions may surface normalized state |
-| 2WD/4WD/differential behavior | RMS currently; Realistic 4x4 overlaps | EVALUATE | audit Realistic 4x4 for ideas/RMS improvement; avoid second live owner |
+| 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | keep RMS physical owner; study richer AUTO/lock decision provider from audited 4x4 ideas |
 | PTO modes / live PTO RPM / hand throttle | Dynamic PTO + RC bridges | CANDIDATE_ABSORB | strong candidate for native Extensions module |
 | PTO-to-MR/RMS composition | RC | EXTERNAL/BRIDGE | retain compatibility boundary even after PTO absorption |
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
@@ -39,6 +39,8 @@ Status vocabulary:
 | load spill | RealPhysics LoadSpill | EXTERNAL | keep specialist for now |
 | straw refeed | FarmKit | EVALUATE | unique; future bridge to RealisticHarvesting before replacement |
 | planner / PF field material overview | FarmKit | EVALUATE | useful but not a first-wave realism-physics feature |
+| persistent surface contamination / dirt color | RealDirtColor + Mud visual state | CANDIDATE_ABSORB | plan clean-room SurfaceContamination using authoritative contact state and GIANTS dirtColor backend |
+| tyre-pressure / CTIS state | fragmented / 4x4 hack writes radius | EVALUATE | separate future capability; never fight radius ownership directly |
 | unified realism HUD | fragmented | PLANNED | only after normalized authoritative state exists |
 
 ## Absorption rule
