@@ -100,7 +100,7 @@ function RealismExtensionsCore:update(dt)
                     and runtime.getDiagnostics() or {}
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d geometry=%d shallow=%d zero=%d requestedDepth=%.3f observedLowering=%.3f maxRequested=%.3f maxLowering=%.3f lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d geometry=%d shallow=%d zero=%d requestedDepth=%.3f observedLowering=%.3f maxRequested=%.3f maxLowering=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -134,6 +134,15 @@ function RealismExtensionsCore:update(dt)
                     writerStats.geometryObservedLoweringM or 0,
                     writerStats.maxRequestedDepthM or 0,
                     writerStats.maxObservedLoweringM or 0,
+                    d.maxRutDepthM or 0,
+                    d.maxRutCapacityM or 0,
+                    d.maxStaticRutCapacityM or 0,
+                    d.maxSlipRutCapacityM or 0,
+                    d.maxSlipSinkageMultiplier or 0,
+                    d.stationaryBrushesAccepted or 0,
+                    d.stationaryAppliedDepthM or 0,
+                    d.stationaryMaxRutDepthM or 0,
+                    d.stationaryMaxRutCapacityM or 0,
                     brushes or 0,
                     jobs or 0
                 ))
