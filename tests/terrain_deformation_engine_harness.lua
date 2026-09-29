@@ -82,6 +82,7 @@ RealismExtensionsTerrainResponseModel = {
     end
 }
 
+dofile("scripts/terrain/SurfaceResponse.lua")
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
 
