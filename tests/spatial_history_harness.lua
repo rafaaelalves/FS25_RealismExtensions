@@ -28,6 +28,9 @@ assert(h:get(3.0, 0) ~= nil)
 
 -- Snapshot round-trip preserves only stable physical history fields and is
 -- deterministic regardless of Lua table iteration order.
+-- Runtime bookkeeping may contain a touched-but-physically-empty cell; it
+-- must not bloat the savegame sidecar.
+h:commit(9.0, 9.0, {})
 local snapshot = h:exportSnapshot()
 assert(snapshot.version == RealismExtensionsSpatialHistory.VERSION)
 assert(snapshot.cellSizeM == 0.2)
