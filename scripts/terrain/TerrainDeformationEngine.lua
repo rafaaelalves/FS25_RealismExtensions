@@ -43,6 +43,14 @@ local function diagCount(name, delta)
     runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + (delta or 1)
 end
 
+local function diagMax(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or 0, value)
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -124,7 +132,7 @@ local function shouldSample(state, dt, intervalMs)
     return true, elapsed
 end
 
-function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs)
+function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin)
     diagCount("samplesProcessed", 1)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
@@ -143,7 +151,14 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         return false
     end
 
+    diagMax("maxRutDepthM", tonumber(response.rutDepthM) or 0)
+    diagMax("maxRutCapacityM", tonumber(response.rutCapacityM) or 0)
+    diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
+    diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
+    diagMax("maxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier) or 0)
+
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
+    diagCount("requestedDepthM", desiredDelta)
     local appliedDepth = math.min(
         desiredDelta,
         Engine.DEFAULTS.maxBrushDepthM
@@ -172,6 +187,13 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
             copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
         )
         diagCount("brushesAccepted", 1)
+        diagCount("appliedDepthM", appliedDepth)
+        if stationaryWheelspin == true then
+            diagCount("stationaryBrushesAccepted", 1)
+            diagCount("stationaryAppliedDepthM", appliedDepth)
+            diagMax("stationaryMaxRutDepthM", tonumber(response.rutDepthM) or 0)
+            diagMax("stationaryMaxRutCapacityM", tonumber(response.rutCapacityM) or 0)
+        end
         return true
     end
 
@@ -207,8 +229,10 @@ function Engine.processWheel(vehicle, wheel, dt)
         return
     end
 
-    if bodySpeedKph < Engine.DEFAULTS.inactiveSpeedKph
-        and wheelSpeedMps >= Engine.DEFAULTS.inactiveWheelSpeedMps then
+    local stationaryWheelspin =
+        bodySpeedKph < Engine.DEFAULTS.inactiveSpeedKph
+        and wheelSpeedMps >= Engine.DEFAULTS.inactiveWheelSpeedMps
+    if stationaryWheelspin then
         diagCount("stationaryWheelspinCandidates", 1)
     end
 
@@ -252,7 +276,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs)
+        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs, stationaryWheelspin)
         return
     end
 
@@ -291,7 +315,8 @@ function Engine.processWheel(vehicle, wheel, dt)
             footprint,
             sx,
             sz,
-            sampleDt
+            sampleDt,
+            stationaryWheelspin
         )
     end
 end
