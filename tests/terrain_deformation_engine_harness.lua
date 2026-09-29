@@ -137,12 +137,12 @@ assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
-assert(contexts == 4)
+assert(contexts == beforeStationary + 2)
 
 -- Client vehicles never write terrain.
 RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
-assert(contexts == 4)
+assert(contexts == beforeStationary + 2)
 
 print("terrain_deformation_engine_harness: OK")
