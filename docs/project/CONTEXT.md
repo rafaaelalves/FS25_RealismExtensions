@@ -50,7 +50,8 @@ A capability/absorption audit is now active on `research/capability-audit`:
 - Dynamic PTO 1.1.2.0: strong clean-room absorption candidate;
 - Reifen 1.2.2.67: candidate by layers; state/economy attractive, visual parity requires a shader/material project;
 - FarmKit: capability + asset audit recorded; priority lost features (ruts/furrow/crop interaction) are not blocked by custom assets;
-- Realistic 4x4 Traction System: preliminary only until the user's exact ZIP is attached.
+- Realistic 4x4 Traction System 1.4.0.0: exact ZIP audited; do not run beside RMS, but use its stronger decision-model ideas to improve RMS-facing AUTO/lock control.
+- Real Dirt Color 1.1.5.0: exact ZIP audited; strong candidate for a clean-room SurfaceContamination replacement with no custom runtime-asset blocker.
 
 Foundation status:
 - repository/bootstrap exists;
@@ -61,10 +62,10 @@ Foundation status:
 
 ### Next action
 
-1. Attach and audit the user's exact Realistic 4x4 Traction System ZIP.
-2. Continue candidate-mod capability/asset audits.
-3. Define StateContract v1 wheel/terrain fields from real source/runtime evidence.
-4. Research GIANTS TerrainDeformation lifecycle/cost model.
-5. Design and prototype TerrainDeformation without changing traction/sink ownership.
+1. Continue candidate-mod capability/asset audits.
+2. Define StateContract v1 wheel/terrain fields from real source/runtime evidence.
+3. Research GIANTS TerrainDeformation lifecycle/cost model.
+4. Design and prototype TerrainDeformation without changing traction/sink ownership.
+5. In parallel, design SurfaceContamination state and an RMS-facing drivetrain decision-provider proposal.
 
 For current detail use PROJECT_STATUS.md. For design rationale use ARCHITECTURE.md and decisions/.
