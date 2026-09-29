@@ -27,7 +27,7 @@ Status vocabulary:
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
 | player geometric wheel ruts | FarmKit capability currently suppressed | PLANNED | TerrainDeformation module |
-| AI/implement terrain tracks/deformation | True AI Tracks | CANDIDATE_ABSORB | unify into TerrainDeformation |
+| AI/implement terrain tracks/deformation | True AI Tracks | CANDIDATE_ABSORB | exact-source audit confirms strong full functional-absorption target for TerrainDeformation |
 | lateral tire scrub deformation | no active owner | PLANNED | TerrainDeformation |
 | freeze/thaw deformation response | no active owner in target profile | PLANNED | consume Mud/environment state |
 | furrow wheel/collider interaction | FarmKit | CANDIDATE_ABSORB | later clean-room FurrowInteraction |
@@ -35,12 +35,12 @@ Status vocabulary:
 | crop destruction outside owned fields | CropDestructionAnywhere / vanilla rule | CANDIDATE_ABSORB | likely small part of CropInteraction |
 | off-field grass/meadow physical damage | FarmKit | CANDIDATE_ABSORB | later CropInteraction research |
 | wheel dirt/mud state and particles | Mud | DO_NOT_DUPLICATE | keep Mud owner |
-| dry/wet mud-spray presentation | Mud Sprayer / Mud effects | EVALUATE | behavior may be replaced clean-room; do not duplicate Mud physics or reuse unlicensed assets |
+| dry/wet mud-spray presentation | Mud Sprayer / Mud effects | EVALUATE | exact-source audit found coarse rain/global-state logic and namespace collision; replace only if Mud leaves a real presentation gap |
 | implement dust | FarmKit | EVALUATE | can be improved/calibrated later; no immediate ownership conflict |
 | road water spray | FarmKit | EVALUATE | useful visual effect; asset strategy required |
 | engine sound spatial propagation | FarmKit | EVALUATE | audit against soundExpansionMP before ownership decision |
-| extra operational/MP sound behavior | soundExpansionMP | EXTERNAL | keep external unless a specific broken/duplicate capability is identified |
-| rollover spill | RealPhysics LoadSpill / Loose Load overlap | EVALUATE | decide by capability; avoid double owner |
+| extra operational/MP sound behavior | soundExpansionMP | EXTERNAL | keep external by submodule; cruise/reverse controls are separate capabilities, not sound ownership |
+| rollover spill | RealPhysics LoadSpill / Loose Load overlap | EVALUATE | keep one external owner now; exact source supports later unified clean-room replacement |
 | loading overflow / cover containment | Loose Load | EVALUATE | distinct from rollover spill; candidate for future unified material system |
 | discharge dynamics | RealPhysics LoadSpill | EXTERNAL | keep specialist for now |
 | spill presentation | Loose Load / RealPhysics | EVALUATE | separate visuals/sound from physical spill ownership |
