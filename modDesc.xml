@@ -15,6 +15,7 @@
         <sourceFile filename="scripts/Config.lua"/>
         <sourceFile filename="scripts/Diagnostics.lua"/>
         <sourceFile filename="scripts/api/StateContract.lua"/>
+        <sourceFile filename="scripts/terrain/FootprintModel.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
 </modDesc>

@@ -20,7 +20,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4 zip
 
       - name: Run harnesses
-        run: lua5.4 tests/state_contract_harness.lua
+        run: |
+          lua5.4 tests/state_contract_harness.lua
+          lua5.4 tests/footprint_model_harness.lua
 
       - name: Validate modDesc XML
         run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('modDesc.xml')"
