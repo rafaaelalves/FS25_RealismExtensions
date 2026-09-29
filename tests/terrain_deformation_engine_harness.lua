@@ -71,6 +71,11 @@ RealismExtensionsTerrainResponseModel = {
         return {
             available=true,
             rutDepthM=previous + 0.005,
+            rutCapacityM=0.12,
+            staticRutCapacityM=0.08,
+            slipRutCapacityM=0.12,
+            slipSinkage01=0.5,
+            observedSinkDepthM=0.02,
             rutWidthM=0.6,
             nextHistory={
                 rutDepthM=previous + 0.005,
@@ -133,6 +138,14 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
 assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.stationaryResponseSamples or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.stationaryBrushesAccepted or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.maxRutCapacityM or 0) == 0.12)
+assert((RealismExtensionsTerrainRuntime.stats.maxStaticRutCapacityM or 0) == 0.08)
+assert((RealismExtensionsTerrainRuntime.stats.maxSlipRutCapacityM or 0) == 0.12)
+assert((RealismExtensionsTerrainRuntime.stats.maxSlipSinkage01 or 0) == 0.5)
+assert((RealismExtensionsTerrainRuntime.stats.maxStationaryRutCapacityM or 0) == 0.12)
+assert((RealismExtensionsTerrainRuntime.stats.stationaryAppliedDepthTotalM or 0) > 0)
 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
