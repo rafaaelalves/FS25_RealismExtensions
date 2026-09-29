@@ -29,28 +29,50 @@ function RealismExtensionsCore:loadMap()
     self.providerElapsedMs = self.providerRetryMs
     self:tryDiscoverProvider()
 
+    if RealismExtensionsTerrainRuntime ~= nil then
+        RealismExtensionsTerrainRuntime.initialize()
+    end
+
+    local tdEnabled = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainDeformation == true
+
     RealismExtensionsDiagnostics.info(
         "v" .. tostring(RealismExtensionsConfig.version)
-        .. " foundation loaded; gameplay modules inactive"
+        .. " loaded; TerrainDeformation="
+        .. tostring(tdEnabled and "ENABLED" or "disabled")
     )
 end
 
 function RealismExtensionsCore:update(dt)
-    if RealismExtensionsState == nil then return end
+    if RealismExtensionsState ~= nil then
+        local available = RealismExtensionsState.getProviderStatus()
+        if not available then
+            self.providerElapsedMs = self.providerElapsedMs
+                + math.max(tonumber(dt) or 0, 0)
 
-    local available = RealismExtensionsState.getProviderStatus()
-    if available then return end
+            if self.providerElapsedMs >= self.providerRetryMs then
+                self.providerElapsedMs = 0
+                self:tryDiscoverProvider()
+            end
+        end
+    end
 
-    self.providerElapsedMs = self.providerElapsedMs + math.max(tonumber(dt) or 0, 0)
-    if self.providerElapsedMs < self.providerRetryMs then return end
-
-    self.providerElapsedMs = 0
-    self:tryDiscoverProvider()
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainDeformation == true
+        and RealismExtensionsTerrainRuntime ~= nil then
+        RealismExtensionsTerrainRuntime.flush()
+    end
 end
 
 function RealismExtensionsCore:deleteMap()
     RealismExtensionsState.clearProvider()
     self.providerElapsedMs = self.providerRetryMs
+
+    if RealismExtensionsTerrainRuntime ~= nil then
+        RealismExtensionsTerrainRuntime.clear()
+    end
 end
 
 addModEventListener(RealismExtensionsCore)

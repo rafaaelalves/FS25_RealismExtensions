@@ -224,11 +224,10 @@ function Model.compute(context, footprint, history, dtMs, options)
     -- If the active physics owner already says the wheel sank deeper than our
     -- current capacity estimate, geometry must never contradict that observed
     -- state. Raise capacity just enough to admit it, bounded by radius.
-    rutCapacityM = clamp(
-        math.max(rutCapacityM, observedSinkM),
-        0,
-        radius * options.maxRutDepthFraction
-    )
+    -- maxRutDepthFraction limits only deformation invented by RE. If the
+    -- authoritative physics owner already observed deeper sink, that physical
+    -- state must win rather than being clipped by our geometric tuning cap.
+    rutCapacityM = math.max(rutCapacityM, observedSinkM)
 
     local verticalImprint01 = clamp(
         susceptibility * math.min(1, pressureDrive),

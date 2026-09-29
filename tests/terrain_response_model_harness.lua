@@ -104,6 +104,14 @@ sunk.sinkSeverity = 0.15
 local h = Model.compute(sunk, footprint, nil, 16)
 assert(h.rutDepthM >= 0.12)
 
+-- Authoritative sink can exceed RE's provisional modeled capacity cap.
+local deepSink = clone(base)
+deepSink.sinkDepthM = 0.40
+deepSink.sinkSeverity = 0.50
+local h2 = Model.compute(deepSink, footprint, nil, 16)
+assert(h2.rutCapacityM >= 0.40)
+assert(h2.rutDepthM >= 0.40)
+
 -- Hard freeze should almost eliminate deformation response.
 local frozen = clone(wet)
 frozen.hardFrozen = true
