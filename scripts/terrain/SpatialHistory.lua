@@ -59,7 +59,11 @@ function History:commit(x, z, value)
     cell.history = copyHistory(value)
 
     if self.count > self.maxCells then
-        self:prune(math.max(0, self.maxCells - self.pruneBatch))
+        local target = self.maxCells
+        if self.maxCells >= 1000 then
+            target = math.max(0, self.maxCells - self.pruneBatch)
+        end
+        self:prune(target)
     end
 
     return cell.history
