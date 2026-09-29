@@ -7,8 +7,8 @@ function History.new(options)
     options = options or {}
     local self = {
         cellSizeM = math.max(0.05, tonumber(options.cellSizeM) or 0.20),
-        maxCells = math.max(100, math.floor(tonumber(options.maxCells) or 50000)),
-        pruneBatch = math.max(10, math.floor(tonumber(options.pruneBatch) or 1000)),
+        maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 50000)),
+        pruneBatch = math.max(1, math.floor(tonumber(options.pruneBatch) or 1000)),
         cells = {},
         count = 0,
         touchCounter = 0
