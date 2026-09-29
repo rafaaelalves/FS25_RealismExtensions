@@ -115,9 +115,10 @@ function History:exportSnapshot()
             end
         end
 
-        -- Geometry itself is persisted by the game. RE persists only domain
-        -- memory that can change future response, so empty/default cells do
-        -- not belong in the savegame sidecar.
+        -- The sidecar stores RE domain memory, not the heightmap itself.
+        -- TerrainPersistence separately records sampled surface heights so load
+        -- can reject this memory when GIANTS did not preserve matching geometry.
+        -- Empty/default cells therefore do not belong in the sidecar.
         if material then
             snapshot.cells[#snapshot.cells + 1] = {
                 ix = cell.ix,
