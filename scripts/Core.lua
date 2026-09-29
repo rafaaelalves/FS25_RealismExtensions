@@ -100,7 +100,7 @@ function RealismExtensionsCore:update(dt)
                     and runtime.getDiagnostics() or {}
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d maxRut=%.4f maxCap=%.4f maxStatic=%.4f maxSlipCap=%.4f maxSlip01=%.3f maxSlipMul=%.3f stationaryRut=%.4f stationaryCap=%.4f stationarySlipCap=%.4f stationarySlip01=%.3f stationarySlipMul=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -121,9 +121,22 @@ function RealismExtensionsCore:update(dt)
                     d.brushesAccepted or 0,
                     history ~= nil and (history.count or 0) or 0,
                     writer ~= nil and #(writer.queue or {}) or 0,
+                    writerStats.enqueued or 0,
+                    writerStats.coalescedBrushes or 0,
                     writerStats.submittedBrushes or 0,
                     writerStats.submittedJobs or 0,
                     writerStats.failedJobs or 0,
+                    d.maxRutDepthM or 0,
+                    d.maxRutCapacityM or 0,
+                    d.maxStaticRutCapacityM or 0,
+                    d.maxSlipRutCapacityM or 0,
+                    d.maxSlipSinkage01 or 0,
+                    d.maxSlipSinkageMultiplier or 0,
+                    d.stationaryMaxRutDepthM or 0,
+                    d.stationaryMaxRutCapacityM or 0,
+                    d.stationaryMaxSlipRutCapacityM or 0,
+                    d.stationaryMaxSlipSinkage01 or 0,
+                    d.stationaryMaxSlipSinkageMultiplier or 0,
                     brushes or 0,
                     jobs or 0
                 ))
