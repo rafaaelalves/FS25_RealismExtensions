@@ -153,3 +153,13 @@ assert(j.longitudinalShearIncrementM == 0)
 assert(j.lateralShearIncrementM == 0)
 
 print("terrain_response_model_harness: OK")
+
+
+-- Surface-specific absolute caps must bound RE-invented geometry.
+local capped = Model.compute(stuck, footprint, nil, 100, {
+    absoluteMaxStaticRutDepthM = 0.06,
+    absoluteMaxSlipRutDepthM = 0.15
+})
+assert(capped.staticRutCapacityM <= 0.0600001)
+assert(capped.slipRutCapacityM <= 0.1500001)
+assert(capped.rutCapacityM <= 0.1500001)
