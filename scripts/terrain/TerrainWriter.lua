@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 1
+Writer.VERSION = 2
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -11,7 +11,8 @@ Writer.DEFAULTS = {
     depthBucketM = 0.0005,
     minDepthM = 0.0004,
     minRadiusM = 0.10,
-    defaultHardness = 0.35
+    defaultHardness = 0.35,
+    coalesceDistanceFactor = 0.35
 }
 
 local function clamp(v, lo, hi)
@@ -35,7 +36,8 @@ function Writer.new(options)
             submittedJobs = 0,
             droppedInvalid = 0,
             failedJobs = 0,
-            droppedOverflow = 0
+            droppedOverflow = 0,
+            coalescedBrushes = 0
         }
     }
     return setmetatable(self, { __index = Writer })
@@ -75,6 +77,29 @@ end
 
 local function depthBucket(depth, bucket)
     return math.max(bucket, math.floor(depth / bucket + 0.5) * bucket)
+end
+
+local function tryCoalesce(group, brush, factor)
+    -- Coalesce only brushes already compatible by depth bucket. Preserve the
+    -- strongest requested depth (the batch owns the bucket) and expand the
+    -- surviving footprint just enough to cover near-identical contacts.
+    for _, existing in ipairs(group) do
+        local dx, dz = brush.x - existing.x, brush.z - existing.z
+        local distance = math.sqrt(dx * dx + dz * dz)
+        local threshold = math.min(existing.radiusM, brush.radiusM) * factor
+        if distance <= threshold then
+            local minX = math.min(existing.x - existing.radiusM, brush.x - brush.radiusM)
+            local maxX = math.max(existing.x + existing.radiusM, brush.x + brush.radiusM)
+            local minZ = math.min(existing.z - existing.radiusM, brush.z - brush.radiusM)
+            local maxZ = math.max(existing.z + existing.radiusM, brush.z + brush.radiusM)
+            existing.x = (minX + maxX) * 0.5
+            existing.z = (minZ + maxZ) * 0.5
+            existing.radiusM = math.max(maxX - minX, maxZ - minZ) * 0.5
+            existing.hardness = math.max(existing.hardness, brush.hardness)
+            return true
+        end
+    end
+    return false
 end
 
 function Writer:_submitBatch(depthM, brushes)
@@ -167,7 +192,13 @@ function Writer:flush()
         local brush = table.remove(self.queue, 1)
         local bucket = depthBucket(brush.depthM, bucketM)
         groups[bucket] = groups[bucket] or {}
-        groups[bucket][#groups[bucket] + 1] = brush
+        local group = groups[bucket]
+        local factor = math.max(0, tonumber(self.options.coalesceDistanceFactor) or 0)
+        if factor > 0 and tryCoalesce(group, brush, factor) then
+            self.stats.coalescedBrushes = self.stats.coalescedBrushes + 1
+        else
+            group[#group + 1] = brush
+        end
         consumed = consumed + 1
     end
 
