@@ -1,7 +1,7 @@
 RealismExtensionsTerrainResponseModel = RealismExtensionsTerrainResponseModel or {}
 local Model = RealismExtensionsTerrainResponseModel
 
-Model.VERSION = 1
+Model.VERSION = 2
 
 Model.DEFAULTS = {
     referencePressurePa = 100000,
@@ -17,11 +17,21 @@ Model.DEFAULTS = {
     maxRutDepthFraction = 0.36,
     minRutDepthFraction = 0.01,
 
-    -- Janosi-Hanamoto-inspired displacement scale. This is not a calibrated
-    -- soil K parameter; it controls how quickly slip-induced deformation
-    -- approaches saturation in this first clean-room model.
+    -- Janosi-Hanamoto-inspired displacement scale for shear mobilization.
+    -- This is deliberately kept separate from slip-sinkage history below:
+    -- shear stress can mobilize quickly while geometric excavation continues
+    -- to evolve over substantially more relative wheel/soil displacement.
     longitudinalShearK = 0.18,
     lateralShearK = 0.14,
+
+    -- High longitudinal slip is experimentally known to increase sinkage
+    -- beyond static pressure-sinkage. We model that as a second, slower
+    -- saturating capacity term instead of allowing shear itself to grow
+    -- without bound. Characteristic displacement scales with tire radius.
+    slipSinkageCharacteristicRadii = 4.0,
+    slipSinkageHistoryMultiple = 6.0,
+    slipSinkageMaxMultiplier = 2.50,
+    maxSlipRutDepthFraction = 0.65,
 
     longitudinalSlipDeadband = 0.025,
     lateralSlipDeadband = 0.020,
@@ -202,9 +212,9 @@ function Model.compute(context, footprint, history, dtMs, options)
     local lateralScrub01 =
         saturateDisplacement(cumulativeLat, options.lateralShearK)
 
-    -- Vertical loading capacity is pressure-driven and soil-limited.
+    -- Vertical loading establishes the static rut capacity.
     local minCapacity = radius * math.max(0, options.minRutDepthFraction)
-    local maxCapacity = radius * math.max(
+    local maxStaticCapacity = radius * math.max(
         options.minRutDepthFraction,
         options.maxRutDepthFraction
     )
@@ -215,19 +225,66 @@ function Model.compute(context, footprint, history, dtMs, options)
         1
     )
 
-    local rutCapacityM = minCapacity
-        + (maxCapacity - minCapacity) * capacityFraction
+    local staticRutCapacityM = minCapacity
+        + (maxStaticCapacity - minCapacity) * capacityFraction
+
+    -- Slip sinkage is a distinct geometric effect from rapid shear-stress
+    -- mobilization. Keep a longer displacement history so a wheel spinning
+    -- against an obstacle can continue excavating after ordinary shear has
+    -- already saturated, while still converging to a finite depth.
+    local slipSinkageK = radius
+        * math.max(0.25, tonumber(options.slipSinkageCharacteristicRadii) or 4.0)
+    local maxSlipHistory = slipSinkageK
+        * math.max(1, tonumber(options.slipSinkageHistoryMultiple) or 6.0)
+    local cumulativeSlipExcavation = clamp(
+        (tonumber(history.slipExcavationDistanceM) or 0) + longIncrement,
+        0,
+        maxSlipHistory
+    )
+    local slipSinkage01 = saturateDisplacement(
+        cumulativeSlipExcavation,
+        slipSinkageK
+    )
+
+    -- Wetness is a useful local susceptibility proxy in the current stack but
+    -- it is not a complete soil-strength model. Preserve some slip-sinkage
+    -- response on dry deformable ground; hard-frozen ground remains strongly
+    -- suppressed.
+    local slipSoilFactor
+    if context.hardFrozen == true then
+        slipSoilFactor = susceptibility
+    else
+        slipSoilFactor = 0.35 + 0.65 * susceptibility
+    end
+
+    local maxSlipMultiplier = math.max(
+        1,
+        tonumber(options.slipSinkageMaxMultiplier) or 1
+    )
+    local slipSinkageMultiplier = 1
+        + (maxSlipMultiplier - 1) * slipSinkage01 * slipSoilFactor
+
+    local maxSlipCapacity = radius * math.max(
+        options.maxRutDepthFraction,
+        tonumber(options.maxSlipRutDepthFraction)
+            or options.maxRutDepthFraction
+    )
+    local slipRutCapacityM = math.min(
+        maxSlipCapacity,
+        staticRutCapacityM * slipSinkageMultiplier
+    )
 
     local sinkDepthM = tonumber(context.sinkDepthM)
     local observedSinkM = validNumber(sinkDepthM) and math.max(0, sinkDepthM) or 0
 
     -- If the active physics owner already says the wheel sank deeper than our
-    -- current capacity estimate, geometry must never contradict that observed
-    -- state. Raise capacity just enough to admit it, bounded by radius.
-    -- maxRutDepthFraction limits only deformation invented by RE. If the
-    -- authoritative physics owner already observed deeper sink, that physical
-    -- state must win rather than being clipped by our geometric tuning cap.
-    rutCapacityM = math.max(rutCapacityM, observedSinkM)
+    -- modeled capacity, geometry must never contradict that authoritative
+    -- state. The RE caps apply only to deformation invented by RE.
+    local rutCapacityM = math.max(
+        staticRutCapacityM,
+        slipRutCapacityM,
+        observedSinkM
+    )
 
     local verticalImprint01 = clamp(
         susceptibility * math.min(1, pressureDrive),
@@ -289,6 +346,7 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutDepthM = nextRutM,
         longitudinalShearDistanceM = cumulativeLong,
         lateralShearDistanceM = cumulativeLat,
+        slipExcavationDistanceM = cumulativeSlipExcavation,
         passCount = math.max(0, tonumber(history.passCount) or 0) + 1
     }
 
@@ -310,6 +368,11 @@ function Model.compute(context, footprint, history, dtMs, options)
         lateralShearDistanceM = cumulativeLat,
 
         observedSinkDepthM = observedSinkM,
+        staticRutCapacityM = staticRutCapacityM,
+        slipRutCapacityM = slipRutCapacityM,
+        slipSinkage01 = slipSinkage01,
+        slipSinkageMultiplier = slipSinkageMultiplier,
+        slipExcavationDistanceM = cumulativeSlipExcavation,
         rutCapacityM = rutCapacityM,
         previousRutDepthM = previousRutM,
         rutDepthM = nextRutM,

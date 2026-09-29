@@ -75,6 +75,26 @@ local f = Model.compute(stuck, footprint, nil, 200)
 assert(f.longitudinalShearIncrementM > 0)
 assert(f.longitudinalExcavation01 > 0)
 
+-- Sustained stationary wheelspin must keep increasing slip-induced capacity
+-- after the fast shear term is already near saturation. It must still converge
+-- to a finite radius-relative cap.
+local stuckHistory = nil
+local stuckFirst = nil
+local stuckMid = nil
+local stuckLast = nil
+for n = 1, 80 do
+    local r = Model.compute(stuck, footprint, stuckHistory, 100)
+    if n == 1 then stuckFirst = r end
+    if n == 20 then stuckMid = r end
+    stuckLast = r
+    stuckHistory = r.nextHistory
+end
+assert(stuckMid.slipRutCapacityM > stuckFirst.slipRutCapacityM)
+assert(stuckLast.slipRutCapacityM >= stuckMid.slipRutCapacityM)
+assert(stuckLast.rutCapacityM > stuckFirst.rutCapacityM)
+assert(stuckLast.rutCapacityM <= stuck.structuralRadiusM * Model.DEFAULTS.maxSlipRutDepthFraction + 0.0000001)
+assert(stuckLast.slipSinkage01 <= 1)
+
 -- A sliding/locked wheel still gets shear from vehicle motion.
 local sliding = clone(base)
 sliding.speedKph = 18
