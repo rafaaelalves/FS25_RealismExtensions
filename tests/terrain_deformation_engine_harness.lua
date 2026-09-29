@@ -100,11 +100,12 @@ dofile("scripts/terrain/TerrainDeformationEngine.lua")
 
 local wheelA = { physics = {}, testX = 0 }
 local wheelB = { physics = {}, testX = 0.5 }
+local bodySpeedKph = 5
 local vehicle = {
     isServer = true,
     spec_wheels = { wheels = { wheelA, wheelB } },
     getWheels = function(self) return self.spec_wheels.wheels end,
-    getLastSpeed = function(self) return 5 end
+    getLastSpeed = function(self) return bodySpeedKph end
 }
 
 RealismExtensionsTerrainDeformationEngine.onLoad(vehicle)
@@ -120,6 +121,17 @@ wheelB.testX = 0.9
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
 assert(contexts == 4)
 assert(enqueued > 2)
+
+-- Stationary wheelspin must still pass the cheap gate: body at rest, wheel
+-- surface moving. This is the "tractor against a pillar" class of scenario.
+bodySpeedKph = 0
+wheelA.physics.mrLastWheelSpeed = 2.5
+wheelB.physics.mrLastWheelSpeed = 2.5
+local beforeStationary = contexts
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 100)
+assert(contexts == beforeStationary + 2)
+assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
