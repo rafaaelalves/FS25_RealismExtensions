@@ -45,7 +45,11 @@ function Writer.new(options)
             geometryZeroChangeSamples = 0,
             geometryShallowSamples = 0,
             maxRequestedDepthM = 0,
-            maxObservedLoweringM = 0
+            maxObservedLoweringM = 0,
+            callbackSuccessJobs = 0,
+            callbackDisplacedVolumeM3 = 0,
+            callbackMaxDisplacedVolumeM3 = 0,
+            callbackVolumeMissing = 0
         }
     }
     return setmetatable(self, { __index = Writer })
@@ -186,6 +190,16 @@ function Writer:_submitBatch(depthM, brushes)
             or TerrainDeformation.STATE_SUCCESS == nil
             or state == TerrainDeformation.STATE_SUCCESS then
             local stats = self.owner.stats
+            stats.callbackSuccessJobs = stats.callbackSuccessJobs + 1
+            if type(displacedVolume) == "number" and displacedVolume == displacedVolume then
+                local volume = math.abs(displacedVolume)
+                stats.callbackDisplacedVolumeM3 =
+                    stats.callbackDisplacedVolumeM3 + volume
+                stats.callbackMaxDisplacedVolumeM3 =
+                    math.max(stats.callbackMaxDisplacedVolumeM3, volume)
+            else
+                stats.callbackVolumeMissing = stats.callbackVolumeMissing + 1
+            end
             for i, brush in ipairs(self.brushes or {}) do
                 local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
                 local afterY = sampleTerrainHeight(self.terrain, brush.x, brush.z)
