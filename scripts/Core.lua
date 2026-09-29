@@ -100,7 +100,7 @@ function RealismExtensionsCore:update(dt)
                     and runtime.getDiagnostics() or {}
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -121,9 +121,12 @@ function RealismExtensionsCore:update(dt)
                     d.brushesAccepted or 0,
                     history ~= nil and (history.count or 0) or 0,
                     writer ~= nil and #(writer.queue or {}) or 0,
+                    writerStats.enqueued or 0,
+                    writerStats.coalescedBrushes or 0,
                     writerStats.submittedBrushes or 0,
                     writerStats.submittedJobs or 0,
                     writerStats.failedJobs or 0,
+                    writerStats.coalescedBrushes or 0,
                     brushes or 0,
                     jobs or 0
                 ))
