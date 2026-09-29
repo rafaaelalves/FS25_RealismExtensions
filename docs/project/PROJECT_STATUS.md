@@ -25,7 +25,7 @@ Updated: 2026-09-29
 - Realistic 4x4 Traction System 1.4.0.0 exact ZIP audited: keep RMS as physical drivetrain owner; retain richer AUTO/decision ideas for RMS-facing improvement.
 - Real Dirt Color 1.1.5.0 exact ZIP audited: strong clean-room replacement candidate via SurfaceContamination.
 - Exact six-mod source follow-up completed: MoistureSystem 2.0.0.8, True AI Tracks 2.2.0.1, RealPhysics LoadSpill 1.0.0.0, Loose Load 1.0.0.0, Mud Sprayer 1.0.0.0 and soundExpansionMP 1.2.0.0.
-- True AI Tracks promoted to a strong TerrainDeformation absorption target; exact source exposed an apparent still-broken 150 ms scan gate.
+- True AI Tracks promoted to a strong TerrainDeformation absorption target. Audit correction: 2.2.0.1 fixes the older scan-interval units bug; current comparison no longer attributes that defect to this version.
 - StateContract v2 merged with a versioned RC provider boundary for wheel/ground state.
 - Pressure-driven FootprintModel merged: tire-pressure-aware contact area/ground pressure with low-confidence geometry fallback; crawlers fail closed pending grouped track modeling.
 - TerrainResponseModel merged: bounded wetness/pressure/slip/sink response with separate longitudinal excavation, lateral scrub, observed-sink anchoring and diminishing repeated-pass accumulation.
@@ -34,6 +34,10 @@ Updated: 2026-09-29
 - Computation ownership ledger added: separates effect ownership from actual avoided computation and tracks residual overhead (FarmKit plowing/dust wrappers, MudSoil wetness sampling, development telemetry).
 - RE packaging/provider discovery fixed: icon is now packaged/validated and RC provider is resolved through the FS25_RealismCompatibility mod environment rather than assuming a shared global.
 - ExtensionsStateProvider changed to reuse-first semantics for fresh MRMud wetness/structural-radius snapshots and MR slip cache, with telemetry to measure snapshot hits vs fallbacks.
+- TerrainDeformation runtime v3 validated specialization lifecycle in-game: 10 vehicles / 38 wheels were attached, 15,790 brushes were accepted and 2,328 jobs submitted with zero failed jobs in the captured session.
+- Stationary-wheelspin runtime path validated in-game: the diagnostic counter rose from 0 to 821 during the obstacle test, proving body-at-rest/wheel-moving contact reaches the RE pipeline.
+- Runtime v3 exposed a physical-model limitation rather than an engine failure: stationary excavation stopped after an initial burst because the current response model saturates shear against a static rut-capacity ceiling. Slip-induced sinkage is now being developed separately from fast shear mobilization.
+- Specialization bootstrap recursion fixed and runtime-validated; ModMixer attribution for RealismExtensions fell from the previous pathological tens-of-thousands count to x1.
 - MoistureSystem confirmed as KEEP + BRIDGE specialist with explicit agronomic/material moisture domains.
 - Loose-material ownership decomposed into rollover, overflow, cover, discharge, presentation and material rules; unified clean-room RE module remains a later candidate.
 - soundExpansionMP reclassified as a multi-capability patch pack rather than one sound subsystem.
@@ -42,7 +46,7 @@ Updated: 2026-09-29
 
 - Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
-- Runtime-validate TerrainDeformation brush scale, queue callbacks and performance in FS25.
+- Runtime-calibrate TerrainDeformation brush scale and slip-sinkage response; queue callbacks are now runtime-validated.
 - Validate player, attached implement, GIANTS AI and Courseplay behavior before replacing True AI Tracks.
 - Design savegame persistence or another safe reconciliation strategy for spatial response history.
 - Measure TerrainDeformation cost and persistence behavior.
