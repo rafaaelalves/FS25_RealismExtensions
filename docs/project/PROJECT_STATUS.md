@@ -35,6 +35,7 @@ Updated: 2026-09-29
 - RE packaging/provider discovery fixed: icon is now packaged/validated and RC provider is resolved through the FS25_RealismCompatibility mod environment rather than assuming a shared global.
 - ExtensionsStateProvider changed to reuse-first semantics for fresh MRMud wetness/structural-radius snapshots and MR slip cache, with telemetry to measure snapshot hits vs fallbacks.
 - TerrainDeformation runtime v3 validated specialization lifecycle in-game: 10 vehicles / 38 wheels were attached, 15,790 brushes were accepted and 2,328 jobs submitted with zero failed jobs in the captured session.
+- Terrain integration v4 validated the next consolidation step in-game: brush coalescing removed about 18% of native brush work with zero failed jobs and no reported visible regression; spatial history saved 3,564 cells and restored exactly 3,564 after reload; slip-sinkage v2 continued accepting deformation during sustained stationary wheelspin instead of stalling at the old shear ceiling.
 - Stationary-wheelspin runtime path validated in-game: the diagnostic counter rose from 0 to 821 during the obstacle test, proving body-at-rest/wheel-moving contact reaches the RE pipeline.
 - Runtime v3 exposed a physical-model limitation rather than an engine failure: stationary excavation stopped after an initial burst because the current response model saturates shear against a static rut-capacity ceiling. Slip-induced sinkage is now being developed separately from fast shear mobilization.
 - Specialization bootstrap recursion fixed and runtime-validated; ModMixer attribution for RealismExtensions fell from the previous pathological tens-of-thousands count to x1.
@@ -46,7 +47,8 @@ Updated: 2026-09-29
 
 - Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
-- Runtime-calibrate TerrainDeformation brush scale and slip-sinkage response; queue callbacks are now runtime-validated.
+- Runtime-calibrate TerrainDeformation brush scale and slip-sinkage magnitude; structure/lifecycle are now consolidated in main.
+- Use new depth diagnostics (static capacity, slip capacity, rut depth, stationary-wheelspin depth) before changing visual calibration constants.
 - Validate player, attached implement, GIANTS AI and Courseplay behavior before replacing True AI Tracks.
 - Design savegame persistence or another safe reconciliation strategy for spatial response history.
 - Measure TerrainDeformation cost and persistence behavior.
