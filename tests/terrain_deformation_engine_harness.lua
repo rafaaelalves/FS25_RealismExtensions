@@ -21,6 +21,7 @@ Utils = {
 }
 
 RealismExtensionsConfig = {
+    diagnostics = { verbose = true },
     modules = { TerrainDeformation = true }
 }
 
