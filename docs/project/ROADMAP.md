@@ -33,9 +33,25 @@ Research before commitment:
 - off-field grass/meadow interaction;
 - possible functional absorption of CropDestructionAnywhere.
 
+## 0.3.x — Surface contamination candidate
+
+Research target:
+- replace RealDirtColor's current-target color model with persistent per-wheel/body material contamination;
+- use Mud/RC authoritative contact state where available;
+- preserve GIANTS Washable dirt amount as a separate quantity;
+- save/network persistent contamination;
+- retain existing `dirtColor` shaders as the first presentation backend.
+
+## Drivetrain improvement research
+
+Parallel research, not a separate physics owner:
+- enrich RMS AUTO/lock decision semantics using the audited Realistic 4x4 requirements;
+- pursue an RMS public/provider boundary rather than another `updateDifferential` writer;
+- keep CTIS/tyre pressure as a separate future capability.
+
 ## Later candidates
 
-- persistent surface contamination / dirt;
+- richer surface contamination visuals beyond `dirtColor`;
 - furrow interaction;
 - visual-effect consolidation;
 - unified state-driven HUD.
