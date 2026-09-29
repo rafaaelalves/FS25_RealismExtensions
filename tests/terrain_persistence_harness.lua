@@ -50,6 +50,11 @@ end
 function fileExists(path) return files[path]~=nil end
 
 g_server={}
+g_terrainNode=42
+local terrainHeights={}
+function getTerrainHeightAtWorldPos(node,x,y,z)
+    return terrainHeights[tostring(x)..":"..tostring(z)] or 100
+end
 g_currentMission={missionInfo={mapId="testMap",savegameDirectory="/save",isValid=true}}
 
 dofile("scripts/terrain/SpatialHistory.lua")
@@ -58,6 +63,8 @@ dofile("scripts/terrain/TerrainPersistence.lua")
 local h=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
 h:commit(1.0,2.0,{rutDepthM=0.03,longitudinalShearDistanceM=1.2,lateralShearDistanceM=0.2,slipExcavationDistanceM=2.5,passCount=7})
 h:commit(-2.0,4.0,{rutDepthM=0.01,passCount=2})
+terrainHeights["1.0:2.0"]=99.97
+terrainHeights["-2.0:4.0"]=99.99
 
 local ok,count=RealismExtensionsTerrainPersistence.save(g_currentMission.missionInfo,h)
 assert(ok==true and count==2)
@@ -69,6 +76,20 @@ assert(restored.count==2)
 assert(math.abs(restored:get(1.0,2.0).rutDepthM-0.03)<0.000001)
 assert(restored:get(1.0,2.0).passCount==7)
 assert(math.abs(restored:get(1.0,2.0).slipExcavationDistanceM-2.5)<0.000001)
+
+-- If GIANTS reloads a flatter/different heightmap, the sidecar must not
+-- restore rut/shear memory into visually incompatible terrain.
+terrainHeights["1.0:2.0"]=100
+terrainHeights["-2.0:4.0"]=100
+local mismatched=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
+local geometryOk,geometryReason=RealismExtensionsTerrainPersistence.load(g_currentMission.missionInfo,mismatched)
+assert(geometryOk==false)
+assert(string.find(geometryReason,"geometry mismatch",1,true)~=nil)
+assert(mismatched.count==0)
+
+-- Restore saved geometry for the map-identity test.
+terrainHeights["1.0:2.0"]=99.97
+terrainHeights["-2.0:4.0"]=99.99
 
 -- Same file must not leak spatial state into another map.
 g_currentMission.missionInfo.mapId="otherMap"
