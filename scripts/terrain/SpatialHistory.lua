@@ -8,6 +8,7 @@ function History.new(options)
     local self = {
         cellSizeM = math.max(0.05, tonumber(options.cellSizeM) or 0.20),
         maxCells = math.max(100, math.floor(tonumber(options.maxCells) or 50000)),
+        pruneBatch = math.max(10, math.floor(tonumber(options.pruneBatch) or 1000)),
         cells = {},
         count = 0,
         touchCounter = 0
@@ -58,7 +59,7 @@ function History:commit(x, z, value)
     cell.history = copyHistory(value)
 
     if self.count > self.maxCells then
-        self:prune(self.maxCells)
+        self:prune(math.max(0, self.maxCells - self.pruneBatch))
     end
 
     return cell.history
