@@ -57,10 +57,15 @@ local badOk, badReason = RealismExtensionsState.registerProvider(bad)
 assert(badOk == false)
 assert(string.find(badReason, "provider API version mismatch", 1, true) ~= nil)
 
-_G.RealismCompatStateProvider = provider
+_G.FS25_RealismCompatibility = {
+    RealismCompatStateProvider = provider
+}
+_G.RealismCompatStateProvider = nil
+
 local discovered, discoverReason = RealismExtensionsState.discoverProvider()
 assert(discovered == true, tostring(discoverReason))
 assert(RealismExtensionsState.getWheelContext({}, {}) ~= nil)
+assert(RealismExtensionsState.provider == provider)
 
 -- A context with a mismatched schema must fail closed.
 provider.getWheelContext = function()
