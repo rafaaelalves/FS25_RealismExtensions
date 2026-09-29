@@ -1,7 +1,7 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 1
+History.VERSION = 2
 
 function History.new(options)
     options = options or {}
@@ -86,6 +86,81 @@ function History:prune(targetCount)
 
     self.count = self.count - removeCount
     return removeCount
+end
+
+
+local PERSISTED_FIELDS = {
+    "rutDepthM",
+    "longitudinalShearDistanceM",
+    "lateralShearDistanceM",
+    "slipExcavationDistanceM",
+    "passCount"
+}
+
+function History:exportSnapshot()
+    local snapshot = {
+        version = History.VERSION,
+        cellSizeM = self.cellSizeM,
+        cells = {}
+    }
+
+    for _, cell in pairs(self.cells) do
+        local values = {}
+        for _, field in ipairs(PERSISTED_FIELDS) do
+            local value = cell.history ~= nil and tonumber(cell.history[field]) or nil
+            if value ~= nil then values[field] = value end
+        end
+        snapshot.cells[#snapshot.cells + 1] = {
+            ix = cell.ix,
+            iz = cell.iz,
+            history = values
+        }
+    end
+
+    table.sort(snapshot.cells, function(a, b)
+        if a.ix == b.ix then return a.iz < b.iz end
+        return a.ix < b.ix
+    end)
+    return snapshot
+end
+
+function History:importSnapshot(snapshot)
+    if type(snapshot) ~= "table"
+        or type(snapshot.cells) ~= "table"
+        or tonumber(snapshot.cellSizeM) == nil then
+        return false, "invalid snapshot"
+    end
+
+    -- Cell coordinates are meaningful only for the grid size that created
+    -- them. Refuse silent remapping if tuning changes between releases.
+    if math.abs(tonumber(snapshot.cellSizeM) - self.cellSizeM) > 0.000001 then
+        return false, "cell size mismatch"
+    end
+
+    self:clear()
+    for _, source in ipairs(snapshot.cells) do
+        local ix, iz = tonumber(source.ix), tonumber(source.iz)
+        if ix ~= nil and iz ~= nil and type(source.history) == "table" then
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local history = {}
+            for _, field in ipairs(PERSISTED_FIELDS) do
+                local value = tonumber(source.history[field])
+                if value ~= nil then history[field] = value end
+            end
+
+            self.touchCounter = self.touchCounter + 1
+            self.cells[key] = {
+                ix = ix,
+                iz = iz,
+                touch = self.touchCounter,
+                history = history
+            }
+            self.count = self.count + 1
+        end
+    end
+
+    if self.count > self.maxCells then self:prune(self.maxCells) end
+    return true
 end
 
 function History:clear()
