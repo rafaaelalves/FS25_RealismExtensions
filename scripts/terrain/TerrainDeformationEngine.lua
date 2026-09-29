@@ -29,6 +29,20 @@ local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     return h
 end
 
+local function diagnosticsEnabled()
+    return RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.diagnostics ~= nil
+        and RealismExtensionsConfig.diagnostics.verbose == true
+end
+
+local function diagCount(name, delta)
+    if not diagnosticsEnabled() then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + (delta or 1)
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -86,20 +100,6 @@ local function getCheapWheelSpeedMps(wheel, physics)
     end
 
     return 0
-end
-
-local function diagnosticsEnabled()
-    return RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.diagnostics ~= nil
-        and RealismExtensionsConfig.diagnostics.verbose == true
-end
-
-local function diagCount(name, delta)
-    if not diagnosticsEnabled() then return end
-    local runtime = RealismExtensionsTerrainRuntime
-    if runtime == nil then return end
-    runtime.stats = runtime.stats or {}
-    runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + (delta or 1)
 end
 
 local function cheapActivityGate(vehicle, wheel, physics, state)
