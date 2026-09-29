@@ -74,13 +74,34 @@ function RealismExtensionsState.registerProvider(provider)
     return true
 end
 
+local function resolveCompatibilityEnvironment()
+    if _G == nil then return nil end
+
+    -- FS25 script mods execute in separate Lua environments. Cross-mod symbols
+    -- are exposed through the mod environment stored under the active mod name,
+    -- not reliably as plain globals in this mod's own environment.
+    local env = _G["FS25_RealismCompatibility"]
+    if type(env) == "table" then return env end
+
+    return nil
+end
+
 function RealismExtensionsState.discoverProvider()
-    local provider = _G ~= nil and _G.RealismCompatStateProvider or nil
+    local env = resolveCompatibilityEnvironment()
+    local provider = env ~= nil and env.RealismCompatStateProvider or nil
+
+    -- Keep a same-environment fallback for isolated harnesses and development
+    -- builds, but production discovery should resolve the RC mod environment.
+    if provider == nil and _G ~= nil then
+        provider = _G.RealismCompatStateProvider
+    end
+
     if provider == nil then
         RealismExtensionsState.providerReason =
-            "RealismCompatStateProvider not available"
+            "FS25_RealismCompatibility environment/provider not available"
         return false, RealismExtensionsState.providerReason
     end
+
     return RealismExtensionsState.registerProvider(provider)
 end
 

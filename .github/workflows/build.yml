@@ -41,20 +41,27 @@ jobs:
               path = pathlib.Path(node.attrib["filename"])
               if not path.exists():
                   missing.append(str(path))
+          icon = root.findtext("iconFilename")
+          if not icon:
+              missing.append("<iconFilename>")
+          elif not pathlib.Path(icon).exists():
+              missing.append(icon)
           if missing:
-              raise SystemExit("Missing source files: " + ", ".join(missing))
+              raise SystemExit("Missing declared files: " + ", ".join(missing))
           PY
 
       - name: Build FS25 ZIP
         run: |
           rm -rf build
           mkdir -p build
-          zip -r build/FS25_RealismExtensions.zip modDesc.xml scripts             -x "*.DS_Store" "__MACOSX/*"
+          zip -r build/FS25_RealismExtensions.zip modDesc.xml icon.dds scripts \
+            -x "*.DS_Store" "__MACOSX/*"
 
       - name: Verify ZIP root
         run: |
           unzip -l build/FS25_RealismExtensions.zip
           unzip -p build/FS25_RealismExtensions.zip modDesc.xml >/dev/null
+          unzip -p build/FS25_RealismExtensions.zip icon.dds >/dev/null
 
       - uses: actions/upload-artifact@v4
         with:
