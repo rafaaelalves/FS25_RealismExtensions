@@ -74,3 +74,24 @@ end
 assert(RealismExtensionsState.getWheelContext({}, {}) == nil)
 
 print("state_contract_harness: OK")
+
+
+-- Optional hints must be forwarded without changing the provider contract version.
+local hintedSeen = nil
+local hintProvider = {
+    API_VERSION = 1,
+    WHEEL_CONTEXT_VERSION = 1,
+    getWheelContext = function(self, vehicle, wheel, hints)
+        hintedSeen = hints
+        return { contextVersion = 1, grounded = true }
+    end
+}
+assert(RealismExtensionsState.registerProvider(hintProvider))
+local hintedCtx = RealismExtensionsState.getWheelContext({}, {}, {
+    speedKph = 3.5,
+    wheelSurfaceSpeedMps = 1.25
+})
+assert(hintedCtx ~= nil)
+assert(hintedSeen ~= nil)
+assert(hintedSeen.speedKph == 3.5)
+assert(hintedSeen.wheelSurfaceSpeedMps == 1.25)
