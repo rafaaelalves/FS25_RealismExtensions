@@ -1,10 +1,25 @@
 RealismExtensionsTerrainPersistence = {
     FILE_NAME = "realismExtensionsTerrain.xml",
     ROOT_KEY = "realismExtensionsTerrain",
-    FORMAT_VERSION = 1
+    FORMAT_VERSION = 2
 }
 
 local Persistence = RealismExtensionsTerrainPersistence
+
+Persistence.GEOMETRY_SAMPLE_LIMIT = 512
+Persistence.GEOMETRY_TOLERANCE_M = 0.005
+Persistence.GEOMETRY_MISMATCH_RATIO = 0.10
+
+local function sampleTerrainHeight(x, z)
+    if getTerrainHeightAtWorldPos == nil
+        or g_terrainNode == nil
+        or g_terrainNode == 0 then
+        return nil
+    end
+    local ok, value = pcall(getTerrainHeightAtWorldPos, g_terrainNode, x, 0, z)
+    if ok and type(value) == "number" then return value end
+    return nil
+end
 
 local function getMapIdentity()
     local mission = g_currentMission
@@ -52,6 +67,13 @@ function Persistence.save(missionInfo, history)
         if h.lateralShearDistanceM ~= nil then xmlFile:setFloat(key .. "#lateralShearDistanceM", h.lateralShearDistanceM) end
         if h.slipExcavationDistanceM ~= nil then xmlFile:setFloat(key .. "#slipExcavationDistanceM", h.slipExcavationDistanceM) end
         if h.passCount ~= nil then xmlFile:setInt(key .. "#passCount", h.passCount) end
+
+        local worldX = cell.ix * snapshot.cellSizeM
+        local worldZ = cell.iz * snapshot.cellSizeM
+        local surfaceHeightM = sampleTerrainHeight(worldX, worldZ)
+        if surfaceHeightM ~= nil then
+            xmlFile:setFloat(key .. "#surfaceHeightM", surfaceHeightM)
+        end
     end
 
     xmlFile:save()
@@ -97,7 +119,8 @@ function Persistence.load(missionInfo, history)
         local cell = {
             ix = xmlFile:getInt(key .. "#ix"),
             iz = xmlFile:getInt(key .. "#iz"),
-            history = {}
+            history = {},
+            surfaceHeightM = xmlFile:getFloat(key .. "#surfaceHeightM")
         }
         if cell.ix == nil or cell.iz == nil then return end
 
@@ -111,6 +134,52 @@ function Persistence.load(missionInfo, history)
     end)
 
     xmlFile:delete()
+
+    -- Compare a bounded sample of persisted absolute surface heights with the
+    -- terrain that GIANTS actually loaded. If the sidecar survived but the
+    -- heightmap did not, restoring RE's rut/shear memory would create an
+    -- impossible state ("deep rut internally, flat terrain visually").
+    local sampleCount = math.min(
+        #snapshot.cells,
+        math.max(1, Persistence.GEOMETRY_SAMPLE_LIMIT)
+    )
+    local checked, mismatches, maxDelta = 0, 0, 0
+    if sampleCount > 0 then
+        local stride = math.max(1, math.floor(#snapshot.cells / sampleCount))
+        local i = 1
+        while i <= #snapshot.cells and checked < sampleCount do
+            local cell = snapshot.cells[i]
+            local expected = tonumber(cell.surfaceHeightM)
+            if expected ~= nil then
+                local x = cell.ix * snapshot.cellSizeM
+                local z = cell.iz * snapshot.cellSizeM
+                local actual = sampleTerrainHeight(x, z)
+                if actual ~= nil then
+                    checked = checked + 1
+                    local delta = math.abs(actual - expected)
+                    maxDelta = math.max(maxDelta, delta)
+                    if delta > Persistence.GEOMETRY_TOLERANCE_M then
+                        mismatches = mismatches + 1
+                    end
+                end
+            end
+            i = i + stride
+        end
+    end
+
+    if checked > 0 then
+        local ratio = mismatches / checked
+        if ratio >= Persistence.GEOMETRY_MISMATCH_RATIO then
+            return false, string.format(
+                "geometry mismatch checked=%d mismatches=%d ratio=%.3f maxDelta=%.4f",
+                checked,
+                mismatches,
+                ratio,
+                maxDelta
+            )
+        end
+    end
+
     local ok, reason = history:importSnapshot(snapshot)
     if not ok then return false, reason end
     return true, #snapshot.cells
