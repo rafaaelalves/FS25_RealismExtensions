@@ -155,12 +155,6 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     end
     diagCount("surfaceAccepted", 1)
     diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
-    diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
-    if (tonumber(surface.deformability01) or 0) <= 0 then
-        diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
-    else
-        diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
-    end
 
     local response = RealismExtensionsTerrainResponseModel.compute(
         context,
