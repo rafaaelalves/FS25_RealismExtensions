@@ -43,6 +43,17 @@ local function diagCount(name, delta)
     runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + (delta or 1)
 end
 
+local function diagMax(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    local previous = tonumber(runtime.stats[name])
+    if previous == nil or value > previous then
+        runtime.stats[name] = value
+    end
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -141,6 +152,24 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
         return false
+    end
+
+    diagMax("maxRutDepthM", tonumber(response.rutDepthM))
+    diagMax("maxRutCapacityM", tonumber(response.rutCapacityM))
+    diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM))
+    diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM))
+    diagMax("maxSlipSinkage01", tonumber(response.slipSinkage01))
+    diagMax("maxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier))
+
+    local bodySpeed = math.abs(tonumber(context.speedKph) or 0)
+    local wheelSpeed = math.abs(tonumber(context.wheelSurfaceSpeedMps) or 0)
+    if bodySpeed < Engine.DEFAULTS.inactiveSpeedKph
+        and wheelSpeed >= Engine.DEFAULTS.inactiveWheelSpeedMps then
+        diagMax("stationaryMaxRutDepthM", tonumber(response.rutDepthM))
+        diagMax("stationaryMaxRutCapacityM", tonumber(response.rutCapacityM))
+        diagMax("stationaryMaxSlipRutCapacityM", tonumber(response.slipRutCapacityM))
+        diagMax("stationaryMaxSlipSinkage01", tonumber(response.slipSinkage01))
+        diagMax("stationaryMaxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier))
     end
 
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
