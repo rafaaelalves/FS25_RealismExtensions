@@ -101,7 +101,7 @@ local function shouldSample(state, dt, intervalMs)
     return true, elapsed
 end
 
-function Engine:_processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs)
+function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
 
@@ -149,7 +149,7 @@ function Engine:_processSample(vehicle, wheel, wheelState, context, footprint, x
     return false
 end
 
-function Engine:_processWheel(vehicle, wheel, dt)
+function Engine.processWheel(vehicle, wheel, dt)
     if wheel == nil then return end
     local physics = wheel.physics
     if physics == nil then return end
@@ -195,7 +195,7 @@ function Engine:_processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        self:_processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs)
+        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs)
         return
     end
 
@@ -223,7 +223,7 @@ function Engine:_processWheel(vehicle, wheel, dt)
         local t = i / movingSamples
         local sx = lastX + (x - lastX) * t
         local sz = lastZ + (z - lastZ) * t
-        self:_processSample(
+        Engine.processSample(
             vehicle,
             wheel,
             state,
@@ -254,7 +254,7 @@ function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, 
     if spec == nil then return end
 
     for _, wheel in pairs(spec.wheels or {}) do
-        self:_processWheel(self, wheel, dt)
+        Engine.processWheel(self, wheel, dt)
     end
 end
 
