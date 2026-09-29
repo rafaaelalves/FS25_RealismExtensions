@@ -20,7 +20,7 @@
         <sourceFile filename="scripts/terrain/TerrainResponseModel.lua"/>
         <sourceFile filename="scripts/terrain/SpatialHistory.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
-        <sourceFile filename="scripts/terrain/TerrainDeformationEngine.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
 </modDesc>
