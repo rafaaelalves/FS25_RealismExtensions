@@ -9,6 +9,8 @@ Engine.DEFAULTS = {
     pathSpacingFactor = 0.45,
     minPathSpacingM = 0.10,
     maxSamplesPerWheelTick = 6,
+    inactiveSpeedKph = 0.10,
+    inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.015,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
@@ -49,6 +51,46 @@ function Engine:onLoad(savegame)
         wheels = wheels or {},
         states = setmetatable({}, { __mode = "k" })
     }
+end
+
+local function getCheapVehicleSpeedKph(vehicle)
+    if vehicle ~= nil and type(vehicle.getLastSpeed) == "function" then
+        local ok, value = pcall(vehicle.getLastSpeed, vehicle)
+        if ok and type(value) == "number" then return math.abs(value) end
+    end
+    return 0
+end
+
+local function getCheapWheelSpeedMps(wheel, physics)
+    if physics ~= nil and type(physics.mrLastWheelSpeed) == "number" then
+        return math.abs(physics.mrLastWheelSpeed)
+    end
+
+    if getWheelShapeAxleSpeed ~= nil
+        and wheel ~= nil
+        and wheel.node ~= nil
+        and physics ~= nil
+        and physics.wheelShape ~= nil then
+        local ok, axleSpeed = pcall(getWheelShapeAxleSpeed, wheel.node, physics.wheelShape)
+        if ok and type(axleSpeed) == "number" then
+            local radius = tonumber(physics.radius) or tonumber(physics.radiusOriginal)
+            if radius ~= nil and radius > 0 then
+                return math.abs(axleSpeed * radius)
+            end
+        end
+    end
+
+    return 0
+end
+
+local function cheapActivityGate(vehicle, wheel, physics, state)
+    if state.hadContext ~= true then return true end
+
+    local bodySpeed = getCheapVehicleSpeedKph(vehicle)
+    local wheelSpeed = getCheapWheelSpeedMps(wheel, physics)
+
+    return bodySpeed >= Engine.DEFAULTS.inactiveSpeedKph
+        or wheelSpeed >= Engine.DEFAULTS.inactiveWheelSpeedMps
 end
 
 local function shouldSample(state, dt, intervalMs)
@@ -126,6 +168,10 @@ function Engine:_processWheel(vehicle, wheel, dt)
     )
     if not sample then return end
 
+    if not cheapActivityGate(vehicle, wheel, physics, state) then
+        return
+    end
+
     local context = RealismExtensionsState.getWheelContext(vehicle, wheel)
     if context == nil
         or context.grounded ~= true
@@ -135,6 +181,8 @@ function Engine:_processWheel(vehicle, wheel, dt)
         state.lastX, state.lastZ = nil, nil
         return
     end
+
+    state.hadContext = true
 
     local footprint = RealismExtensionsFootprintModel.compute(context)
     if footprint == nil or footprint.available ~= true then
