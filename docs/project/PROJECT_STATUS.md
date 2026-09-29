@@ -29,6 +29,7 @@ Updated: 2026-09-29
 - StateContract v2 merged with a versioned RC provider boundary for wheel/ground state.
 - Pressure-driven FootprintModel merged: tire-pressure-aware contact area/ground pressure with low-confidence geometry fallback; crawlers fail closed pending grouped track modeling.
 - TerrainResponseModel merged: bounded wetness/pressure/slip/sink response with separate longitudinal excavation, lateral scrub, observed-sink anchoring and diminishing repeated-pass accumulation.
+- TerrainDeformation engine merged (disabled by default): vehicle-local specialization, bounded spatial history, path sampling, budgeted/quantized brush batching, server-only writes and explicit GIANTS queue lifecycle ownership.
 - MoistureSystem confirmed as KEEP + BRIDGE specialist with explicit agronomic/material moisture domains.
 - Loose-material ownership decomposed into rollover, overflow, cover, discharge, presentation and material rules; unified clean-room RE module remains a later candidate.
 - soundExpansionMP reclassified as a multi-capability patch pack rather than one sound subsystem.
@@ -37,8 +38,9 @@ Updated: 2026-09-29
 
 - Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
-- Design the spatial history / brush scheduler for TerrainDeformation.
-- Audit exact GIANTS TerrainDeformation calls and brush semantics before runtime writes.
+- Runtime-validate TerrainDeformation brush scale, queue callbacks and performance in FS25.
+- Validate player, attached implement, GIANTS AI and Courseplay behavior before replacing True AI Tracks.
+- Design savegame persistence or another safe reconciliation strategy for spatial response history.
 - Measure TerrainDeformation cost and persistence behavior.
 - Implement a small player-wheel deformation prototype behind a disabled-by-default feature flag.
 
