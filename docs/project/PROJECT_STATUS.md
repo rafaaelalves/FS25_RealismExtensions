@@ -30,6 +30,10 @@ Updated: 2026-09-29
 - Pressure-driven FootprintModel merged: tire-pressure-aware contact area/ground pressure with low-confidence geometry fallback; crawlers fail closed pending grouped track modeling.
 - TerrainResponseModel merged: bounded wetness/pressure/slip/sink response with separate longitudinal excavation, lateral scrub, observed-sink anchoring and diminishing repeated-pass accumulation.
 - TerrainDeformation engine merged (disabled by default): vehicle-local specialization, bounded spatial history, path sampling, budgeted/quantized brush batching, server-only writes and explicit GIANTS queue lifecycle ownership.
+- Long-session telemetry baseline captured (~8h57m): RC integrations remained stable under millions of wheel-path calls; MRRMS avoided 99.9978% redundant driven-wheel rebuilds and DynamicPTO scopes entered only ~0.31% of hot calls.
+- Computation ownership ledger added: separates effect ownership from actual avoided computation and tracks residual overhead (FarmKit plowing/dust wrappers, MudSoil wetness sampling, development telemetry).
+- RE packaging/provider discovery fixed: icon is now packaged/validated and RC provider is resolved through the FS25_RealismCompatibility mod environment rather than assuming a shared global.
+- ExtensionsStateProvider changed to reuse-first semantics for fresh MRMud wetness/structural-radius snapshots and MR slip cache, with telemetry to measure snapshot hits vs fallbacks.
 - MoistureSystem confirmed as KEEP + BRIDGE specialist with explicit agronomic/material moisture domains.
 - Loose-material ownership decomposed into rollover, overflow, cover, discharge, presentation and material rules; unified clean-room RE module remains a later candidate.
 - soundExpansionMP reclassified as a multi-capability patch pack rather than one sound subsystem.
