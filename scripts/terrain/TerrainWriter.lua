@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 2
+Writer.VERSION = 3
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -37,7 +37,15 @@ function Writer.new(options)
             droppedInvalid = 0,
             failedJobs = 0,
             droppedOverflow = 0,
-            coalescedBrushes = 0
+            coalescedBrushes = 0,
+            geometrySamples = 0,
+            geometryRequestedDepthM = 0,
+            geometryObservedLoweringM = 0,
+            geometryObservedRaisingM = 0,
+            geometryZeroChangeSamples = 0,
+            geometryShallowSamples = 0,
+            maxRequestedDepthM = 0,
+            maxObservedLoweringM = 0
         }
     }
     return setmetatable(self, { __index = Writer })
@@ -102,6 +110,34 @@ local function tryCoalesce(group, brush, factor)
     return false
 end
 
+
+local function sampleTerrainHeight(terrain, x, z)
+    if getTerrainHeightAtWorldPos == nil or terrain == nil or terrain == 0 then
+        return nil
+    end
+    local ok, value = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
+    if ok and type(value) == "number" then return value end
+    return nil
+end
+
+local function configureDeformationConstraints(deformation)
+    -- TerraFarm explicitly clears conservative collision/blocking limits before
+    -- applying terrain work. Match that precedent so RE's requested geometric
+    -- depth is not silently clipped by TerrainDeformation defaults.
+    if type(deformation.setOutsideAreaConstraints) == "function" then
+        deformation:setOutsideAreaConstraints(0, math.rad(75), math.rad(75))
+    end
+    if type(deformation.setBlockedAreaMaxDisplacement) == "function" then
+        deformation:setBlockedAreaMaxDisplacement(0)
+    end
+    if type(deformation.setDynamicObjectCollisionMask) == "function" then
+        deformation:setDynamicObjectCollisionMask(0)
+    end
+    if type(deformation.setDynamicObjectMaxDisplacement) == "function" then
+        deformation:setDynamicObjectMaxDisplacement(0)
+    end
+end
+
 function Writer:_submitBatch(depthM, brushes)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
@@ -114,6 +150,12 @@ function Writer:_submitBatch(depthM, brushes)
 
     deformation:enableAdditiveDeformationMode()
     deformation:setAdditiveHeightChangeAmount(-math.abs(depthM))
+    configureDeformationConstraints(deformation)
+
+    local heightSamples = {}
+    for i, brush in ipairs(brushes) do
+        heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
+    end
 
     for _, brush in ipairs(brushes) do
         deformation:addSoftCircleBrush(
@@ -128,7 +170,11 @@ function Writer:_submitBatch(depthM, brushes)
 
     local callbackTarget = {
         deformation = deformation,
-        owner = self
+        owner = self,
+        terrain = terrain,
+        depthM = math.abs(depthM),
+        brushes = brushes,
+        heightSamples = heightSamples
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
@@ -136,6 +182,41 @@ function Writer:_submitBatch(depthM, brushes)
             and TerrainDeformation.STATE_SUCCESS ~= nil
             and state ~= TerrainDeformation.STATE_SUCCESS then
             self.owner.stats.failedJobs = self.owner.stats.failedJobs + 1
+        elseif state == nil
+            or TerrainDeformation.STATE_SUCCESS == nil
+            or state == TerrainDeformation.STATE_SUCCESS then
+            local stats = self.owner.stats
+            for i, brush in ipairs(self.brushes or {}) do
+                local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
+                local afterY = sampleTerrainHeight(self.terrain, brush.x, brush.z)
+                if beforeY ~= nil and afterY ~= nil then
+                    local requested = self.depthM or 0
+                    local lowering = beforeY - afterY
+                    stats.geometrySamples = stats.geometrySamples + 1
+                    stats.geometryRequestedDepthM =
+                        stats.geometryRequestedDepthM + requested
+                    stats.maxRequestedDepthM =
+                        math.max(stats.maxRequestedDepthM, requested)
+
+                    if lowering > 0 then
+                        stats.geometryObservedLoweringM =
+                            stats.geometryObservedLoweringM + lowering
+                        stats.maxObservedLoweringM =
+                            math.max(stats.maxObservedLoweringM, lowering)
+                    elseif lowering < 0 then
+                        stats.geometryObservedRaisingM =
+                            stats.geometryObservedRaisingM + (-lowering)
+                    end
+
+                    if math.abs(lowering) <= 0.00005 then
+                        stats.geometryZeroChangeSamples =
+                            stats.geometryZeroChangeSamples + 1
+                    elseif requested > 0 and lowering < requested * 0.25 then
+                        stats.geometryShallowSamples =
+                            stats.geometryShallowSamples + 1
+                    end
+                end
+            end
         end
 
         local d = self.deformation
