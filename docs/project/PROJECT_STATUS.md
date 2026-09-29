@@ -26,6 +26,9 @@ Updated: 2026-09-29
 - Real Dirt Color 1.1.5.0 exact ZIP audited: strong clean-room replacement candidate via SurfaceContamination.
 - Exact six-mod source follow-up completed: MoistureSystem 2.0.0.8, True AI Tracks 2.2.0.1, RealPhysics LoadSpill 1.0.0.0, Loose Load 1.0.0.0, Mud Sprayer 1.0.0.0 and soundExpansionMP 1.2.0.0.
 - True AI Tracks promoted to a strong TerrainDeformation absorption target; exact source exposed an apparent still-broken 150 ms scan gate.
+- StateContract v2 merged with a versioned RC provider boundary for wheel/ground state.
+- Pressure-driven FootprintModel merged: tire-pressure-aware contact area/ground pressure with low-confidence geometry fallback; crawlers fail closed pending grouped track modeling.
+- TerrainResponseModel merged: bounded wetness/pressure/slip/sink response with separate longitudinal excavation, lateral scrub, observed-sink anchoring and diminishing repeated-pass accumulation.
 - MoistureSystem confirmed as KEEP + BRIDGE specialist with explicit agronomic/material moisture domains.
 - Loose-material ownership decomposed into rollover, overflow, cover, discharge, presentation and material rules; unified clean-room RE module remains a later candidate.
 - soundExpansionMP reclassified as a multi-capability patch pack rather than one sound subsystem.
@@ -34,8 +37,8 @@ Updated: 2026-09-29
 
 - Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
-- Define exact slip semantics and units.
-- Define terrain/wetness/freeze/source ownership.
+- Design the spatial history / brush scheduler for TerrainDeformation.
+- Audit exact GIANTS TerrainDeformation calls and brush semantics before runtime writes.
 - Measure TerrainDeformation cost and persistence behavior.
 - Implement a small player-wheel deformation prototype behind a disabled-by-default feature flag.
 
