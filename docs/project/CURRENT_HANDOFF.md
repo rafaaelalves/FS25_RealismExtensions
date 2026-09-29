@@ -229,3 +229,55 @@ Safe work while waiting for v6 runtime feedback:
 - improve terrain geometry telemetry so overlapping async jobs do not masquerade as one-brush depth;
 - audit current provider contract for any Mud outputs worth exposing instead of re-deriving;
 - keep gameplay tuning changes minimal until the user's v6 field/road test returns.
+
+
+## 2026-09-29 follow-up while waiting for v6 runtime test
+
+Work completed without changing v6 gameplay calibration:
+
+### Surface diagnostics
+The next RE runtime log now attributes samples and accepted geometry by surface category:
+- FIELD_SOFT
+- FIELD
+- FIELD_FIRM
+- MUD
+- DIRT_WET
+- DIRT_COMPACTED
+- GRAVEL_WET
+- GRAVEL
+- HARD
+- UNKNOWN
+
+Each category reports seen samples, accepted brushes and cumulative applied RE depth. This is intended to validate map-specific terrain classification rather than infer it from player perception.
+
+### Geometry diagnostics
+GIANTS TerrainDeformation callbacks expose displacedVolume. RE now records:
+- callbackSuccessJobs
+- callbackDisplacedVolumeM3
+- callbackMaxDisplacedVolumeM3
+- callbackVolumeMissing
+
+This callback volume is now the preferred async geometry metric.
+
+The old before/after terrain-height probe remains for debugging only and is explicitly labeled as a probe because queued/overlapping jobs can alter the sampled point between submission and callback. Its cumulative lowering/max-lowering values must not be interpreted as one-job or unique terrain depth.
+
+### RC -> RE hot-path reuse
+A small duplicate computation was identified:
+- TerrainDeformationEngine already obtains vehicle speed and wheel-surface speed for its cheap activity gate;
+- ExtensionsStateProvider was resolving the same quantities again immediately afterwards.
+
+RE now passes optional speed hints through StateContract.getWheelContext(..., hints).
+RC branch `perf/extensions-state-reuse-hints` / draft PR #11 consumes those hints and records:
+- speedHintHits
+- wheelSurfaceSpeedHintHits
+
+The provider API/context version remains unchanged; older RC providers simply ignore the optional third argument, so this is backward-compatible.
+
+### Ownership conclusion from latest v5 telemetry
+The latest runtime evidence supports the intended composition:
+- MR slip is reused via snapshots (no direct RE slip reads in captured sessions);
+- Mud wetness/sink/ground state remains authoritative;
+- RC resolves/suppresses overlap and exposes normalized context;
+- RE owns rut geometry/consequence only.
+
+Do not replace Mud/MR formulas inside RE merely to centralize code. Revisit ownership only through the accepted clean-room specialist replacement policy.
