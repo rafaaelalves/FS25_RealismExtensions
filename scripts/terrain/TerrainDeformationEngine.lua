@@ -51,6 +51,11 @@ function Engine:onLoad(savegame)
         wheels = wheels or {},
         states = setmetatable({}, { __mode = "k" })
     }
+
+    diagCount("vehiclesLoaded", 1)
+    local wheelCount = 0
+    for _ in pairs(wheels or {}) do wheelCount = wheelCount + 1 end
+    diagCount("wheelsAttached", wheelCount)
 end
 
 local function getCheapVehicleSpeedKph(vehicle)
@@ -83,14 +88,32 @@ local function getCheapWheelSpeedMps(wheel, physics)
     return 0
 end
 
-local function cheapActivityGate(vehicle, wheel, physics, state)
-    if state.hadContext ~= true then return true end
+local function diagnosticsEnabled()
+    return RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.diagnostics ~= nil
+        and RealismExtensionsConfig.diagnostics.verbose == true
+end
 
+local function diagCount(name, delta)
+    if not diagnosticsEnabled() then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + (delta or 1)
+end
+
+local function cheapActivityGate(vehicle, wheel, physics, state)
     local bodySpeed = getCheapVehicleSpeedKph(vehicle)
     local wheelSpeed = getCheapWheelSpeedMps(wheel, physics)
 
+    if state.hadContext ~= true then
+        return true, bodySpeed, wheelSpeed
+    end
+
     return bodySpeed >= Engine.DEFAULTS.inactiveSpeedKph
-        or wheelSpeed >= Engine.DEFAULTS.inactiveWheelSpeedMps
+        or wheelSpeed >= Engine.DEFAULTS.inactiveWheelSpeedMps,
+        bodySpeed,
+        wheelSpeed
 end
 
 local function shouldSample(state, dt, intervalMs)
@@ -102,6 +125,7 @@ local function shouldSample(state, dt, intervalMs)
 end
 
 function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs)
+    diagCount("samplesProcessed", 1)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
 
@@ -114,7 +138,10 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         history,
         dtMs
     )
-    if response == nil or response.available ~= true then return false end
+    if response == nil or response.available ~= true then
+        diagCount("responseRejects", 1)
+        return false
+    end
 
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
     local appliedDepth = math.min(
@@ -126,6 +153,7 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         -- Preserve shear/pass history even when the geometric delta is too
         -- small to justify a brush.
         historyStore:commit(x, z, copyHistoryForAppliedDepth(response, previousDepth, 0))
+        diagCount("belowBrushThreshold", 1)
         return false
     end
 
@@ -143,14 +171,17 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
             z,
             copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
         )
+        diagCount("brushesAccepted", 1)
         return true
     end
 
+    diagCount("writerRejects", 1)
     return false
 end
 
 function Engine.processWheel(vehicle, wheel, dt)
     if wheel == nil then return end
+    diagCount("wheelTicks", 1)
     local physics = wheel.physics
     if physics == nil then return end
 
@@ -167,28 +198,54 @@ function Engine.processWheel(vehicle, wheel, dt)
         Engine.DEFAULTS.sampleIntervalMs
     )
     if not sample then return end
+    diagCount("sampleTicks", 1)
 
-    if not cheapActivityGate(vehicle, wheel, physics, state) then
+    local active, bodySpeedKph, wheelSpeedMps =
+        cheapActivityGate(vehicle, wheel, physics, state)
+    if not active then
+        diagCount("activityGateSkips", 1)
         return
     end
 
+    if bodySpeedKph < Engine.DEFAULTS.inactiveSpeedKph
+        and wheelSpeedMps >= Engine.DEFAULTS.inactiveWheelSpeedMps then
+        diagCount("stationaryWheelspinCandidates", 1)
+    end
+
+    diagCount("contextRequests", 1)
     local context = RealismExtensionsState.getWheelContext(vehicle, wheel)
-    if context == nil
-        or context.grounded ~= true
-        or context.soilContact ~= true
-        or type(context.worldX) ~= "number"
-        or type(context.worldZ) ~= "number" then
+    if context == nil then
+        diagCount("contextUnavailable", 1)
+        state.lastX, state.lastZ = nil, nil
+        return
+    end
+    if context.grounded ~= true then
+        diagCount("notGrounded", 1)
+        state.lastX, state.lastZ = nil, nil
+        return
+    end
+    if context.soilContact ~= true then
+        diagCount("notSoilContact", 1)
+        state.lastX, state.lastZ = nil, nil
+        return
+    end
+    if type(context.worldX) ~= "number" or type(context.worldZ) ~= "number" then
+        diagCount("missingContactPosition", 1)
         state.lastX, state.lastZ = nil, nil
         return
     end
 
+    diagCount("contextAccepted", 1)
     state.hadContext = true
 
     local footprint = RealismExtensionsFootprintModel.compute(context)
     if footprint == nil or footprint.available ~= true then
+        diagCount("footprintRejects", 1)
         state.lastX, state.lastZ = context.worldX, context.worldZ
         return
     end
+
+    diagCount("footprintAccepted", 1)
 
     local x, z = context.worldX, context.worldZ
     local lastX, lastZ = state.lastX, state.lastZ
@@ -215,6 +272,9 @@ function Engine.processWheel(vehicle, wheel, dt)
     -- Stationary wheelspin is still processed at the current contact cell.
     if pathDistance < Engine.DEFAULTS.minPathSpacingM then
         movingSamples = 1
+        diagCount("stationaryContactSamples", 1)
+    else
+        diagCount("movingContactSamples", movingSamples)
     end
 
     local sampleDt = elapsedMs / movingSamples
@@ -237,6 +297,7 @@ function Engine.processWheel(vehicle, wheel, dt)
 end
 
 function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, isSelected)
+    diagCount("vehicleUpdateCalls", 1)
     if RealismExtensionsConfig == nil
         or RealismExtensionsConfig.modules == nil
         or RealismExtensionsConfig.modules.TerrainDeformation ~= true then
@@ -264,10 +325,12 @@ end
 
 RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     history = nil,
-    writer = nil
+    writer = nil,
+    stats = {}
 }
 
 function RealismExtensionsTerrainRuntime.initialize()
+    RealismExtensionsTerrainRuntime.stats = {}
     if RealismExtensionsTerrainRuntime.history == nil then
         RealismExtensionsTerrainRuntime.history = RealismExtensionsSpatialHistory.new({
             cellSizeM = Engine.DEFAULTS.historyCellSizeM,
@@ -287,6 +350,14 @@ function RealismExtensionsTerrainRuntime.flush()
     return 0, 0
 end
 
+function RealismExtensionsTerrainRuntime.getDiagnostics()
+    local out = {}
+    for key, value in pairs(RealismExtensionsTerrainRuntime.stats or {}) do
+        out[key] = value
+    end
+    return out
+end
+
 function RealismExtensionsTerrainRuntime.clear()
     if RealismExtensionsTerrainRuntime.history ~= nil then
         RealismExtensionsTerrainRuntime.history:clear()
@@ -296,35 +367,5 @@ function RealismExtensionsTerrainRuntime.clear()
     end
     RealismExtensionsTerrainRuntime.history = nil
     RealismExtensionsTerrainRuntime.writer = nil
+    RealismExtensionsTerrainRuntime.stats = {}
 end
-
--- Inject the specialization into every wheeled vehicle type. This gives player,
--- GIANTS AI, Courseplay-controlled vehicles and wheeled implements the same
--- event-driven path without scanning g_currentMission.vehicles.
-if g_specializationManager ~= nil and g_specializationManager:getSpecializationByName(Engine.SPEC_NAME) == nil then
-    g_specializationManager:addSpecialization(
-        Engine.SPEC_NAME,
-        "RealismExtensionsTerrainDeformationEngine",
-        g_currentModDirectory .. "scripts/terrain/TerrainDeformationEngine.lua",
-        g_currentModName
-    )
-end
-
-local function installSpecialization(typeManager)
-    if typeManager == nil or typeManager.typeName ~= "vehicle" then return end
-
-    local fullName = g_currentModName .. "." .. Engine.SPEC_NAME
-    for typeName, typeDef in pairs(typeManager:getTypes()) do
-        if typeDef ~= nil
-            and typeName ~= "locomotive"
-            and typeDef.specializationsByName["wheels"] ~= nil
-            and typeDef.specializationsByName[fullName] == nil then
-            typeManager:addSpecialization(typeName, fullName)
-        end
-    end
-end
-
-TypeManager.validateTypes = Utils.appendedFunction(
-    TypeManager.validateTypes,
-    installSpecialization
-)
