@@ -253,7 +253,10 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("contextRequests", 1)
-    local context = RealismExtensionsState.getWheelContext(vehicle, wheel)
+    local context = RealismExtensionsState.getWheelContext(vehicle, wheel, {
+        speedKph = bodySpeedKph,
+        wheelSurfaceSpeedMps = wheelSpeedMps
+    })
     if context == nil then
         diagCount("contextUnavailable", 1)
         state.lastX, state.lastZ = nil, nil
