@@ -15,7 +15,9 @@ Status vocabulary:
 |---|---|---|---|
 | base drivetrain / gearbox | MoreRealistic | DO_NOT_DUPLICATE | consume authoritative state |
 | base traction/friction | MR + Mud + RC | DO_NOT_DUPLICATE | consume slip/grip state |
-| local wetness / sink / terrain resistance / stuck | MudSystemPhysics | DO_NOT_DUPLICATE | consume terrain/contact state |
+| physical ground wetness / sink / terrain resistance / stuck | MudSystemPhysics | DO_NOT_DUPLICATE | consume terrain/contact state; do not conflate with agronomic/material moisture |
+| agronomic field moisture | MoistureSystem | EXTERNAL/BRIDGE | keep specialist; consume for crop/field systems |
+| material moisture | MoistureSystem | EXTERNAL/BRIDGE | keep specialist; consume for piles/bales/storage/quality |
 | tire/track wear state | Reifenverschleiss | CANDIDATE_ABSORB | audit logic, persistence, visuals and workshop separately |
 | visual tire/track wear | Reifenverschleiss custom shader/material path | EVALUATE | asset/shader strategy required before replacement |
 | mechanical system degradation | RMS | EXTERNAL | keep specialist; Extensions may surface normalized state |
@@ -33,10 +35,15 @@ Status vocabulary:
 | crop destruction outside owned fields | CropDestructionAnywhere / vanilla rule | CANDIDATE_ABSORB | likely small part of CropInteraction |
 | off-field grass/meadow physical damage | FarmKit | CANDIDATE_ABSORB | later CropInteraction research |
 | wheel dirt/mud state and particles | Mud | DO_NOT_DUPLICATE | keep Mud owner |
+| dry/wet mud-spray presentation | Mud Sprayer / Mud effects | EVALUATE | behavior may be replaced clean-room; do not duplicate Mud physics or reuse unlicensed assets |
 | implement dust | FarmKit | EVALUATE | can be improved/calibrated later; no immediate ownership conflict |
 | road water spray | FarmKit | EVALUATE | useful visual effect; asset strategy required |
 | engine sound spatial propagation | FarmKit | EVALUATE | audit against soundExpansionMP before ownership decision |
-| load spill | RealPhysics LoadSpill | EXTERNAL | keep specialist for now |
+| extra operational/MP sound behavior | soundExpansionMP | EXTERNAL | keep external unless a specific broken/duplicate capability is identified |
+| rollover spill | RealPhysics LoadSpill / Loose Load overlap | EVALUATE | decide by capability; avoid double owner |
+| loading overflow / cover containment | Loose Load | EVALUATE | distinct from rollover spill; candidate for future unified material system |
+| discharge dynamics | RealPhysics LoadSpill | EXTERNAL | keep specialist for now |
+| spill presentation | Loose Load / RealPhysics | EVALUATE | separate visuals/sound from physical spill ownership |
 | straw refeed | FarmKit | EVALUATE | unique; future bridge to RealisticHarvesting before replacement |
 | planner / PF field material overview | FarmKit | EVALUATE | useful but not a first-wave realism-physics feature |
 | persistent surface contamination / dirt color | RealDirtColor + Mud visual state | CANDIDATE_ABSORB | plan clean-room SurfaceContamination using authoritative contact state and GIANTS dirtColor backend |
