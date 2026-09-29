@@ -142,7 +142,9 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
 
     local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
         and RealismExtensionsTerrainSurfaceResponse.resolve(context, x, z) or nil
-    if surface == nil or surface.available ~= true then
+    if surface == nil
+        or surface.available ~= true
+        or (tonumber(surface.deformability01) or 0) <= 0 then
         diagCount("surfaceRejects", 1)
         return false
     end
