@@ -22,12 +22,12 @@ Updated: 2026-09-28
 - Dynamic PTO 1.1.2.0 audited as a strong absorption candidate.
 - Reifen 1.2.2.67 audited as a layered absorption candidate.
 - FarmKit capability/asset replacement scope documented.
-- Realistic 4x4 audit scaffold created; exact ZIP still pending.
+- Realistic 4x4 Traction System 1.4.0.0 exact ZIP audited: keep RMS as physical drivetrain owner; retain richer AUTO/decision ideas for RMS-facing improvement.
+- Real Dirt Color 1.1.5.0 exact ZIP audited: strong clean-room replacement candidate via SurfaceContamination.
 
 ## Open before first gameplay prototype
 
-- Audit the exact Realistic 4x4 Traction System ZIP once attached.
-- Continue user-supplied candidate-mod audits across terrain, drivetrain UX, PTO, tire wear, crop and visual effects.
+- Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, PTO, tire wear, crop, contamination and visual effects.
 - Confirm normalized wheel-state provider design with RealismCompatibility.
 - Define exact slip semantics and units.
 - Define terrain/wetness/freeze/source ownership.
