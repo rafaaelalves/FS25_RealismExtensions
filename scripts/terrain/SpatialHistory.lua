@@ -106,15 +106,25 @@ function History:exportSnapshot()
 
     for _, cell in pairs(self.cells) do
         local values = {}
+        local material = false
         for _, field in ipairs(PERSISTED_FIELDS) do
             local value = cell.history ~= nil and tonumber(cell.history[field]) or nil
-            if value ~= nil then values[field] = value end
+            if value ~= nil then
+                values[field] = value
+                if math.abs(value) > 0.000001 then material = true end
+            end
         end
-        snapshot.cells[#snapshot.cells + 1] = {
-            ix = cell.ix,
-            iz = cell.iz,
-            history = values
-        }
+
+        -- Geometry itself is persisted by the game. RE persists only domain
+        -- memory that can change future response, so empty/default cells do
+        -- not belong in the savegame sidecar.
+        if material then
+            snapshot.cells[#snapshot.cells + 1] = {
+                ix = cell.ix,
+                iz = cell.iz,
+                history = values
+            }
+        end
     end
 
     table.sort(snapshot.cells, function(a, b)
