@@ -7,6 +7,7 @@ Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
     maxJobsPerFrame = 4,
     maxBrushesPerJob = 8,
+    maxQueuedBrushes = 512,
     depthBucketM = 0.0005,
     minDepthM = 0.0004,
     minRadiusM = 0.10,
@@ -33,13 +34,19 @@ function Writer.new(options)
             submittedBrushes = 0,
             submittedJobs = 0,
             droppedInvalid = 0,
-            failedJobs = 0
+            failedJobs = 0,
+            droppedOverflow = 0
         }
     }
     return setmetatable(self, { __index = Writer })
 end
 
 function Writer:enqueue(brush)
+    if #self.queue >= math.max(1, math.floor(self.options.maxQueuedBrushes)) then
+        self.stats.droppedOverflow = self.stats.droppedOverflow + 1
+        return false
+    end
+
     if type(brush) ~= "table"
         or type(brush.x) ~= "number"
         or type(brush.z) ~= "number"
