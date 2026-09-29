@@ -57,7 +57,7 @@ g_terrainDeformationQueue = {
             local key = tostring(brush.x) .. ":" .. tostring(brush.z)
             heights[key] = (heights[key] or 10) + deformation.depth
         end
-        target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0, nil)
+        target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0.125, nil)
         return #queued
     end
 }
@@ -106,3 +106,8 @@ assert(w.stats.geometrySamples == 6)
 assert(w.stats.geometryObservedLoweringM > 0)
 assert(w.stats.geometryRequestedDepthM > 0)
 assert(w.stats.maxObservedLoweringM > 0)
+
+assert(w.stats.callbackSuccessJobs == 3)
+assert(math.abs(w.stats.callbackDisplacedVolumeM3 - 0.375) < 0.000001)
+assert(math.abs(w.stats.callbackMaxDisplacedVolumeM3 - 0.125) < 0.000001)
+assert(w.stats.callbackVolumeMissing == 0)
