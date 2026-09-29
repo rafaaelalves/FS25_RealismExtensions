@@ -142,13 +142,25 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
 
     local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
         and RealismExtensionsTerrainSurfaceResponse.resolve(context, x, z) or nil
-    if surface == nil
-        or surface.available ~= true
-        or (tonumber(surface.deformability01) or 0) <= 0 then
+    if surface == nil or surface.available ~= true then
         diagCount("surfaceRejects", 1)
+        diagCount("surfaceSeen_UNKNOWN", 1)
+        return false
+    end
+    diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
+    if (tonumber(surface.deformability01) or 0) <= 0 then
+        diagCount("surfaceRejects", 1)
+        diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
         return false
     end
     diagCount("surfaceAccepted", 1)
+    diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
+    diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
+    if (tonumber(surface.deformability01) or 0) <= 0 then
+        diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
+    else
+        diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
+    end
 
     local response = RealismExtensionsTerrainResponseModel.compute(
         context,
@@ -204,6 +216,8 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         )
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
+        diagCount("surfaceBrushes_" .. tostring(surface.category or "UNKNOWN"), 1)
+        diagCount("surfaceAppliedDepth_" .. tostring(surface.category or "UNKNOWN"), appliedDepth)
         if stationaryWheelspin == true then
             diagCount("stationaryBrushesAccepted", 1)
             diagCount("stationaryAppliedDepthM", appliedDepth)
