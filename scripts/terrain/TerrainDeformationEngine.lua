@@ -5,13 +5,13 @@ Engine.SPEC_NAME = "realismExtensionsTerrainDeformation"
 Engine.SPEC_FIELD = "spec_" .. Engine.SPEC_NAME
 
 Engine.DEFAULTS = {
-    sampleIntervalMs = 100,
+    sampleIntervalMs = 250,
     pathSpacingFactor = 0.45,
     minPathSpacingM = 0.10,
     maxSamplesPerWheelTick = 6,
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
-    maxBrushDepthM = 0.015,
+    maxBrushDepthM = 0.003,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
@@ -140,11 +140,23 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     local history = historyStore:get(x, z)
     local previousDepth = history ~= nil and tonumber(history.rutDepthM) or 0
 
+    local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
+        and RealismExtensionsTerrainSurfaceResponse.resolve(context, x, z) or nil
+    if surface == nil or surface.available ~= true then
+        diagCount("surfaceRejects", 1)
+        return false
+    end
+    diagCount("surfaceAccepted", 1)
+
     local response = RealismExtensionsTerrainResponseModel.compute(
         context,
         footprint,
         history,
-        dtMs
+        dtMs,
+        {
+            absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
+            absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
+        }
     )
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
@@ -163,6 +175,8 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         desiredDelta,
         Engine.DEFAULTS.maxBrushDepthM
     )
+    appliedDepth = appliedDepth
+        * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
     if appliedDepth <= writer.options.minDepthM then
         -- Preserve shear/pass history even when the geometric delta is too
@@ -245,11 +259,6 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
     if context.grounded ~= true then
         diagCount("notGrounded", 1)
-        state.lastX, state.lastZ = nil, nil
-        return
-    end
-    if context.soilContact ~= true then
-        diagCount("notSoilContact", 1)
         state.lastX, state.lastZ = nil, nil
         return
     end
@@ -384,6 +393,10 @@ function RealismExtensionsTerrainRuntime.getDiagnostics()
 end
 
 function RealismExtensionsTerrainRuntime.clear()
+    if RealismExtensionsTerrainSurfaceResponse ~= nil
+        and RealismExtensionsTerrainSurfaceResponse.clear ~= nil then
+        RealismExtensionsTerrainSurfaceResponse.clear()
+    end
     if RealismExtensionsTerrainRuntime.history ~= nil then
         RealismExtensionsTerrainRuntime.history:clear()
     end
