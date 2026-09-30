@@ -62,9 +62,33 @@ Expected v7 result:
 - true wheelspin must still excavate progressively;
 - diagnostics must reveal whether dual support width is actually reaching RE and what ground pressure the current stack computes.
 
+## Additional runtime findings from the S780 field test
+
+The user lowered Mud tire pressure from 2.40 bar to the automatic field target near 1.00 bar and was able to recover the S780 from the original rut. During the later re-stuck period:
+- local wetness observed by RC was commonly ~0.32-0.54, not near 1.0 saturation;
+- wide support reached RE (max support width 1.30 m, ratio up to 2.0);
+- contact area reached ~0.62 m2 and minimum calculated ground pressure ~110 kPa;
+- MRMud telemetry showed applied radius deltas typically around 0.07-0.13 m rather than the previous raw ~0.30 m sink interpretation;
+- perma-stuck remained false and drag ratio stayed low while vehicle speed fell to fractions of km/h.
+
+This makes a chassis/terrain high-centering hypothesis plausible: the wheel/radius model may still have traction available while the undeformed terrain between wheel tracks contacts the vehicle body.
+
+Do not assume a dual must be represented as two separate RE contacts yet. The exact SoilCompaction source records an in-game precedent where FS exposes a dual/twin set as one wider physics contact. We need authoritative spacing/visual geometry before splitting that footprint.
+
+## Diagnostics added after that finding
+
+- RE now measures the terrain height at the midpoint between left/right wheel contacts on each axle and compares it with the plane interpolated between both wheel-track heights.
+- Runtime telemetry reports max central crest and counts above 5/10/15 cm.
+- The diagnostic is slope-invariant in the harness: a planar cross-slope produces zero crest while a true 12 cm center ridge is reported as 12 cm.
+- RC MRRMS now emits per-vehicle drivetrain state: primary/engageable wheel indices, active 4WD state and MR-driven wheel indices/count. This avoids interpreting the old global lastDrivenWheelCount gauge as if it necessarily belonged to the S780.
+
 ## Completion blockers after v7
 
-- validate dual/twin behavior from runtime evidence;
+- validate that the v7 distance-based response behaves correctly in runtime;
+- determine whether central terrain crest/high-centering is the dominant cause of the remaining S780 stalls;
+- verify S780 rear-wheel-assist/4WD reaches MR wheel ownership correctly;
+- validate dual/twin behavior without inventing unsupported split-contact geometry;
+- design soft-ground underbody/belly interaction only after high-centering is measured;
 - implement grouped crawler/track support;
 - validate player + GIANTS AI + Courseplay + wheeled implements with True AI Tracks disabled;
 - resolve native AI tire-track permission ownership;
