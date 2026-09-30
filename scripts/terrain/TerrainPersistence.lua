@@ -66,6 +66,7 @@ function Persistence.save(missionInfo, history)
         if h.longitudinalShearDistanceM ~= nil then xmlFile:setFloat(key .. "#longitudinalShearDistanceM", h.longitudinalShearDistanceM) end
         if h.lateralShearDistanceM ~= nil then xmlFile:setFloat(key .. "#lateralShearDistanceM", h.lateralShearDistanceM) end
         if h.slipExcavationDistanceM ~= nil then xmlFile:setFloat(key .. "#slipExcavationDistanceM", h.slipExcavationDistanceM) end
+        if h.deformationExposure ~= nil then xmlFile:setFloat(key .. "#deformationExposure", h.deformationExposure) end
         if h.passCount ~= nil then xmlFile:setInt(key .. "#passCount", h.passCount) end
 
         local worldX = cell.ix * snapshot.cellSizeM
@@ -129,6 +130,7 @@ function Persistence.load(missionInfo, history)
         h.longitudinalShearDistanceM = xmlFile:getFloat(key .. "#longitudinalShearDistanceM")
         h.lateralShearDistanceM = xmlFile:getFloat(key .. "#lateralShearDistanceM")
         h.slipExcavationDistanceM = xmlFile:getFloat(key .. "#slipExcavationDistanceM")
+        h.deformationExposure = xmlFile:getFloat(key .. "#deformationExposure")
         h.passCount = xmlFile:getInt(key .. "#passCount")
         snapshot.cells[#snapshot.cells + 1] = cell
     end)

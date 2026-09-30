@@ -1,7 +1,7 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 2
+History.VERSION = 3
 
 function History.new(options)
     options = options or {}
@@ -94,6 +94,7 @@ local PERSISTED_FIELDS = {
     "longitudinalShearDistanceM",
     "lateralShearDistanceM",
     "slipExcavationDistanceM",
+    "deformationExposure",
     "passCount"
 }
 

@@ -100,6 +100,29 @@ RealismExtensionsTerrainRuntime = {
 
 dofile("scripts/terrain/TerrainDeformationEngine.lua")
 
+
+-- Central crest diagnostic must be slope-invariant: a planar cross-slope
+-- should produce ~0 crest, while a raised center should be measured directly.
+local flatSlope = RealismExtensionsTerrainDeformationEngine.computeCentralTerrainCrest(
+    {x=-1,z=0},
+    {x=1,z=0},
+    function(x,z) return 0.1 * x end
+)
+assert(flatSlope ~= nil)
+assert(math.abs(flatSlope.crestHeightM) < 0.000001)
+assert(math.abs(flatSlope.axleSpanM - 2.0) < 0.000001)
+
+local centerRidge = RealismExtensionsTerrainDeformationEngine.computeCentralTerrainCrest(
+    {x=-1,z=0},
+    {x=1,z=0},
+    function(x,z)
+        if math.abs(x) < 0.001 then return 0.12 end
+        return 0
+    end
+)
+assert(centerRidge ~= nil)
+assert(math.abs(centerRidge.crestHeightM - 0.12) < 0.000001)
+
 local wheelA = { physics = {}, testX = 0 }
 local wheelB = { physics = {}, testX = 0.5 }
 local bodySpeedKph = 5

@@ -1,7 +1,7 @@
 RealismExtensionsTerrainResponseModel = RealismExtensionsTerrainResponseModel or {}
 local Model = RealismExtensionsTerrainResponseModel
 
-Model.VERSION = 2
+Model.VERSION = 3
 
 Model.DEFAULTS = {
     referencePressurePa = 100000,
@@ -36,10 +36,15 @@ Model.DEFAULTS = {
     longitudinalSlipDeadband = 0.025,
     lateralSlipDeadband = 0.020,
 
+    -- Incremental exposure weights. These are applied to physical travel /
+    -- relative contact displacement, not once per update sample. This keeps
+    -- rut progression approximately invariant to speed and sampling cadence.
     basePassDrive = 0.10,
     verticalPassWeight = 0.32,
     longitudinalPassWeight = 0.48,
     lateralPassWeight = 0.28,
+    normalPassCharacteristicLengthFactor = 1.0,
+    normalPassCharacteristicMinM = 0.10,
 
     lateralWidthGain = 0.35,
     sinkWidthGain = 0.18,
@@ -177,6 +182,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         computeSoilSusceptibility(context, options)
 
     local dtSeconds = math.max(0, tonumber(dtMs) or 0) / 1000
+    local vehicleSpeedMps = math.abs(tonumber(context.speedKph) or 0) / 3.6
+    local normalTravelDistanceM = vehicleSpeedMps * dtSeconds
 
     local longIncrement = computeShearIncrement(
         context,
@@ -312,14 +319,56 @@ function Model.compute(context, footprint, history, dtMs, options)
         1
     )
 
-    local passDrive = clamp(
-        options.basePassDrive
-        + options.verticalPassWeight * verticalImprint01
-        + options.longitudinalPassWeight * excavation01
-        + options.lateralPassWeight * scrub01,
-        0,
-        0.95
+    -- Progress is driven by incremental physical exposure, not by how often
+    -- this function happens to be sampled. A slow wheel therefore does not
+    -- create extra "passes" merely because it remains in the same history cell
+    -- for more update ticks.
+    --
+    -- Normal rolling uses body travel relative to the contact-patch length.
+    -- Longitudinal/lateral damage use newly accumulated relative displacement.
+    -- The exponential form composes cleanly when one physical traversal is
+    -- subdivided into many smaller samples.
+    local footprintLengthM = tonumber(footprint.footprintLengthM)
+    if not validPositive(footprintLengthM) then
+        footprintLengthM = math.max(
+            tonumber(options.normalPassCharacteristicMinM) or 0.10,
+            radius * 0.50
+        )
+    end
+    local normalCharacteristicM = math.max(
+        tonumber(options.normalPassCharacteristicMinM) or 0.10,
+        footprintLengthM
+            * math.max(0.05, tonumber(options.normalPassCharacteristicLengthFactor) or 1)
     )
+
+    local normalPassExposure = normalTravelDistanceM / normalCharacteristicM
+    local longitudinalIncrementExposure = longIncrement
+        / math.max(0.001, tonumber(options.longitudinalShearK) or 0.18)
+    local lateralIncrementExposure = latIncrement
+        / math.max(0.001, tonumber(options.lateralShearK) or 0.14)
+
+    local verticalExposureDrive = normalPassExposure * (
+        math.max(0, tonumber(options.basePassDrive) or 0)
+        + math.max(0, tonumber(options.verticalPassWeight) or 0) * verticalImprint01
+    )
+    local longitudinalExposureDrive =
+        math.max(0, tonumber(options.longitudinalPassWeight) or 0)
+        * longitudinalIncrementExposure
+        * susceptibility
+        * math.min(1.25, pressureDrive)
+    local lateralExposureDrive =
+        math.max(0, tonumber(options.lateralPassWeight) or 0)
+        * lateralIncrementExposure
+        * susceptibility
+        * math.min(1.15, pressureDrive)
+
+    local incrementalExposure = math.max(
+        0,
+        verticalExposureDrive
+            + longitudinalExposureDrive
+            + lateralExposureDrive
+    )
+    local passDrive = clamp(1 - math.exp(-incrementalExposure), 0, 0.95)
 
     local previousRutM = clamp(
         tonumber(history.rutDepthM) or 0,
@@ -327,12 +376,30 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutCapacityM
     )
 
-    -- Observed sink is an immediate lower bound. Beyond that, repeated passes
-    -- approach capacity asymptotically via the remaining-depth term.
-    local baseRutM = math.max(previousRutM, observedSinkM)
-    local remainingM = math.max(0, rutCapacityM - baseRutM)
+    -- Store cumulative physical exposure separately from rut depth. Depth is
+    -- then reconstructed from total exposure and the current capacity instead
+    -- of recursively applying one "pass" per sample. This makes equivalent
+    -- travel/slip histories converge to the same result regardless of update
+    -- cadence or how many intermediate samples occurred.
+    local previousExposure = math.max(
+        0,
+        tonumber(history.deformationExposure) or 0
+    )
+    local deformationExposure = previousExposure + incrementalExposure
+    local exposureDrive = clamp(
+        1 - math.exp(-deformationExposure),
+        0,
+        0.999999
+    )
+
+    local modeledBaseM = observedSinkM
+    local modeledRangeM = math.max(0, rutCapacityM - modeledBaseM)
+    local exposureTargetM = modeledBaseM + modeledRangeM * exposureDrive
+
+    -- Never heal an already-written rut when local conditions/capacity later
+    -- decrease. Authoritative sink is also an immediate lower bound.
     local nextRutM = clamp(
-        baseRutM + remainingM * passDrive,
+        math.max(previousRutM, observedSinkM, exposureTargetM),
         0,
         rutCapacityM
     )
@@ -355,6 +422,7 @@ function Model.compute(context, footprint, history, dtMs, options)
         longitudinalShearDistanceM = cumulativeLong,
         lateralShearDistanceM = cumulativeLat,
         slipExcavationDistanceM = cumulativeSlipExcavation,
+        deformationExposure = deformationExposure,
         passCount = math.max(0, tonumber(history.passCount) or 0) + 1
     }
 
@@ -369,6 +437,12 @@ function Model.compute(context, footprint, history, dtMs, options)
         verticalImprint01 = verticalImprint01,
         longitudinalExcavation01 = excavation01,
         lateralScrub01 = scrub01,
+
+        normalTravelDistanceM = normalTravelDistanceM,
+        normalPassExposure = normalPassExposure,
+        longitudinalIncrementExposure = longitudinalIncrementExposure,
+        lateralIncrementExposure = lateralIncrementExposure,
+        incrementalExposure = incrementalExposure,
 
         longitudinalShearIncrementM = longIncrement,
         lateralShearIncrementM = latIncrement,
@@ -388,6 +462,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutWidthM = rutWidthM,
 
         passDrive01 = passDrive,
+        deformationExposure = deformationExposure,
+        exposureDrive01 = exposureDrive,
         hardFrozen = context.hardFrozen == true,
 
         nextHistory = nextHistory

@@ -117,6 +117,45 @@ assert(increments[2] <= increments[1] + 0.0000001)
 assert(increments[8] < increments[1])
 assert(last.rutDepthM <= last.rutCapacityM + 0.0000001)
 
+
+-- Equivalent physical travel must be approximately invariant to speed/update
+-- subdivision. This specifically guards against the old low-speed bias where
+-- repeated samples in the same terrain cell acted like extra passes.
+local function simulateTravel(speedKph, stepMs, totalDistanceM, source)
+    local ctx = clone(source)
+    ctx.speedKph = speedKph
+    local speedMps = speedKph / 3.6
+    ctx.wheelSurfaceSpeedMps = speedMps * (1 + math.abs(ctx.longitudinalSlip or 0))
+    ctx.sinkDepthM = 0
+    ctx.sinkSeverity = 0
+
+    local history = nil
+    local travelled = 0
+    local lastResult = nil
+    while travelled < totalDistanceM - 0.0000001 do
+        local nominalStepDistance = speedMps * (stepMs / 1000)
+        local remaining = totalDistanceM - travelled
+        local actualDistance = math.min(nominalStepDistance, remaining)
+        local actualDt = actualDistance / speedMps * 1000
+        lastResult = Model.compute(ctx, footprint, history, actualDt)
+        history = lastResult.nextHistory
+        travelled = travelled + actualDistance
+    end
+    return lastResult
+end
+
+local invariantSource = clone(wet)
+invariantSource.longitudinalSlip = 0.10
+invariantSource.lateralSlip = 0.01
+
+local slowTravel = simulateTravel(2, 250, 2.0, invariantSource)
+local fastTravel = simulateTravel(12, 250, 2.0, invariantSource)
+local finelySubdivided = simulateTravel(12, 50, 2.0, invariantSource)
+
+assert(math.abs(slowTravel.rutDepthM - fastTravel.rutDepthM) < 0.0005)
+assert(math.abs(fastTravel.rutDepthM - finelySubdivided.rutDepthM) < 0.0005)
+assert(math.abs(slowTravel.longitudinalShearDistanceM - fastTravel.longitudinalShearDistanceM) < 0.0005)
+
 -- Observed Mud sink is an immediate lower bound.
 local sunk = clone(base)
 sunk.sinkDepthM = 0.12
