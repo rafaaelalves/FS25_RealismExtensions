@@ -51,6 +51,15 @@ local function diagMax(name, value)
     runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or 0, value)
 end
 
+local function diagMin(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    local current = tonumber(runtime.stats[name])
+    runtime.stats[name] = current == nil and value or math.min(current, value)
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -292,6 +301,32 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("footprintAccepted", 1)
+
+    -- Footprint telemetry is intentionally source-state focused. It lets the
+    -- next runtime test prove how MR/Mud represent duals before RE invents any
+    -- dual-specific multiplier.
+    local supportWidthM = tonumber(footprint.supportWidthM)
+    local baseWidthM = tonumber(context.baseTireWidthM)
+    local contactAreaM2 = tonumber(footprint.contactAreaM2)
+    local groundPressurePa = tonumber(footprint.groundPressurePa)
+    local wheelLoadN = tonumber(footprint.wheelLoadN or context.wheelLoadN)
+    local inflationBar = tonumber(footprint.inflationPressureBar or context.tirePressureBar)
+
+    diagMax("maxSupportWidthM", supportWidthM)
+    diagMax("maxBaseTireWidthM", baseWidthM)
+    diagMax("maxContactAreaM2", contactAreaM2)
+    diagMax("maxWheelLoadN", wheelLoadN)
+    diagMax("maxInflationPressureBar", inflationBar)
+    diagMin("minGroundPressurePa", groundPressurePa)
+    diagMax("maxGroundPressurePa", groundPressurePa)
+
+    if supportWidthM ~= nil and baseWidthM ~= nil and baseWidthM > 0 then
+        local ratio = supportWidthM / baseWidthM
+        diagMax("maxSupportWidthRatio", ratio)
+        if ratio >= 1.45 then
+            diagCount("wideSupportContexts", 1)
+        end
+    end
 
     local x, z = context.worldX, context.worldZ
     local lastX, lastZ = state.lastX, state.lastZ
