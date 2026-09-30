@@ -6,47 +6,81 @@ This file is the first place to read when continuing RealismExtensions in a new 
 
 ## Current state
 
-- `TerrainDeformation` is integrated into `main` via PR #24.
-- PR #22 (v5) and PR #23 (historical v6 line) are closed as superseded.
+- TerrainDeformation v6 is integrated into `main` via PR #24.
+- The v6 runtime test validated the current wheel-based baseline, but **TerrainDeformation is not complete** against the agreed project scope.
 - Production defaults remain safe: `TerrainDeformation=false`, verbose diagnostics off.
-- The validated v6 behavior is now the canonical TerrainDeformation implementation in main.
+- PR #22 and historical PR #23 are superseded by the canonical implementation now in `main`.
 
-## Runtime validation completed
+## What the v6 test actually proved
 
-Captured v6 runtime evidence:
-- FIELD_SOFT, FIELD and FIELD_FIRM produced deformation;
-- DIRT_COMPACTED and HARD produced zero brushes under ordinary conditions;
-- DIRT_WET produced deformation only after wetness/slip gates;
-- 37,986 brushes accepted, 36,798 submitted after coalescing, 5,056 native jobs, 0 failed jobs;
-- GIANTS callbacks reported 244.519 m3 displaced volume;
-- stationary wheelspin remained active with 263 accepted stationary brushes and ~0.584 m cumulative RE-applied depth;
-- save/reload restored 12,483 terrain-history cells with no geometry-mismatch rejection;
-- RC reuse hints were fully consumed in the captured session: 13,487/13,487 speedHintHits and wheelSurfaceSpeedHintHits, 13,487 slipSnapshotHits, 0 slipDirectReads;
-- the user described the gameplay result as quite good.
+- FIELD_SOFT, FIELD and FIELD_FIRM produced geometry.
+- DIRT_COMPACTED and HARD were blocked under ordinary conditions.
+- DIRT_WET required wetness/slip.
+- 37,986 brushes accepted, 36,798 submitted, 5,056 native jobs, 0 failed jobs.
+- GIANTS callbacks reported 244.519 m3 displaced volume.
+- stationary wheelspin remained active.
+- 12,483 terrain-history cells restored after reload without geometry-mismatch rejection.
+- RC state reuse worked in the captured session.
 
-## Readiness decision
+This proves the basic wheel/rut writer pipeline. It does **not** close the full TerrainDeformation roadmap.
 
-TerrainDeformation is implemented and validated for the current reference stack.
+## Blocking scope still open before TerrainDeformation can be called complete
 
-It is ready as the first RE gameplay module in main, but remains disabled by default while the broader project is assembled.
+1. **Low-speed / sampling invariance**
+   - Current deformation history advances per 250 ms sample.
+   - At low travel speed, the same 0.20 m history cell can be processed repeatedly, creating an artificial low-speed excavation bias.
+   - Redesign accumulation so ordinary rolling response is distance/contact-work based, while stationary wheelspin remains driven by true relative wheel/soil displacement.
+   - Cross-check against FarmKit's audited speed-aware terrain response and Mud's terramechanics split between compaction, bulldozing and slip excavation.
 
-Remaining hardening is follow-up work, not a blocker:
-- multi-map terrain-layer/profile naming validation;
-- grouped crawler/track footprint modeling;
-- explicit GIANTS AI / Courseplay validation before retiring True AI Tracks;
-- release-mode performance/telemetry benchmarking.
+2. **Dual / twin tire validation**
+   - RC exposes MR total support width where available, but RE has no dedicated runtime proof that duals reduce effective rutting appropriately.
+   - Add diagnostics/tests for support width, per-wheel load, tire pressure, contact area and resulting ground pressure on single vs dual configurations.
+   - Do not assume that wider support alone is sufficient: pressure-driven footprint behavior and upstream pressure/load ownership must be verified.
 
-Mud adhesion, wheel spray and puddles are separate future immersion capabilities, not TerrainDeformation defects.
+3. **Crawler / track support**
+   - `FootprintModel` intentionally fails closed for `isCrawler=true`.
+   - Implement the previously planned grouped `TrackSupportGroup` model rather than pretending a track is one very wide tire.
+   - Use actual crawler belt width/support length plus roller/bogie/load distribution where available.
+   - Existing SoilCompaction source already demonstrates useful GIANTS crawler discovery via `spec_crawlers`, `crawler.trackWidth` and linked physics wheels.
 
-## Ownership
+4. **True AI Tracks absorption parity**
+   - The user was explicitly asked to test RE with True AI Tracks disabled so RE could be isolated.
+   - True AI Tracks exact source has two separable responsibilities:
+     - enabling native AI/implement tire-track permission;
+     - forcing AI/attached-implement WheelPhysics displacement.
+   - Validate RE physical terrain deformation for player, GIANTS AI, Courseplay and wheeled implements with True AI Tracks disabled.
+   - Decide separately whether its native visual tire-track permission must be reproduced or retained as a complementary feature.
+   - Do not retire True AI Tracks until parity is demonstrated.
 
-- MR owns base vehicle dynamics, traction and slip.
-- MudSystemPhysics owns wetness, sink/resistance/stuck behavior, tire pressure/load and freeze/ground signals.
-- RC arbitrates overlap and exposes normalized authoritative state.
-- RE TerrainDeformation owns visible/persistent rut geometry and surface-dependent geometric consequence.
+5. **External-source crosswalk**
+   - RE exists to recover disabled FarmKit capabilities and selectively absorb/improve audited mods with cleaner ownership and lower duplicate work.
+   - Before declaring any capability complete, explicitly cross-reference the implementation against the retained exact-source audits / source packages.
+   - Relevant current terrain references include FarmKit, True AI Tracks, MudSystemPhysics, SoilCompaction, Reifenverschleiss and RC/MR normalized state.
+   - Audits are design inputs, not historical notes.
 
-Surface caps bound geometry invented by RE. Authoritative Mud sink remains a lower bound, so rut capacity may exceed a v6 surface cap when the active physics owner reports deeper real sink.
+## Current implementation concern: low-speed digging
 
-## Next development step
+The current `TerrainResponseModel` combines load/wetness/slip into capacity, but `TerrainDeformationEngine` calls that response on a fixed 250 ms cadence and commits rut progress per sample. At low speed, multiple samples can land in the same spatial-history cell; each one advances rut depth. This can make slow travel dig more per metre even when slip does not justify it.
 
-Treat TerrainDeformation as complete enough to leave alone. Re-open it only for concrete regressions, multi-map compatibility findings, crawler support, AI/Courseplay validation or measured performance issues. Move development focus to the next RE capability.
+That behavior is not accepted as final. Low gear itself should not be a magic anti-rut modifier, but controlled low-speed driving with low slip must not be punished simply because it spends more update samples over the same ground.
+
+## Ownership remains
+
+- MR: drivetrain, wheel dynamics, base traction/slip.
+- MudSystemPhysics: physical wetness, sink/resistance/stuck behavior, tire pressure/load and ground/freeze state.
+- RC: composition/arbitration and normalized authoritative state.
+- RE TerrainDeformation: geometric consequence only.
+
+RE should reuse owner outputs rather than duplicate their solvers. Where an audited specialist already computes a useful authoritative intermediate, prefer exposing/reusing it through RC over deriving a parallel approximation.
+
+## Completion gate
+
+TerrainDeformation is complete only when:
+- wheel response is not spuriously dependent on update cadence/low travel speed;
+- dual/twin behavior is validated;
+- crawler/track support is implemented;
+- player + GIANTS AI + Courseplay + wheeled implement behavior is validated without True AI Tracks;
+- the external-source capability crosswalk has no unreviewed terrain-relevant gaps;
+- CI/runtime stability and persistence remain healthy after those changes.
+
+Until then, treat the current main implementation as a validated **baseline**, not a finished module.
