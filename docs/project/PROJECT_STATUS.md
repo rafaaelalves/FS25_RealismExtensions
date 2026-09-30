@@ -5,49 +5,46 @@ Updated: 2026-09-30
 ## Current release line
 
 - Version: `0.0.1.0`
-- Phase: first gameplay module integrated + capability/absorption program
+- Phase: TerrainDeformation baseline integrated; completion work reopened
 - Production defaults: gameplay modules disabled; verbose diagnostics disabled
-- TerrainDeformation: integrated into `main` via PR #24 and runtime-validated in the reference stack
+- TerrainDeformation: integrated into `main` via PR #24, runtime-validated as a baseline, **not yet complete**
 
-## Completed
+## Baseline validated
 
-- Repository foundation, build/CI, diagnostics, architecture and ownership boundaries.
-- StateContract v2 and RC normalized wheel/ground-state provider boundary.
-- Pressure-driven FootprintModel with low-confidence fallback and crawler fail-closed behavior.
-- TerrainResponseModel with bounded pressure/wetness/slip/sink response, separate slip-induced sinkage and authoritative sink anchoring.
-- Event-driven TerrainDeformation engine with per-vehicle specialization, path sampling, stationary wheelspin, bounded spatial history, coalesced/budgeted native jobs and server-only writes.
-- Savegame persistence for RE terrain response history plus geometry-consistency guard.
-- SurfaceResponse v6 classification for field states, mud, compacted dirt, gravel and hard surfaces.
-- Runtime validation:
-  - FIELD_SOFT / FIELD / FIELD_FIRM produced deformation;
-  - DIRT_COMPACTED and HARD remained blocked in ordinary conditions;
-  - DIRT_WET deformed only after wetness/slip gates;
-  - 37,986 accepted brushes, 36,798 submitted brushes, 5,056 GIANTS jobs, 0 failed jobs;
+- StateContract v2 / RC normalized state path.
+- Pressure-driven pneumatic FootprintModel for ordinary wheel contexts.
+- TerrainResponseModel with bounded pressure/wetness/slip/sink response and authoritative sink anchoring.
+- Event-driven TerrainDeformation engine with stationary wheelspin, spatial history, coalesced native jobs and server-only writes.
+- Savegame response-history persistence with geometry-consistency guard.
+- SurfaceResponse v6 field/dirt/gravel/hard classification.
+- Captured runtime session:
+  - FIELD_SOFT / FIELD / FIELD_FIRM deformation;
+  - DIRT_COMPACTED and HARD blocked under ordinary conditions;
+  - DIRT_WET gated by wetness/slip;
+  - 37,986 accepted brushes, 36,798 submitted, 5,056 GIANTS jobs, 0 failed jobs;
   - 244.519 m3 callback-confirmed displaced volume;
-  - stationary wheelspin remained progressive;
-  - 12,483 history cells restored after reload without geometry-mismatch rejection.
-- RC->RE reuse validated: full speed-hint hits in captured contexts, MR slip reused from snapshots with 0 direct slip reads, and Mud wetness/radius state predominantly reused.
-- Specialization recursion fixed; ModMixer attribution no longer shows pathological repeated registration.
-- Capability audits and ownership decisions recorded for MR, Mud, Reifen, RMS, Dynamic PTO, FarmKit, MoistureSystem, True AI Tracks, Real Dirt Color, loose-load systems and related specialists.
+  - stationary wheelspin active;
+  - 12,483 history cells restored after reload;
+  - RC speed/slip state reuse validated.
 
-## TerrainDeformation readiness
+## TerrainDeformation completion blockers
 
-Implemented and validated for the current reference stack; integrated into main and disabled by default.
+- Remove the current low-speed/update-cadence rutting bias.
+- Validate single vs dual/twin footprint/load/pressure behavior.
+- Implement grouped crawler/track support; current FootprintModel intentionally rejects crawlers.
+- Validate player, GIANTS AI, Courseplay and wheeled implements with True AI Tracks disabled.
+- Resolve True AI Tracks native visual-track permission vs physical-deformation ownership before retirement.
+- Re-run the terrain capability against audited FarmKit / True AI Tracks / MudSystemPhysics / SoilCompaction / Reifen / RC precedents before closure.
+- Keep performance/persistence stability after these changes.
 
-Remaining work does not block the module's completion status:
-- multi-map terrain-layer/profile naming validation;
-- grouped crawler/track footprint support;
-- explicit GIANTS AI and Courseplay validation before retiring True AI Tracks;
-- release telemetry/performance hardening;
-- later visual mud/water features such as adhesion, wheel spray and puddles.
+## Project rule reinforced
 
-## Not current goals
+RE is capability-driven and audit-driven. External-source audits must be actively cross-checked against implementation before a module is declared complete. The project goal is not merely to add missing effects, but to recover selected FarmKit functionality and selectively absorb/improve external-mod capabilities with clearer ownership, richer behavior and less redundant computation.
 
-- replacing MR traction;
+## Not current ownership goals
+
+- replacing MR drivetrain/traction;
 - replacing Mud sink/stuck/resistance;
-- replacing Reifen wear;
-- replacing RMS;
-- replacing SoilCompaction;
-- replacing Dynamic PTO;
-- reproducing all FarmKit features;
-- creating a unified HUD before authoritative state exists.
+- replacing RMS mechanical ownership;
+- replacing SoilCompaction agronomic compaction;
+- reproducing MoistureSystem.
