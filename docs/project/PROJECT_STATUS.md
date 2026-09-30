@@ -1,58 +1,47 @@
 # Project status
 
-Updated: 2026-09-29
+Updated: 2026-09-30
 
 ## Current release line
 
 - Version: `0.0.1.0`
-- Phase: project foundation + capability/absorption audit
-- Gameplay effects: TerrainDeformation active only in runtime test branches; production default remains disabled.
-- Active implementation branch: `feat/terrain-surface-response-v6`
+- Phase: first gameplay module validated + capability/absorption program
+- Production defaults: gameplay modules disabled; verbose diagnostics disabled
+- TerrainDeformation: implementation/runtime validation complete for current reference stack; pending merge of PR #23
 
 ## Completed
 
-- Repository initialized.
-- Core principles and ownership boundaries documented.
-- Build/CI scaffold created.
-- Minimal FS25 mod bootstrap created.
-- Diagnostics prefix established: `[RealismExtensions]`.
-- StateContract API v1 scaffold created and harnessed.
-- Initial TerrainDeformation research direction documented.
-- Capability catalog and asset strategy added.
-- Dynamic PTO 1.1.2.0 audited as a strong absorption candidate.
-- Reifen 1.2.2.67 audited as a layered absorption candidate.
-- FarmKit capability/asset replacement scope documented.
-- Realistic 4x4 Traction System 1.4.0.0 exact ZIP audited: keep RMS as physical drivetrain owner; retain richer AUTO/decision ideas for RMS-facing improvement.
-- Real Dirt Color 1.1.5.0 exact ZIP audited: strong clean-room replacement candidate via SurfaceContamination.
-- Exact six-mod source follow-up completed: MoistureSystem 2.0.0.8, True AI Tracks 2.2.0.1, RealPhysics LoadSpill 1.0.0.0, Loose Load 1.0.0.0, Mud Sprayer 1.0.0.0 and soundExpansionMP 1.2.0.0.
-- True AI Tracks promoted to a strong TerrainDeformation absorption target. Audit correction: 2.2.0.1 fixes the older scan-interval units bug; current comparison no longer attributes that defect to this version.
-- StateContract v2 merged with a versioned RC provider boundary for wheel/ground state.
-- Pressure-driven FootprintModel merged: tire-pressure-aware contact area/ground pressure with low-confidence geometry fallback; crawlers fail closed pending grouped track modeling.
-- TerrainResponseModel merged: bounded wetness/pressure/slip/sink response with separate longitudinal excavation, lateral scrub, observed-sink anchoring and diminishing repeated-pass accumulation.
-- TerrainDeformation engine merged (disabled by default): vehicle-local specialization, bounded spatial history, path sampling, budgeted/quantized brush batching, server-only writes and explicit GIANTS queue lifecycle ownership.
-- Long-session telemetry baseline captured (~8h57m): RC integrations remained stable under millions of wheel-path calls; MRRMS avoided 99.9978% redundant driven-wheel rebuilds and DynamicPTO scopes entered only ~0.31% of hot calls.
-- Computation ownership ledger added: separates effect ownership from actual avoided computation and tracks residual overhead (FarmKit plowing/dust wrappers, MudSoil wetness sampling, development telemetry).
-- RE packaging/provider discovery fixed: icon is now packaged/validated and RC provider is resolved through the FS25_RealismCompatibility mod environment rather than assuming a shared global.
-- ExtensionsStateProvider changed to reuse-first semantics for fresh MRMud wetness/structural-radius snapshots and MR slip cache, with telemetry to measure snapshot hits vs fallbacks.
-- TerrainDeformation runtime v3 validated specialization lifecycle in-game: 10 vehicles / 38 wheels were attached, 15,790 brushes were accepted and 2,328 jobs submitted with zero failed jobs in the captured session.
-- Stationary-wheelspin runtime path validated in-game: the diagnostic counter rose from 0 to 821 during the obstacle test, proving body-at-rest/wheel-moving contact reaches the RE pipeline.
-- Runtime v3 exposed a physical-model limitation rather than an engine failure: stationary excavation stopped after an initial burst because the current response model saturates shear against a static rut-capacity ceiling. Slip-induced sinkage is now being developed separately from fast shear mobilization.
-- Specialization bootstrap recursion fixed and runtime-validated; ModMixer attribution for RealismExtensions fell from the previous pathological tens-of-thousands count to x1.
-- MoistureSystem confirmed as KEEP + BRIDGE specialist with explicit agronomic/material moisture domains.
-- Loose-material ownership decomposed into rollover, overflow, cover, discharge, presentation and material rules; unified clean-room RE module remains a later candidate.
-- soundExpansionMP reclassified as a multi-capability patch pack rather than one sound subsystem.
+- Repository foundation, build/CI, diagnostics, architecture and ownership boundaries.
+- StateContract v2 and RC normalized wheel/ground-state provider boundary.
+- Pressure-driven FootprintModel with low-confidence fallback and crawler fail-closed behavior.
+- TerrainResponseModel with bounded pressure/wetness/slip/sink response, separate slip-induced sinkage, and authoritative sink anchoring.
+- Event-driven TerrainDeformation engine with per-vehicle specialization, path sampling, stationary wheelspin, bounded spatial history, coalesced/budgeted native jobs and server-only writes.
+- Savegame persistence for RE terrain response history plus geometry-consistency guard.
+- SurfaceResponse v6 classification for field states, mud, compacted dirt, gravel and hard surfaces.
+- Runtime validation of v6 in the user's full stack:
+  - FIELD_SOFT / FIELD / FIELD_FIRM produced deformation;
+  - DIRT_COMPACTED and HARD remained blocked in ordinary conditions;
+  - DIRT_WET deformed only after wetness/slip gates;
+  - 37,986 accepted brushes, 36,798 submitted brushes, 5,056 GIANTS jobs, 0 failed jobs;
+  - 244.519 m3 callback-confirmed displaced volume;
+  - stationary wheelspin remained progressive;
+  - 12,483 history cells restored after reload without geometry-mismatch rejection.
+- RC->RE reuse validated: full speed-hint hits in captured contexts, MR slip reused from snapshots with 0 direct slip reads, and Mud wetness/radius state predominantly reused.
+- Specialization recursion fixed; ModMixer attribution no longer shows pathological repeated registration.
+- Capability audits and ownership decisions recorded for MR, Mud, Reifen, RMS, Dynamic PTO, FarmKit, MoistureSystem, True AI Tracks, Real Dirt Color, loose-load systems and related specialists.
 
-## Open before first gameplay prototype
+## TerrainDeformation readiness
 
-- Continue user-supplied and assistant-proposed candidate-mod audits across terrain, drivetrain UX, crop, contamination and visual effects.
-- Confirm normalized wheel-state provider design with RealismCompatibility.
-- Runtime-calibrate TerrainDeformation by surface. v5 proved deep SnowRunner-scale geometry is achievable but was far too aggressive for ordinary field work; v6 adds surface-dependent caps/gates and slows excavation cadence. User runtime validation is pending.
-- Validate player, attached implement, GIANTS AI and Courseplay behavior before replacing True AI Tracks.
-- Validate geometry persistence separately from domain-history persistence. The v4 sidecar successfully saved/restored model history, but user observation indicates visible heightmap ruts do not survive reload; v5 stores sampled surface heights and rejects stale history when geometry mismatches.
-- Measure TerrainDeformation cost and persistence behavior. Conservative brush coalescing saved ~18% of native brush submissions in v4 with no observed visual regression and zero failed jobs.
-- Calibrate v6 so ordinary field work remains viable while severe wet/slip conditions can still produce progressive SnowRunner-like stuck behavior. Validate compacted dirt/gravel and hard surfaces separately.
+Ready to merge into `main` as a validated module, disabled by default.
 
-## Not goals for the first prototype
+Remaining work does not block integration:
+- multi-map terrain-layer/profile naming validation;
+- grouped crawler/track footprint support;
+- explicit GIANTS AI and Courseplay validation before retiring True AI Tracks;
+- release telemetry/performance hardening;
+- later visual mud/water features such as adhesion, wheel spray and puddles.
+
+## Not current goals
 
 - replacing MR traction;
 - replacing Mud sink/stuck/resistance;
