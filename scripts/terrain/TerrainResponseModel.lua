@@ -376,12 +376,30 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutCapacityM
     )
 
-    -- Observed sink is an immediate lower bound. Beyond that, repeated passes
-    -- approach capacity asymptotically via the remaining-depth term.
-    local baseRutM = math.max(previousRutM, observedSinkM)
-    local remainingM = math.max(0, rutCapacityM - baseRutM)
+    -- Store cumulative physical exposure separately from rut depth. Depth is
+    -- then reconstructed from total exposure and the current capacity instead
+    -- of recursively applying one "pass" per sample. This makes equivalent
+    -- travel/slip histories converge to the same result regardless of update
+    -- cadence or how many intermediate samples occurred.
+    local previousExposure = math.max(
+        0,
+        tonumber(history.deformationExposure) or 0
+    )
+    local deformationExposure = previousExposure + incrementalExposure
+    local exposureDrive = clamp(
+        1 - math.exp(-deformationExposure),
+        0,
+        0.999999
+    )
+
+    local modeledBaseM = observedSinkM
+    local modeledRangeM = math.max(0, rutCapacityM - modeledBaseM)
+    local exposureTargetM = modeledBaseM + modeledRangeM * exposureDrive
+
+    -- Never heal an already-written rut when local conditions/capacity later
+    -- decrease. Authoritative sink is also an immediate lower bound.
     local nextRutM = clamp(
-        baseRutM + remainingM * passDrive,
+        math.max(previousRutM, observedSinkM, exposureTargetM),
         0,
         rutCapacityM
     )
@@ -404,6 +422,7 @@ function Model.compute(context, footprint, history, dtMs, options)
         longitudinalShearDistanceM = cumulativeLong,
         lateralShearDistanceM = cumulativeLat,
         slipExcavationDistanceM = cumulativeSlipExcavation,
+        deformationExposure = deformationExposure,
         passCount = math.max(0, tonumber(history.passCount) or 0) + 1
     }
 
@@ -443,6 +462,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutWidthM = rutWidthM,
 
         passDrive01 = passDrive,
+        deformationExposure = deformationExposure,
+        exposureDrive01 = exposureDrive,
         hardFrozen = context.hardFrozen == true,
 
         nextHistory = nextHistory
