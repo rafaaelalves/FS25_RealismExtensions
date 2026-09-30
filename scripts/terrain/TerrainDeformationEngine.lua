@@ -80,7 +80,9 @@ function Engine:onLoad(savegame)
 
     self[Engine.SPEC_FIELD] = {
         wheels = wheels or {},
-        states = setmetatable({}, { __mode = "k" })
+        states = setmetatable({}, { __mode = "k" }),
+        axleContacts = {},
+        diagnosticEpoch = 0
     }
 
     diagCount("vehiclesLoaded", 1)
@@ -139,6 +141,104 @@ local function shouldSample(state, dt, intervalMs)
     local elapsed = state.elapsedMs
     state.elapsedMs = 0
     return true, elapsed
+end
+
+local function sampleTerrainHeight(x, z)
+    local mission = g_currentMission
+    local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
+    if terrain == nil or terrain == 0 or getTerrainHeightAtWorldPos == nil then
+        return nil
+    end
+    local ok, y = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
+    if ok and type(y) == "number" then return y end
+    return nil
+end
+
+function Engine.computeCentralTerrainCrest(left, right, heightFn)
+    if type(left) ~= "table" or type(right) ~= "table" then return nil end
+    if type(left.x) ~= "number" or type(left.z) ~= "number"
+        or type(right.x) ~= "number" or type(right.z) ~= "number" then
+        return nil
+    end
+
+    heightFn = heightFn or sampleTerrainHeight
+    local leftY = heightFn(left.x, left.z)
+    local rightY = heightFn(right.x, right.z)
+    local centerX = (left.x + right.x) * 0.5
+    local centerZ = (left.z + right.z) * 0.5
+    local centerY = heightFn(centerX, centerZ)
+    if type(leftY) ~= "number" or type(rightY) ~= "number"
+        or type(centerY) ~= "number" then
+        return nil
+    end
+
+    local expectedPlaneY = (leftY + rightY) * 0.5
+    local dx, dz = right.x - left.x, right.z - left.z
+    return {
+        crestHeightM = centerY - expectedPlaneY,
+        axleSpanM = math.sqrt(dx * dx + dz * dz),
+        centerX = centerX,
+        centerZ = centerZ,
+        centerTerrainY = centerY,
+        leftTerrainY = leftY,
+        rightTerrainY = rightY
+    }
+end
+
+function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
+    if not diagnosticsEnabled() or vehicle == nil
+        or physics == nil or context == nil then return end
+
+    local localX = tonumber(physics.positionX)
+    local localZ = tonumber(physics.positionZ)
+    if localX == nil or localZ == nil
+        or type(context.worldX) ~= "number"
+        or type(context.worldZ) ~= "number" then
+        return
+    end
+
+    -- Bucket left/right contacts by axle longitudinal position. 0.25 m is
+    -- narrow enough to keep distinct axles apart while tolerating modded wheel
+    -- placement noise, matching the grouping precedent from SoilCompaction.
+    local axleKey = math.floor(localZ * 4 + 0.5)
+    local spec = vehicle[Engine.SPEC_FIELD]
+    if spec == nil then return end
+    spec.axleContacts = spec.axleContacts or {}
+
+    local axle = spec.axleContacts[axleKey]
+    if axle == nil or axle.epoch ~= spec.diagnosticEpoch then
+        axle = { epoch = spec.diagnosticEpoch }
+        spec.axleContacts[axleKey] = axle
+    end
+
+    local side = localX < 0 and "left" or (localX > 0 and "right" or nil)
+    if side == nil then return end
+
+    axle[side] = {
+        x = context.worldX,
+        z = context.worldZ,
+        supportWidthM = tonumber(context.supportWidthM),
+        baseTireWidthM = tonumber(context.baseTireWidthM)
+    }
+
+    if axle.left == nil or axle.right == nil or axle.measured == true then return end
+    axle.measured = true
+
+    local result = Engine.computeCentralTerrainCrest(axle.left, axle.right)
+    if result == nil then return end
+
+    diagCount("axleCrestSamples", 1)
+    diagMax("maxAxleSpanM", result.axleSpanM)
+    diagMax("maxCentralTerrainCrestM", result.crestHeightM)
+    if result.crestHeightM >= 0.05 then
+        diagCount("centralCrestOver5cm", 1)
+    end
+    if result.crestHeightM >= 0.10 then
+        diagCount("centralCrestOver10cm", 1)
+    end
+    if result.crestHeightM >= 0.15 then
+        diagCount("centralCrestOver15cm", 1)
+    end
 end
 
 function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin)
@@ -301,6 +401,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("footprintAccepted", 1)
+    Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
 
     -- Footprint telemetry is intentionally source-state focused. It lets the
     -- next runtime test prove how MR/Mud represent duals before RE invents any
@@ -395,6 +496,7 @@ function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, 
 
     local spec = self[Engine.SPEC_FIELD]
     if spec == nil then return end
+    spec.diagnosticEpoch = (spec.diagnosticEpoch or 0) + 1
 
     for _, wheel in pairs(spec.wheels or {}) do
         Engine.processWheel(self, wheel, dt)
