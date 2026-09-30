@@ -264,18 +264,18 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 and RealismExtensionsSoilMassTransportModel ~= nil then
 
                 local weighted = {}
-                local totalWeight = 0
-                for i, brush in ipairs(self.brushes or {}) do
+                local totalBatchWeight = 0
+                for _, brush in ipairs(self.brushes or {}) do
+                    local weight = math.max(0.001, math.pi * brush.radiusM * brush.radiusM)
+                    totalBatchWeight = totalBatchWeight + weight
                     if brush.massTransport ~= nil then
-                        local weight = math.max(0.001, math.pi * brush.radiusM * brush.radiusM)
                         weighted[#weighted + 1] = { brush=brush, weight=weight }
-                        totalWeight = totalWeight + weight
                     end
                 end
 
                 for _, item in ipairs(weighted) do
                     local brush = item.brush
-                    local sourceVolume = callbackVolume * item.weight / math.max(0.001, totalWeight)
+                    local sourceVolume = callbackVolume * item.weight / math.max(0.001, totalBatchWeight)
                     local mt = brush.massTransport
                     local result = RealismExtensionsSoilMassTransportModel.compute({
                         x = brush.x,
