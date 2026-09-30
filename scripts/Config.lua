@@ -1,9 +1,9 @@
 RealismExtensionsConfig = {
     version = "0.0.1.0",
     diagnostics = {
-        verbose = true
+        verbose = false
     },
     modules = {
-        TerrainDeformation = true
+        TerrainDeformation = false
     }
 }
