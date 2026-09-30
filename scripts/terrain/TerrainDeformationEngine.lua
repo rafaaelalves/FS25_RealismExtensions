@@ -13,6 +13,20 @@ Engine.DEFAULTS = {
     inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.003,
     brushHardness = 0.35,
+
+    -- Underbody relief is deliberately conservative: it is not a second sink
+    -- solver. It only lets already-soft soil yield when the vehicle body is
+    -- physically at the central ridge created between wheel tracks.
+    underbodyMinCrestM = 0.08,
+    underbodyProbeMaxSpeedKph = 6.0,
+    underbodyContactClearanceM = 0.05,
+    underbodyTargetClearanceM = 0.10,
+    underbodyMinWetness01 = 0.20,
+    underbodyMaxBrushDepthM = 0.004,
+    underbodyBrushRadiusMinM = 0.22,
+    underbodyBrushRadiusMaxM = 0.55,
+    underbodyBrushRadiusSpanFactor = 0.14,
+
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
 }
@@ -185,9 +199,115 @@ function Engine.computeCentralTerrainCrest(left, right, heightFn)
     }
 end
 
-function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
-    if not diagnosticsEnabled() or vehicle == nil
-        or physics == nil or context == nil then return end
+function Engine.computeUnderbodyRelief(input)
+    input = input or {}
+
+    local crest = tonumber(input.crestHeightM) or 0
+    local clearance = tonumber(input.clearanceM)
+    local wetness = math.max(0, math.min(1, tonumber(input.wetness01) or 0))
+    local deformability = math.max(0, math.min(1, tonumber(input.deformability01) or 0))
+    local speedKph = math.abs(tonumber(input.speedKph) or 0)
+    local slip = math.max(0, math.min(1, math.abs(tonumber(input.longitudinalSlip) or 0)))
+    local wheelSpeed = math.abs(tonumber(input.wheelSurfaceSpeedMps) or 0)
+
+    local minCrest = tonumber(input.minCrestM) or Engine.DEFAULTS.underbodyMinCrestM
+    local contactClearance = tonumber(input.contactClearanceM)
+        or Engine.DEFAULTS.underbodyContactClearanceM
+    local targetClearance = tonumber(input.targetClearanceM)
+        or Engine.DEFAULTS.underbodyTargetClearanceM
+    local minWetness = tonumber(input.minWetness01)
+        or Engine.DEFAULTS.underbodyMinWetness01
+    local maxDepth = tonumber(input.maxBrushDepthM)
+        or Engine.DEFAULTS.underbodyMaxBrushDepthM
+
+    if clearance == nil then return { eligible=false, reason="NO_CLEARANCE" } end
+    if input.hardFrozen == true then return { eligible=false, reason="FROZEN" } end
+    if deformability <= 0 then return { eligible=false, reason="NON_DEFORMABLE" } end
+    if wetness < minWetness then return { eligible=false, reason="TOO_DRY" } end
+    if crest < minCrest then return { eligible=false, reason="LOW_CREST" } end
+    if clearance > contactClearance then return { eligible=false, reason="NO_BODY_CONTACT" } end
+
+    -- Body travel and wheel/soil relative motion both provide work capable of
+    -- scraping/compressing the already-soft ridge. Merely parking on a ridge
+    -- does not make terrain disappear over time.
+    local travelActivity = math.max(0, math.min(1, speedKph / 2.0))
+    local slipActivity = math.max(0, math.min(1, slip * 1.25))
+    local wheelspinActivity = 0
+    if speedKph < 0.75 and wheelSpeed > 0.35 then
+        wheelspinActivity = math.max(0, math.min(1, wheelSpeed / 2.0))
+    end
+    local activity = math.max(travelActivity, slipActivity, wheelspinActivity)
+    if activity < 0.05 then return { eligible=false, reason="NO_WORK" } end
+
+    local neededClearance = math.max(0, targetClearance - clearance)
+    local crestExcess = math.max(0, crest - minCrest)
+    local needed = math.min(neededClearance, crestExcess + math.max(0, -clearance))
+    if needed <= 0 then return { eligible=false, reason="NO_RELIEF_NEEDED" } end
+
+    local depth = math.min(maxDepth, needed * activity)
+    if depth <= 0 then return { eligible=false, reason="ZERO_DEPTH" } end
+
+    return {
+        eligible = true,
+        reason = "BODY_SOIL_CONTACT",
+        depthM = depth,
+        activity01 = activity,
+        neededClearanceM = neededClearance,
+        crestExcessM = crestExcess
+    }
+end
+
+local function buildVehicleComponentSet(vehicle)
+    local set = {}
+    for _, component in ipairs(vehicle ~= nil and vehicle.components or {}) do
+        if component ~= nil and component.node ~= nil then
+            set[component.node] = true
+        end
+    end
+    return set
+end
+
+function Engine.probeUnderbodyClearance(vehicle, x, z, terrainY)
+    if vehicle == nil or type(x) ~= "number" or type(z) ~= "number"
+        or type(terrainY) ~= "number" or raycastAll == nil
+        or CollisionFlag == nil or CollisionFlag.VEHICLE == nil then
+        return nil
+    end
+
+    local ownNodes = buildVehicleComponentSet(vehicle)
+    if next(ownNodes) == nil then return nil end
+
+    local probe = {
+        ownNodes = ownNodes,
+        lowestY = nil
+    }
+    function probe:onUnderbodyRaycast(actorId, hitX, hitY, hitZ, distance)
+        if self.ownNodes[actorId] == true and type(hitY) == "number" then
+            if self.lowestY == nil or hitY < self.lowestY then
+                self.lowestY = hitY
+            end
+        end
+        return true
+    end
+
+    -- Start below the terrain surface and cast upward using VEHICLE only.
+    -- Terrain itself therefore cannot hide a vehicle-body hit.
+    pcall(
+        raycastAll,
+        x, terrainY - 0.50, z,
+        0, 1, 0,
+        3.0,
+        "onUnderbodyRaycast",
+        probe,
+        CollisionFlag.VEHICLE
+    )
+
+    if probe.lowestY == nil then return nil end
+    return probe.lowestY - terrainY, probe.lowestY
+end
+
+function Engine.updateAxleTerrainInteraction(vehicle, physics, context)
+    if vehicle == nil or physics == nil or context == nil then return end
 
     local localX = tonumber(physics.positionX)
     local localZ = tonumber(physics.positionZ)
@@ -218,7 +338,8 @@ function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
         x = context.worldX,
         z = context.worldZ,
         supportWidthM = tonumber(context.supportWidthM),
-        baseTireWidthM = tonumber(context.baseTireWidthM)
+        baseTireWidthM = tonumber(context.baseTireWidthM),
+        context = context
     }
 
     if axle.left == nil or axle.right == nil or axle.measured == true then return end
@@ -238,6 +359,100 @@ function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
     end
     if result.crestHeightM >= 0.15 then
         diagCount("centralCrestOver15cm", 1)
+    end
+
+    local leftContext = axle.left.context or {}
+    local rightContext = axle.right.context or {}
+    local speedKph = math.max(
+        math.abs(tonumber(leftContext.speedKph) or 0),
+        math.abs(tonumber(rightContext.speedKph) or 0)
+    )
+
+    -- Keep the rigid-body probe off the hot path. We only ask whether the body
+    -- is touching when a substantial central crest exists and the machine is
+    -- moving slowly enough for high-centering to be plausible.
+    if result.crestHeightM < Engine.DEFAULTS.underbodyMinCrestM
+        or speedKph > Engine.DEFAULTS.underbodyProbeMaxSpeedKph then
+        return
+    end
+
+    diagCount("underbodyProbes", 1)
+    local clearanceM = Engine.probeUnderbodyClearance(
+        vehicle,
+        result.centerX,
+        result.centerZ,
+        result.centerTerrainY
+    )
+    if clearanceM == nil then
+        diagCount("underbodyProbeMisses", 1)
+        return
+    end
+
+    diagMin("minUnderbodyClearanceM", clearanceM)
+    if clearanceM <= Engine.DEFAULTS.underbodyContactClearanceM then
+        diagCount("underbodyContactSamples", 1)
+    end
+
+    local mergedContext = leftContext
+    local wetness = math.max(
+        tonumber(leftContext.physicalGroundWetness) or 0,
+        tonumber(rightContext.physicalGroundWetness) or 0
+    )
+    local longSlip = math.max(
+        math.abs(tonumber(leftContext.longitudinalSlip) or 0),
+        math.abs(tonumber(rightContext.longitudinalSlip) or 0)
+    )
+    local wheelSpeed = math.max(
+        math.abs(tonumber(leftContext.wheelSurfaceSpeedMps) or 0),
+        math.abs(tonumber(rightContext.wheelSurfaceSpeedMps) or 0)
+    )
+
+    local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
+        and RealismExtensionsTerrainSurfaceResponse.resolve(
+            mergedContext, result.centerX, result.centerZ
+        ) or nil
+    if surface == nil or surface.available ~= true then return end
+
+    local relief = Engine.computeUnderbodyRelief({
+        crestHeightM = result.crestHeightM,
+        clearanceM = clearanceM,
+        wetness01 = wetness,
+        deformability01 = tonumber(surface.deformability01) or 0,
+        hardFrozen = leftContext.hardFrozen == true or rightContext.hardFrozen == true,
+        speedKph = speedKph,
+        longitudinalSlip = longSlip,
+        wheelSurfaceSpeedMps = wheelSpeed
+    })
+    if relief.eligible ~= true then
+        diagCount("underbodyReliefRejected_" .. tostring(relief.reason or "UNKNOWN"), 1)
+        return
+    end
+
+    local writer = RealismExtensionsTerrainRuntime ~= nil
+        and RealismExtensionsTerrainRuntime.writer or nil
+    if writer == nil then return end
+
+    local radiusM = math.max(
+        Engine.DEFAULTS.underbodyBrushRadiusMinM,
+        math.min(
+            Engine.DEFAULTS.underbodyBrushRadiusMaxM,
+            result.axleSpanM * Engine.DEFAULTS.underbodyBrushRadiusSpanFactor
+        )
+    )
+    local accepted = writer:enqueue({
+        x = result.centerX,
+        z = result.centerZ,
+        depthM = relief.depthM,
+        radiusM = radiusM,
+        hardness = Engine.DEFAULTS.brushHardness
+    })
+    if accepted then
+        diagCount("underbodyBrushesAccepted", 1)
+        diagCount("underbodyAppliedDepthM", relief.depthM)
+        diagMax("maxUnderbodyReliefDepthM", relief.depthM)
+        diagMax("maxUnderbodyReliefActivity", relief.activity01 or 0)
+    else
+        diagCount("underbodyWriterRejects", 1)
     end
 end
 
@@ -401,7 +616,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("footprintAccepted", 1)
-    Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
+    Engine.updateAxleTerrainInteraction(vehicle, physics, context)
 
     -- Footprint telemetry is intentionally source-state focused. It lets the
     -- next runtime test prove how MR/Mud represent duals before RE invents any
