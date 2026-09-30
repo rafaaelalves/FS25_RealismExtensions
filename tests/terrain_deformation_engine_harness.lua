@@ -123,6 +123,70 @@ local centerRidge = RealismExtensionsTerrainDeformationEngine.computeCentralTerr
 assert(centerRidge ~= nil)
 assert(math.abs(centerRidge.crestHeightM - 0.12) < 0.000001)
 
+-- Underbody relief is gated by actual body contact + deformable wet soil +
+-- physical work. A ridge alone must never disappear.
+local noContact = RealismExtensionsTerrainDeformationEngine.computeUnderbodyRelief({
+    crestHeightM=0.20,
+    clearanceM=0.20,
+    wetness01=0.60,
+    deformability01=1.0,
+    speedKph=2.0,
+    longitudinalSlip=0.2,
+    wheelSurfaceSpeedMps=2.0
+})
+assert(noContact.eligible == false)
+assert(noContact.reason == "NO_BODY_CONTACT")
+
+local tooDry = RealismExtensionsTerrainDeformationEngine.computeUnderbodyRelief({
+    crestHeightM=0.20,
+    clearanceM=0.01,
+    wetness01=0.10,
+    deformability01=1.0,
+    speedKph=2.0,
+    longitudinalSlip=0.2,
+    wheelSurfaceSpeedMps=2.0
+})
+assert(tooDry.eligible == false)
+assert(tooDry.reason == "TOO_DRY")
+
+local parked = RealismExtensionsTerrainDeformationEngine.computeUnderbodyRelief({
+    crestHeightM=0.20,
+    clearanceM=-0.02,
+    wetness01=0.60,
+    deformability01=1.0,
+    speedKph=0,
+    longitudinalSlip=0,
+    wheelSurfaceSpeedMps=0
+})
+assert(parked.eligible == false)
+assert(parked.reason == "NO_WORK")
+
+local scraping = RealismExtensionsTerrainDeformationEngine.computeUnderbodyRelief({
+    crestHeightM=0.20,
+    clearanceM=-0.02,
+    wetness01=0.60,
+    deformability01=1.0,
+    speedKph=1.5,
+    longitudinalSlip=0.1,
+    wheelSurfaceSpeedMps=1.6
+})
+assert(scraping.eligible == true)
+assert(scraping.depthM > 0)
+assert(scraping.depthM <= RealismExtensionsTerrainDeformationEngine.DEFAULTS.underbodyMaxBrushDepthM + 0.000001)
+
+local frozen = RealismExtensionsTerrainDeformationEngine.computeUnderbodyRelief({
+    crestHeightM=0.20,
+    clearanceM=-0.02,
+    wetness01=0.90,
+    deformability01=1.0,
+    hardFrozen=true,
+    speedKph=1.5,
+    longitudinalSlip=0.3,
+    wheelSurfaceSpeedMps=2.0
+})
+assert(frozen.eligible == false)
+assert(frozen.reason == "FROZEN")
+
 local wheelA = { physics = {}, testX = 0 }
 local wheelB = { physics = {}, testX = 0.5 }
 local bodySpeedKph = 5
