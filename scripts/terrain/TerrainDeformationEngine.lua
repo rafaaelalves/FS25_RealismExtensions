@@ -241,7 +241,7 @@ function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
     end
 end
 
-function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin)
+function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin, travelDirX, travelDirZ)
     diagCount("samplesProcessed", 1)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
@@ -303,12 +303,25 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         return false
     end
 
+    local transport = nil
+    if travelDirX ~= nil and travelDirZ ~= nil then
+        transport = {
+            travelDirX = travelDirX,
+            travelDirZ = travelDirZ,
+            wetness01 = tonumber(context.physicalGroundWetness) or 0,
+            deformability01 = tonumber(surface.deformability01) or 0,
+            longitudinalSlip = tonumber(context.longitudinalSlip) or 0,
+            lateralSlip = tonumber(context.lateralSlip) or 0
+        }
+    end
+
     local accepted = writer:enqueue({
         x = x,
         z = z,
         depthM = appliedDepth,
         radiusM = math.max(0.10, response.rutWidthM * 0.5),
-        hardness = Engine.DEFAULTS.brushHardness
+        hardness = Engine.DEFAULTS.brushHardness,
+        massTransport = transport
     })
 
     if accepted then
@@ -434,7 +447,10 @@ function Engine.processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs, stationaryWheelspin)
+        Engine.processSample(
+            vehicle, wheel, state, context, footprint,
+            x, z, elapsedMs, stationaryWheelspin, nil, nil
+        )
         return
     end
 
@@ -460,6 +476,11 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     local sampleDt = elapsedMs / movingSamples
+    local travelDirX, travelDirZ = nil, nil
+    if pathDistance > 0.0001 then
+        travelDirX = (x - lastX) / pathDistance
+        travelDirZ = (z - lastZ) / pathDistance
+    end
 
     for i = 1, movingSamples do
         local t = i / movingSamples
@@ -474,7 +495,9 @@ function Engine.processWheel(vehicle, wheel, dt)
             sx,
             sz,
             sampleDt,
-            stationaryWheelspin
+            stationaryWheelspin,
+            travelDirX,
+            travelDirZ
         )
     end
 end
