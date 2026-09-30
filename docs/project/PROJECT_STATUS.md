@@ -5,20 +5,20 @@ Updated: 2026-09-30
 ## Current release line
 
 - Version: `0.0.1.0`
-- Phase: first gameplay module validated + capability/absorption program
+- Phase: first gameplay module integrated + capability/absorption program
 - Production defaults: gameplay modules disabled; verbose diagnostics disabled
-- TerrainDeformation: implementation/runtime validation complete for current reference stack; pending merge of PR #23
+- TerrainDeformation: integrated into `main` via PR #24 and runtime-validated in the reference stack
 
 ## Completed
 
 - Repository foundation, build/CI, diagnostics, architecture and ownership boundaries.
 - StateContract v2 and RC normalized wheel/ground-state provider boundary.
 - Pressure-driven FootprintModel with low-confidence fallback and crawler fail-closed behavior.
-- TerrainResponseModel with bounded pressure/wetness/slip/sink response, separate slip-induced sinkage, and authoritative sink anchoring.
+- TerrainResponseModel with bounded pressure/wetness/slip/sink response, separate slip-induced sinkage and authoritative sink anchoring.
 - Event-driven TerrainDeformation engine with per-vehicle specialization, path sampling, stationary wheelspin, bounded spatial history, coalesced/budgeted native jobs and server-only writes.
 - Savegame persistence for RE terrain response history plus geometry-consistency guard.
 - SurfaceResponse v6 classification for field states, mud, compacted dirt, gravel and hard surfaces.
-- Runtime validation of v6 in the user's full stack:
+- Runtime validation:
   - FIELD_SOFT / FIELD / FIELD_FIRM produced deformation;
   - DIRT_COMPACTED and HARD remained blocked in ordinary conditions;
   - DIRT_WET deformed only after wetness/slip gates;
@@ -32,9 +32,9 @@ Updated: 2026-09-30
 
 ## TerrainDeformation readiness
 
-Ready to merge into `main` as a validated module, disabled by default.
+Implemented and validated for the current reference stack; integrated into main and disabled by default.
 
-Remaining work does not block integration:
+Remaining work does not block the module's completion status:
 - multi-map terrain-layer/profile naming validation;
 - grouped crawler/track footprint support;
 - explicit GIANTS AI and Courseplay validation before retiring True AI Tracks;
