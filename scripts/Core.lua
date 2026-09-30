@@ -193,6 +193,18 @@ function RealismExtensionsCore:update(dt)
                         d.maxInflationPressureBar or 0
                     ))
                 end
+
+                if (d.axleCrestSamples or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainClearance runtime | axleSamples=%d maxSpan=%.2f maxCentralCrest=%.3f crest>5cm=%d crest>10cm=%d crest>15cm=%d",
+                        d.axleCrestSamples or 0,
+                        d.maxAxleSpanM or 0,
+                        d.maxCentralTerrainCrestM or 0,
+                        d.centralCrestOver5cm or 0,
+                        d.centralCrestOver10cm or 0,
+                        d.centralCrestOver15cm or 0
+                    ))
+                end
             end
         end
     end
