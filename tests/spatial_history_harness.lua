@@ -14,7 +14,7 @@ assert(h:get(0.01, 0.01).rutDepthM == 0.03)
 
 -- Distinct cells are bounded with least-recently-used pruning.
 h:commit(1.0, 0, { passCount = 1 })
-h:commit(2.0, 0, { passCount = 2 })
+h:commit(2.0, 0, { passCount = 2, deformationExposure = 1.75 })
 assert(h.count == 3)
 
 -- Touch the first cell so the 1.0 cell becomes oldest.
@@ -31,6 +31,7 @@ assert(h:get(3.0, 0) ~= nil)
 -- Capture the material cells before deliberately adding runtime-only state.
 local expectedZeroRut = h:get(0, 0).rutDepthM
 local expectedTwoPasses = h:get(2.0, 0).passCount
+local expectedExposure = h:get(2.0, 0).deformationExposure
 
 -- Runtime bookkeeping may contain a touched-but-physically-empty cell; it
 -- must not bloat the savegame sidecar. maxCells=3 means this insert may evict
@@ -49,6 +50,7 @@ assert(ok == true, reason)
 assert(restored.count == 2)
 assert(restored:get(0, 0).rutDepthM == expectedZeroRut)
 assert(restored:get(2.0, 0).passCount == expectedTwoPasses)
+assert(math.abs(restored:get(2.0, 0).deformationExposure - expectedExposure) < 0.000001)
 assert(restored:get(9.0, 9.0) == nil)
 
 -- A tuning change to the spatial grid must fail closed rather than silently
