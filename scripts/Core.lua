@@ -205,6 +205,20 @@ function RealismExtensionsCore:update(dt)
                         d.centralCrestOver15cm or 0
                     ))
                 end
+
+                if (d.underbodyProbes or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "UnderbodyRelief runtime | probes=%d misses=%d contacts=%d brushes=%d appliedDepth=%.3f maxBrush=%.4f maxActivity=%.2f minClearance=%.3f",
+                        d.underbodyProbes or 0,
+                        d.underbodyProbeMisses or 0,
+                        d.underbodyContactSamples or 0,
+                        d.underbodyBrushesAccepted or 0,
+                        d.underbodyAppliedDepthM or 0,
+                        d.maxUnderbodyReliefDepthM or 0,
+                        d.maxUnderbodyReliefActivity or 0,
+                        d.minUnderbodyClearanceM or 0
+                    ))
+                end
             end
         end
     end
