@@ -1,283 +1,55 @@
 # Current development handoff
 
-Updated: 2026-09-29
+Updated: 2026-09-30
 
 This file is the first place to read when continuing RealismExtensions in a new chat/session.
 
-## Current branch and PR
+## Current state
 
-- Active branch: `feat/terrain-surface-response-v6`
-- Draft PR: #23 — `feat: terrain surface response and bounded rutting v6`
-- Base branch: `main`
-- Latest CI on the v6 branch: green.
-- User has downloaded the v6 test ZIP but has not runtime-tested it yet.
+- Active implementation: `TerrainDeformation` v6 surface response.
+- PR #23 contains the complete v5 geometry/persistence work plus v6 surface calibration and diagnostics.
+- PR #22 was closed as superseded by #23.
+- Latest v6 CI is green.
+- v6 has been runtime-tested successfully in the user's full mod stack.
+- Production defaults are restored before merge: `TerrainDeformation=false`, verbose diagnostics off.
 
-## Immediate objective
+## Runtime validation completed
 
-Turn the successful v5 "SnowRunner-scale deformation proof" into believable agricultural/road terrain response.
+Captured v6 runtime evidence:
+- field categories deform correctly: FIELD_SOFT, FIELD and FIELD_FIRM all produced geometry;
+- DIRT_COMPACTED and HARD produced zero brushes under ordinary conditions;
+- DIRT_WET produced deformation only after the wetness/slip gate;
+- 37,986 brushes were accepted, 36,798 submitted after coalescing, 5,056 native jobs completed, and failedJobs remained 0;
+- GIANTS callbacks reported 244.519 m3 displaced volume;
+- stationary wheelspin remained active with 263 accepted stationary brushes and ~0.584 m cumulative RE-applied depth;
+- save/reload restored 12,483 terrain-history cells with no geometry-mismatch rejection;
+- RC reuse hints were fully consumed in the captured session: 13,487/13,487 speedHintHits and wheelSurfaceSpeedHintHits, 13,487 slipSnapshotHits, 0 slipDirectReads;
+- user described the v6 gameplay result as quite good. Missing mud adhesion/spray/puddles are future immersion features, not TerrainDeformation failures.
 
-v5 proved:
-- GIANTS terrain heightmap deformation is strong enough for deep visible ruts;
-- stationary wheelspin reaches the RE pipeline;
-- progressive excavation can make a vehicle genuinely difficult to move;
-- v5 tuning was far too aggressive for normal field work;
-- the old binary `soilContact` gate excluded compacted dirt/gravel roads completely;
-- RE domain-history persistence does not prove GIANTS heightmap persistence.
+## Readiness decision
 
-## Latest v5 runtime evidence
+TerrainDeformation is ready to merge into main as the first validated RE gameplay module, disabled by default for production.
 
-User report:
-- field ruts became extremely large and practically unworkable;
-- the result felt recognizably SnowRunner-like and therefore proved the direction is viable;
-- compacted dirt road did not deform even while raining;
-- user wants realism by surface, not globally stronger/weaker deformation.
+It is not yet a claim of universal release completeness or a basis to retire every terrain-related specialist. Remaining validation/hardening work is deliberately separate:
+- multi-map terrain-layer naming/classification;
+- grouped crawler/track footprint modeling;
+- explicit GIANTS AI / Courseplay coverage before replacing True AI Tracks;
+- release-mode performance/telemetry benchmarking;
+- broader visual mud/water systems belong to later modules.
 
-Latest captured v5 diagnostics:
-- outside supported soil, wheelspin can be detected while all deformation is rejected as non-soil;
-- after entering supported field soil, brushes begin immediately;
-- peak modeled rut/capacity reached about 0.595 m in the aggressive v5 stationary test;
-- no failed terrain-deformation jobs were observed in the captured run;
-- asynchronous/overlapping brush diagnostics mean cumulative observed-lowering values must not be interpreted as unique excavated depth or as one-brush response.
+## Ownership
 
-## v6 changes awaiting runtime test
+- MR owns base vehicle dynamics, wheel/traction simulation and slip.
+- MudSystemPhysics owns local wetness, sink/resistance/stuck behavior, tire pressure/load and freeze/ground signals.
+- RC arbitrates overlap and exposes normalized authoritative state.
+- RE TerrainDeformation owns visible/persistent rut geometry and surface-dependent geometric consequence.
 
-`SurfaceResponse.lua` now distinguishes:
-- soft field;
-- generic field;
-- firm field;
-- explicit mud terrain layer;
-- compacted dirt;
-- gravel;
-- hard/paved surface.
+RE must continue to reuse authoritative specialist outputs rather than copy MR/Mud formulas.
 
-Initial calibration:
-- soft field: ~0.08 m static / ~0.18 m severe-slip cap;
-- generic field: ~0.06 m / ~0.15 m;
-- firm field: ~0.04 m / ~0.10 m;
-- explicit mud: ~0.07 m / ~0.17 m;
-- wet compacted dirt: up to ~0.018 m / ~0.050 m, only after wetness+slip gates;
-- wet gravel: up to ~0.012 m / ~0.035 m, only after stronger wetness+slip gates;
-- asphalt/concrete/paved: no RE deformation.
+## Important model rule
 
-Excavation cadence changed:
-- sample interval: 100 ms -> 250 ms;
-- per-sample geometric cap: 0.015 m -> 0.003 m.
+Surface caps bound geometry invented by RE. Authoritative Mud sink remains a lower bound, so `rutCapacityM` may exceed a v6 surface cap when the active physics owner reports deeper real sink. This is intentional and prevents geometry from contradicting vehicle physics.
 
-These numbers are provisional gameplay calibration, not claimed agronomic constants.
+## Next development step
 
-## v6 runtime test requested from user
-
-When the user returns, test at least:
-
-1. Same field used for the v5 crater test:
-   - normal driving/field work;
-   - repeated passes;
-   - stationary wheelspin against obstacle.
-2. Compacted dirt road:
-   - normal travel while wet;
-   - deliberate high slip.
-3. Hard/paved surface:
-   - verify zero geometric deformation.
-4. Save/reload after producing visible geometry:
-   - verify whether GIANTS preserves the heightmap;
-   - RE sidecar history must be rejected if geometry does not match.
-
-Desired behavior:
-- ordinary field work remains viable;
-- severe wet/slip conditions can progressively create serious ruts and eventual stuck behavior;
-- compacted roads resist normal rain/pass traffic;
-- hard surfaces do not deform.
-
-## Stack ownership: current implementation
-
-The architecture is intentionally composition-first.
-
-### MoreRealistic (MR)
-
-Owns:
-- base vehicle dynamics;
-- drivetrain behavior;
-- base wheel/traction simulation;
-- slip state used by the current stack.
-
-RE does not overwrite MR wheel dynamics.
-
-### MudSystemPhysics
-
-Owns:
-- physical local wetness;
-- field ground profile / mud potential;
-- temporary sink state;
-- terrain/sink/slip resistance and stuck behavior;
-- tire pressure and wheel-load state used by the provider;
-- freeze/ground-state signals.
-
-RE does not create a second sink/stuck force model.
-
-### RealismCompatibility (RC)
-
-RC is the arbiter/adapter between specialists.
-
-Important current MRMud behavior:
-- inject Mud local wetness into MR where appropriate;
-- preserve MR as base rolling-resistance/traction owner;
-- suppress the overlapping Mud baseline-resistance term while keeping Mud sink/slip resistance;
-- decouple Mud temporary sink-radius loss from structural tire radius;
-- preserve Mud speed-cap/stuck consequences;
-- expose a versioned normalized wheel context to RE.
-
-RC also caches hot-path state so RE can reuse it instead of recomputing:
-- MR slip snapshots;
-- local Mud wetness snapshots;
-- structural radius snapshots;
-- wheel load;
-- tire pressure;
-- ground profile/mud potential;
-- sink depth/severity;
-- freeze state.
-
-### RealismExtensions (RE)
-
-Owns the missing consequence:
-- persistent/visible terrain rut geometry;
-- rut-domain history;
-- surface-dependent geometric response.
-
-RE consumes normalized state from RC and should not directly patch MR/Mud physics functions.
-
-## Evidence that reuse-first works in runtime
-
-In the latest v5 log, the ExtensionsStateProvider recorded:
-- 13,099 wheel contexts in the first captured session;
-- 13,099 slip snapshot hits;
-- 0 direct slip reads;
-- 9,715 wetness snapshot hits vs 3,368 fresh wetness reads;
-- 9,696 structural-radius snapshot hits vs 3,363 fallback structural resolves.
-
-The second captured session showed the same pattern:
-- 8,606 wheel contexts;
-- 8,606 slip snapshot hits;
-- 0 direct slip reads;
-- 7,766 wetness snapshot hits vs 824 fresh reads;
-- 7,718 structural-radius snapshot hits vs 848 fallback resolves.
-
-Interpretation: RE is predominantly consuming already-computed specialist state instead of running a parallel traction/wetness/radius simulation.
-
-## How external mod updates propagate
-
-### Changes that usually propagate automatically
-
-If a Mud/MR update changes the value of an already-exposed authoritative state while preserving the runtime contract, RE should inherit it automatically. Examples:
-- different local wetness result;
-- different sink depth/severity;
-- different ground mud potential/profile;
-- different MR slip result;
-- different tire-pressure result;
-- different wheel-load result;
-- different structural-radius composition.
-
-### Changes that do NOT automatically propagate
-
-RE has its own consequence model. Therefore an external update does not automatically retune:
-- RE rut-cap constants;
-- RE shear saturation constants;
-- RE surface-classification thresholds;
-- RE brush cadence/hardness/geometry;
-- RE persistence format;
-- new external state that is not exposed through the provider contract.
-
-These require compatibility review or deliberate provider-contract evolution.
-
-### Contract-break handling
-
-RC/RE should prefer:
-1. version/runtime-contract detection;
-2. reuse fresh authoritative state when valid;
-3. fall back narrowly where safe;
-4. fail closed for unsupported state rather than silently inventing a second owner.
-
-## Important design rule
-
-Do not "absorb" a specialist merely by copying its formulas.
-
-A specialist should only be replaced after a clean-room capability audit demonstrates a material benefit such as:
-- better physics;
-- lower bounded runtime cost;
-- fewer conflicting global hooks;
-- simpler authoritative state;
-- simpler persistence/network behavior;
-- elimination of large compatibility bridges.
-
-Until that bar is met, composition is preferred.
-
-## Known open questions
-
-1. v6 calibration still needs runtime validation.
-2. Terrain layer names vary by map; dirt/gravel/mud classification needs multi-map testing.
-3. Ground profile naming exposed by Mud may vary and should be logged/validated.
-4. Heightmap persistence across save/reload is still not solved.
-5. Geometry diagnostics are affected by overlapping/asynchronous jobs and need a less misleading measurement strategy.
-6. RE TerrainResponse is still a separate consequence model; future work can make it depend more strongly on authoritative Mud response signals without duplicating Mud forces.
-7. Crawler/track grouped footprint modeling remains unresolved.
-8. Release-mode telemetry cost still needs benchmarking/reduction.
-
-## Next work that does not require user testing
-
-Safe work while waiting for v6 runtime feedback:
-- improve documentation and update-propagation rules;
-- add surface-category diagnostics so the next log tells us exactly which classification was used;
-- improve terrain geometry telemetry so overlapping async jobs do not masquerade as one-brush depth;
-- audit current provider contract for any Mud outputs worth exposing instead of re-deriving;
-- keep gameplay tuning changes minimal until the user's v6 field/road test returns.
-
-
-## 2026-09-29 follow-up while waiting for v6 runtime test
-
-Work completed without changing v6 gameplay calibration:
-
-### Surface diagnostics
-The next RE runtime log now attributes samples and accepted geometry by surface category:
-- FIELD_SOFT
-- FIELD
-- FIELD_FIRM
-- MUD
-- DIRT_WET
-- DIRT_COMPACTED
-- GRAVEL_WET
-- GRAVEL
-- HARD
-- UNKNOWN
-
-Each category reports seen samples, accepted brushes and cumulative applied RE depth. This is intended to validate map-specific terrain classification rather than infer it from player perception.
-
-### Geometry diagnostics
-GIANTS TerrainDeformation callbacks expose displacedVolume. RE now records:
-- callbackSuccessJobs
-- callbackDisplacedVolumeM3
-- callbackMaxDisplacedVolumeM3
-- callbackVolumeMissing
-
-This callback volume is now the preferred async geometry metric.
-
-The old before/after terrain-height probe remains for debugging only and is explicitly labeled as a probe because queued/overlapping jobs can alter the sampled point between submission and callback. Its cumulative lowering/max-lowering values must not be interpreted as one-job or unique terrain depth.
-
-### RC -> RE hot-path reuse
-A small duplicate computation was identified:
-- TerrainDeformationEngine already obtains vehicle speed and wheel-surface speed for its cheap activity gate;
-- ExtensionsStateProvider was resolving the same quantities again immediately afterwards.
-
-RE now passes optional speed hints through StateContract.getWheelContext(..., hints).
-RC branch `perf/extensions-state-reuse-hints` / draft PR #11 consumes those hints and records:
-- speedHintHits
-- wheelSurfaceSpeedHintHits
-
-The provider API/context version remains unchanged; older RC providers simply ignore the optional third argument, so this is backward-compatible.
-
-### Ownership conclusion from latest v5 telemetry
-The latest runtime evidence supports the intended composition:
-- MR slip is reused via snapshots (no direct RE slip reads in captured sessions);
-- Mud wetness/sink/ground state remains authoritative;
-- RC resolves/suppresses overlap and exposes normalized context;
-- RE owns rut geometry/consequence only.
-
-Do not replace Mud/MR formulas inside RE merely to centralize code. Revisit ownership only through the accepted clean-room specialist replacement policy.
+After merging #23, treat TerrainDeformation as implemented/validated and move to the next RE capability rather than continuing blind calibration. Re-open TerrainDeformation only for concrete regressions, multi-map compatibility findings, crawler support, AI/Courseplay validation, or measured performance issues.
