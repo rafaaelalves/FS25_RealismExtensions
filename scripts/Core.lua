@@ -205,6 +205,23 @@ function RealismExtensionsCore:update(dt)
                         d.centralCrestOver15cm or 0
                     ))
                 end
+
+                if (d.massTransportSourceVolumeM3 or 0) > 0 then
+                    local target = d.massTransportTargetVolumeM3 or 0
+                    local raised = d.massTransportRaisedVolumeM3 or 0
+                    local errorM3 = raised - target
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d",
+                        d.massTransportSourceVolumeM3 or 0,
+                        target,
+                        raised,
+                        d.massTransportCompactionVolumeM3 or 0,
+                        errorM3,
+                        d.massTransportBermsEnqueued or 0,
+                        d.massTransportRaiseJobs or 0,
+                        d.massTransportModelRejects or 0
+                    ))
+                end
             end
         end
     end
