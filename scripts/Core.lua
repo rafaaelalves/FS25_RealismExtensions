@@ -177,6 +177,22 @@ function RealismExtensionsCore:update(dt)
                         .. table.concat(parts, " ")
                     )
                 end
+
+                if (d.footprintAccepted or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "Footprint runtime | contexts=%d wideSupport=%d maxBaseWidth=%.3f maxSupportWidth=%.3f maxWidthRatio=%.2f maxLoadN=%.0f maxArea=%.3f pressurePa=%.0f..%.0f maxInflationBar=%.2f",
+                        d.footprintAccepted or 0,
+                        d.wideSupportContexts or 0,
+                        d.maxBaseTireWidthM or 0,
+                        d.maxSupportWidthM or 0,
+                        d.maxSupportWidthRatio or 0,
+                        d.maxWheelLoadN or 0,
+                        d.maxContactAreaM2 or 0,
+                        d.minGroundPressurePa or 0,
+                        d.maxGroundPressurePa or 0,
+                        d.maxInflationPressureBar or 0
+                    ))
+                end
             end
         end
     end
