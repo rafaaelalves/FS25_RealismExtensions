@@ -5,13 +5,13 @@ Engine.SPEC_NAME = "realismExtensionsTerrainDeformation"
 Engine.SPEC_FIELD = "spec_" .. Engine.SPEC_NAME
 
 Engine.DEFAULTS = {
-    sampleIntervalMs = 100,
+    sampleIntervalMs = 250,
     pathSpacingFactor = 0.45,
     minPathSpacingM = 0.10,
     maxSamplesPerWheelTick = 6,
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
-    maxBrushDepthM = 0.015,
+    maxBrushDepthM = 0.003,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
@@ -48,15 +48,7 @@ local function diagMax(name, value)
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil then return end
     runtime.stats = runtime.stats or {}
-    runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or -math.huge, value)
-end
-
-local function diagSum(name, value)
-    if not diagnosticsEnabled() or type(value) ~= "number" then return end
-    local runtime = RealismExtensionsTerrainRuntime
-    if runtime == nil then return end
-    runtime.stats = runtime.stats or {}
-    runtime.stats[name] = (tonumber(runtime.stats[name]) or 0) + value
+    runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or 0, value)
 end
 
 function Engine.prerequisitesPresent(specializations)
@@ -140,7 +132,7 @@ local function shouldSample(state, dt, intervalMs)
     return true, elapsed
 end
 
-function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs)
+function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin)
     diagCount("samplesProcessed", 1)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
@@ -148,44 +140,51 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     local history = historyStore:get(x, z)
     local previousDepth = history ~= nil and tonumber(history.rutDepthM) or 0
 
+    local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
+        and RealismExtensionsTerrainSurfaceResponse.resolve(context, x, z) or nil
+    if surface == nil or surface.available ~= true then
+        diagCount("surfaceRejects", 1)
+        diagCount("surfaceSeen_UNKNOWN", 1)
+        return false
+    end
+    diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
+    if (tonumber(surface.deformability01) or 0) <= 0 then
+        diagCount("surfaceRejects", 1)
+        diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
+        return false
+    end
+    diagCount("surfaceAccepted", 1)
+    diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
+
     local response = RealismExtensionsTerrainResponseModel.compute(
         context,
         footprint,
         history,
-        dtMs
+        dtMs,
+        {
+            absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
+            absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
+        }
     )
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
         return false
     end
 
-    diagMax("maxRutDepthM", tonumber(response.rutDepthM))
-    diagMax("maxRutCapacityM", tonumber(response.rutCapacityM))
-    diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM))
-    diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM))
-    diagMax("maxSlipSinkage01", tonumber(response.slipSinkage01))
-    diagMax("maxObservedSinkDepthM", tonumber(response.observedSinkDepthM))
-
-    if wheelState.stationaryWheelspin == true then
-        diagCount("stationaryResponseSamples", 1)
-        diagMax("maxStationaryRutDepthM", tonumber(response.rutDepthM))
-        diagMax("maxStationaryRutCapacityM", tonumber(response.rutCapacityM))
-        diagMax("maxStationarySlipSinkage01", tonumber(response.slipSinkage01))
-    end
+    diagMax("maxRutDepthM", tonumber(response.rutDepthM) or 0)
+    diagMax("maxRutCapacityM", tonumber(response.rutCapacityM) or 0)
+    diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
+    diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
+    diagMax("maxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier) or 0)
 
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
+    diagCount("requestedDepthM", desiredDelta)
     local appliedDepth = math.min(
         desiredDelta,
         Engine.DEFAULTS.maxBrushDepthM
     )
-
-    diagMax("maxDesiredDepthDeltaM", desiredDelta)
-    diagMax("maxAppliedBrushDepthM", appliedDepth)
-
-    if wheelState.stationaryWheelspin == true then
-        diagMax("maxStationaryDesiredDepthDeltaM", desiredDelta)
-        diagMax("maxStationaryAppliedBrushDepthM", appliedDepth)
-    end
+    appliedDepth = appliedDepth
+        * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
     if appliedDepth <= writer.options.minDepthM then
         -- Preserve shear/pass history even when the geometric delta is too
@@ -210,10 +209,14 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
             copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
         )
         diagCount("brushesAccepted", 1)
-        diagSum("appliedBrushDepthTotalM", appliedDepth)
-        if wheelState.stationaryWheelspin == true then
+        diagCount("appliedDepthM", appliedDepth)
+        diagCount("surfaceBrushes_" .. tostring(surface.category or "UNKNOWN"), 1)
+        diagCount("surfaceAppliedDepth_" .. tostring(surface.category or "UNKNOWN"), appliedDepth)
+        if stationaryWheelspin == true then
             diagCount("stationaryBrushesAccepted", 1)
-            diagSum("stationaryAppliedDepthTotalM", appliedDepth)
+            diagCount("stationaryAppliedDepthM", appliedDepth)
+            diagMax("stationaryMaxRutDepthM", tonumber(response.rutDepthM) or 0)
+            diagMax("stationaryMaxRutCapacityM", tonumber(response.rutCapacityM) or 0)
         end
         return true
     end
@@ -250,16 +253,18 @@ function Engine.processWheel(vehicle, wheel, dt)
         return
     end
 
-    state.stationaryWheelspin =
+    local stationaryWheelspin =
         bodySpeedKph < Engine.DEFAULTS.inactiveSpeedKph
         and wheelSpeedMps >= Engine.DEFAULTS.inactiveWheelSpeedMps
-
-    if state.stationaryWheelspin then
+    if stationaryWheelspin then
         diagCount("stationaryWheelspinCandidates", 1)
     end
 
     diagCount("contextRequests", 1)
-    local context = RealismExtensionsState.getWheelContext(vehicle, wheel)
+    local context = RealismExtensionsState.getWheelContext(vehicle, wheel, {
+        speedKph = bodySpeedKph,
+        wheelSurfaceSpeedMps = wheelSpeedMps
+    })
     if context == nil then
         diagCount("contextUnavailable", 1)
         state.lastX, state.lastZ = nil, nil
@@ -267,11 +272,6 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
     if context.grounded ~= true then
         diagCount("notGrounded", 1)
-        state.lastX, state.lastZ = nil, nil
-        return
-    end
-    if context.soilContact ~= true then
-        diagCount("notSoilContact", 1)
         state.lastX, state.lastZ = nil, nil
         return
     end
@@ -298,7 +298,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs)
+        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs, stationaryWheelspin)
         return
     end
 
@@ -337,7 +337,8 @@ function Engine.processWheel(vehicle, wheel, dt)
             footprint,
             sx,
             sz,
-            sampleDt
+            sampleDt,
+            stationaryWheelspin
         )
     end
 end
@@ -405,6 +406,10 @@ function RealismExtensionsTerrainRuntime.getDiagnostics()
 end
 
 function RealismExtensionsTerrainRuntime.clear()
+    if RealismExtensionsTerrainSurfaceResponse ~= nil
+        and RealismExtensionsTerrainSurfaceResponse.clear ~= nil then
+        RealismExtensionsTerrainSurfaceResponse.clear()
+    end
     if RealismExtensionsTerrainRuntime.history ~= nil then
         RealismExtensionsTerrainRuntime.history:clear()
     end
