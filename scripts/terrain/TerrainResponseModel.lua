@@ -218,6 +218,10 @@ function Model.compute(context, footprint, history, dtMs, options)
         options.minRutDepthFraction,
         options.maxRutDepthFraction
     )
+    local absoluteStaticCap = tonumber(options.absoluteMaxStaticRutDepthM)
+    if validPositive(absoluteStaticCap) then
+        maxStaticCapacity = math.min(maxStaticCapacity, absoluteStaticCap)
+    end
 
     local capacityFraction = clamp(
         susceptibility * pressureDrive,
@@ -269,6 +273,10 @@ function Model.compute(context, footprint, history, dtMs, options)
         tonumber(options.maxSlipRutDepthFraction)
             or options.maxRutDepthFraction
     )
+    local absoluteSlipCap = tonumber(options.absoluteMaxSlipRutDepthM)
+    if validPositive(absoluteSlipCap) then
+        maxSlipCapacity = math.min(maxSlipCapacity, absoluteSlipCap)
+    end
     local slipRutCapacityM = math.min(
         maxSlipCapacity,
         staticRutCapacityM * slipSinkageMultiplier
