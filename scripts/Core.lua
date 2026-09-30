@@ -100,7 +100,7 @@ function RealismExtensionsCore:update(dt)
                     and runtime.getDiagnostics() or {}
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d stationaryBrushes=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d maxRut=%.4f maxCap=%.4f maxStaticCap=%.4f maxSlipCap=%.4f maxSlip=%.3f maxBrush=%.4f stationaryMaxRut=%.4f stationaryMaxCap=%.4f stationaryMaxSlip=%.3f stationaryDepthTotal=%.4f lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -119,7 +119,6 @@ function RealismExtensionsCore:update(dt)
                     d.responseRejects or 0,
                     d.belowBrushThreshold or 0,
                     d.brushesAccepted or 0,
-                    d.stationaryBrushesAccepted or 0,
                     history ~= nil and (history.count or 0) or 0,
                     writer ~= nil and #(writer.queue or {}) or 0,
                     writerStats.enqueued or 0,
@@ -127,19 +126,57 @@ function RealismExtensionsCore:update(dt)
                     writerStats.submittedBrushes or 0,
                     writerStats.submittedJobs or 0,
                     writerStats.failedJobs or 0,
+                    writerStats.coalescedBrushes or 0,
+                    writerStats.callbackSuccessJobs or 0,
+                    writerStats.callbackDisplacedVolumeM3 or 0,
+                    writerStats.callbackMaxDisplacedVolumeM3 or 0,
+                    writerStats.callbackVolumeMissing or 0,
+                    writerStats.geometrySamples or 0,
+                    writerStats.geometryShallowSamples or 0,
+                    writerStats.geometryZeroChangeSamples or 0,
+                    writerStats.geometryRequestedDepthM or 0,
+                    writerStats.geometryObservedLoweringM or 0,
+                    writerStats.maxRequestedDepthM or 0,
+                    writerStats.maxObservedLoweringM or 0,
                     d.maxRutDepthM or 0,
                     d.maxRutCapacityM or 0,
                     d.maxStaticRutCapacityM or 0,
                     d.maxSlipRutCapacityM or 0,
-                    d.maxSlipSinkage01 or 0,
-                    d.maxAppliedBrushDepthM or 0,
-                    d.maxStationaryRutDepthM or 0,
-                    d.maxStationaryRutCapacityM or 0,
-                    d.maxStationarySlipSinkage01 or 0,
-                    d.stationaryAppliedDepthTotalM or 0,
+                    d.maxSlipSinkageMultiplier or 0,
+                    d.stationaryBrushesAccepted or 0,
+                    d.stationaryAppliedDepthM or 0,
+                    d.stationaryMaxRutDepthM or 0,
+                    d.stationaryMaxRutCapacityM or 0,
                     brushes or 0,
                     jobs or 0
                 ))
+
+                local categories = {
+                    "FIELD_SOFT", "FIELD", "FIELD_FIRM",
+                    "MUD", "DIRT_WET", "DIRT_COMPACTED",
+                    "GRAVEL_WET", "GRAVEL", "HARD", "UNKNOWN"
+                }
+                local parts = {}
+                for _, category in ipairs(categories) do
+                    local seen = d["surfaceSeen_" .. category] or 0
+                    local brushesForSurface = d["surfaceBrushes_" .. category] or 0
+                    local depthForSurface = d["surfaceAppliedDepth_" .. category] or 0
+                    if seen > 0 or brushesForSurface > 0 then
+                        parts[#parts + 1] = string.format(
+                            "%s=%d/%d/%.3f",
+                            category,
+                            seen,
+                            brushesForSurface,
+                            depthForSurface
+                        )
+                    end
+                end
+                if #parts > 0 then
+                    RealismExtensionsDiagnostics.verbose(
+                        "SurfaceResponse runtime | seen/brushes/appliedDepthM "
+                        .. table.concat(parts, " ")
+                    )
+                end
             end
         end
     end

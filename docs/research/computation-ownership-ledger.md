@@ -86,3 +86,19 @@ This is more defensible than inventing Bekker constants for every FS25 ground ty
 5. TerrainDeformation history persistence and crawler support remain unresolved.
 
 These are tracked work, not hidden assumptions.
+
+## External-update propagation rule
+
+RC/RE intentionally distinguishes **authoritative state reuse** from **algorithm copying**.
+
+When an external owner changes an already-exposed runtime result while preserving its contract, downstream consumers inherit the new result without duplicating its algorithm. For example, a Mud update that changes local wetness, sink depth/severity, ground profile, tire pressure or wheel load should affect RE through the normalized provider.
+
+An update does not automatically alter RE-owned consequence logic such as rut capacity, shear accumulation, surface classification or brush geometry. Those remain RE behavior and require deliberate calibration when upstream semantics materially change.
+
+Therefore compatibility with an external update is evaluated at the contract boundary:
+1. did the owner still produce the state we consume?
+2. did its units/range/meaning remain compatible?
+3. did behavior change enough that RE consequence calibration should be revisited?
+4. can a new authoritative output replace any remaining RE inference?
+
+This preserves improvements from specialist updates without coupling RE to private formulas or freezing copied implementations.

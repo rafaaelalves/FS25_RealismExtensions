@@ -21,6 +21,11 @@ function TerrainDeformation.new(terrain)
         self.depth = value
     end
 
+    function d:setOutsideAreaConstraints(a,b,c) self.outside={a,b,c} end
+    function d:setBlockedAreaMaxDisplacement(v) self.blocked=v end
+    function d:setDynamicObjectCollisionMask(v) self.mask=v end
+    function d:setDynamicObjectMaxDisplacement(v) self.dynamic=v end
+
     function d:addSoftCircleBrush(x, z, radius, hardness, opacity, brush)
         self.brushes[#self.brushes + 1] = {
             x=x,z=z,radius=radius,hardness=hardness,opacity=opacity,brush=brush
@@ -35,6 +40,12 @@ function TerrainDeformation.new(terrain)
     return d
 end
 
+local heights = {}
+function getTerrainHeightAtWorldPos(terrain, x, y, z)
+    local key = tostring(x) .. ":" .. tostring(z)
+    return heights[key] or 10
+end
+
 g_currentMission = { terrainRootNode = 42 }
 g_asyncTaskManager = {
     addTask = function(self, fn) fn() end
@@ -42,7 +53,11 @@ g_asyncTaskManager = {
 g_terrainDeformationQueue = {
     queueJob = function(self, deformation, preview, callbackName, target)
         queued[#queued + 1] = deformation
-        target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0, nil)
+        for _, brush in ipairs(deformation.brushes) do
+            local key = tostring(brush.x) .. ":" .. tostring(brush.z)
+            heights[key] = (heights[key] or 10) + deformation.depth
+        end
+        target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0.125, nil)
         return #queued
     end
 }
@@ -82,3 +97,17 @@ assert(brushes2 == 1 and jobs2 == 1)
 assert(#w.queue == 0)
 
 print("terrain_writer_harness: OK")
+
+assert(created[1].outside ~= nil)
+assert(created[1].blocked == 0)
+assert(created[1].mask == 0)
+assert(created[1].dynamic == 0)
+assert(w.stats.geometrySamples == 6)
+assert(w.stats.geometryObservedLoweringM > 0)
+assert(w.stats.geometryRequestedDepthM > 0)
+assert(w.stats.maxObservedLoweringM > 0)
+
+assert(w.stats.callbackSuccessJobs == 3)
+assert(math.abs(w.stats.callbackDisplacedVolumeM3 - 0.375) < 0.000001)
+assert(math.abs(w.stats.callbackMaxDisplacedVolumeM3 - 0.125) < 0.000001)
+assert(w.stats.callbackVolumeMissing == 0)

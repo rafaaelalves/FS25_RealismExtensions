@@ -119,13 +119,19 @@ function RealismExtensionsState.getProviderStatus()
         RealismExtensionsState.providerInfo
 end
 
-function RealismExtensionsState.getWheelContext(vehicle, wheel)
+function RealismExtensionsState.getWheelContext(vehicle, wheel, hints)
     local provider = RealismExtensionsState.provider
     if provider == nil then
         return nil
     end
 
-    local ok, context = pcall(provider.getWheelContext, provider, vehicle, wheel)
+    local ok, context = pcall(
+        provider.getWheelContext,
+        provider,
+        vehicle,
+        wheel,
+        hints
+    )
     if not ok or type(context) ~= "table" then
         return nil
     end
