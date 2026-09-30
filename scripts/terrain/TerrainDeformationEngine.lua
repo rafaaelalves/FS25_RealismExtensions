@@ -283,11 +283,13 @@ function Engine.probeUnderbodyClearance(vehicle, x, z, terrainY)
     }
     function probe:onUnderbodyRaycast(actorId, hitX, hitY, hitZ, distance)
         if self.ownNodes[actorId] == true and type(hitY) == "number" then
-            if self.lowestY == nil or hitY < self.lowestY then
-                self.lowestY = hitY
-            end
+            self.lowestY = hitY
+            -- raycastAll reports nearest hits first; from below terrain this is
+            -- the lowest rigid-body surface of this vehicle at the probe point.
+            return true
         end
-        return true
+        -- Ignore other vehicles/objects and continue until our own body is hit.
+        return false
     end
 
     -- Start below the terrain surface and cast upward using VEHICLE only.
