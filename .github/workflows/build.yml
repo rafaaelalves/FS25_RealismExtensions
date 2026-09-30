@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - "feat/**"
+      - "fix/**"
+      - "perf/**"
+      - "test/**"
+      - "diag/**"
       - "chore/**"
       - "research/**"
   pull_request:
@@ -66,8 +70,25 @@ jobs:
           unzip -p build/FS25_RealismExtensions.zip modDesc.xml >/dev/null
           unzip -p build/FS25_RealismExtensions.zip icon.dds >/dev/null
 
+      - name: Record build metadata
+        run: |
+          sha256sum build/FS25_RealismExtensions.zip | tee build/SHA256SUMS.txt
+          {
+            echo "### FS25 RealismExtensions test build"
+            echo ""
+            echo "- Branch: `${GITHUB_REF_NAME}`"
+            echo "- Commit: `${GITHUB_SHA}`"
+            echo "- Mod ZIP: `FS25_RealismExtensions.zip`"
+            echo ""
+            echo "Download the artifact attached to this workflow run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: FS25_RealismExtensions
-          path: build/FS25_RealismExtensions.zip
+          name: FS25_RealismExtensions-${{ github.sha }}
+          path: |
+            build/FS25_RealismExtensions.zip
+            build/SHA256SUMS.txt
           if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
