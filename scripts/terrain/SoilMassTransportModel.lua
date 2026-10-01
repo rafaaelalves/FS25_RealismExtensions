@@ -162,34 +162,58 @@ function Model.compute(input, options)
         local effectiveArea = math.pi * bermRadius * bermRadius
             * math.max(0.10, tonumber(options.effectiveAreaFactor) or 0.62)
         local rawHeight = targetVolume / math.max(0.001, effectiveArea)
-        local height = clamp(
-            rawHeight * math.max(
-                0.01,
-                tonumber(options.raiseRealizationCalibration) or 0.10
-            ),
-            options.minRaiseHeightM,
-            options.maxRaiseHeightM
+        local calibratedHeight = rawHeight * math.max(
+            0.01,
+            tonumber(options.raiseRealizationCalibration) or 0.10
         )
         local isInner = wheelSideSign ~= nil and side == wheelSideSign
+
+        -- Never round a microscopic berm upward to the terrain writer's
+        -- minimum brush height. If the calibrated displacement is below the
+        -- representable threshold, absorb that share into compaction instead.
+        if calibratedHeight < (tonumber(options.minRaiseHeightM) or 0.0004) then
+            return {
+                skipped = true,
+                targetVolumeM3 = targetVolume,
+                side = side < 0 and "RIGHT" or "LEFT",
+                role = isInner and "INNER" or "OUTER"
+            }
+        end
+
         return {
             x = (tonumber(input.x) or 0) + leftX * offset * side,
             z = (tonumber(input.z) or 0) + leftZ * offset * side,
             radiusM = bermRadius,
-            raiseHeightM = height,
+            raiseHeightM = math.min(
+                calibratedHeight,
+                tonumber(options.maxRaiseHeightM) or 0.003
+            ),
             targetVolumeM3 = targetVolume,
             side = side < 0 and "RIGHT" or "LEFT",
             role = isInner and "INNER" or "OUTER"
         }
     end
 
+    local left = makeBerm(1, leftShare)
+    local right = makeBerm(-1, rightShare)
+    local representedVolume = 0
+    if left ~= nil and left.skipped ~= true then
+        representedVolume = representedVolume + (left.targetVolumeM3 or 0)
+    end
+    if right ~= nil and right.skipped ~= true then
+        representedVolume = representedVolume + (right.targetVolumeM3 or 0)
+    end
+
     return {
-        available = true,
+        available = representedVolume > 0,
+        reason = representedVolume > 0 and nil or "BELOW_RAISE_THRESHOLD",
         transportFraction = transportFraction,
         displacedVolumeM3 = volume,
-        transportedVolumeM3 = transportedVolume,
-        retainedCompactionVolumeM3 = math.max(0, volume - transportedVolume),
-        left = makeBerm(1, leftShare),
-        right = makeBerm(-1, rightShare),
+        requestedTransportedVolumeM3 = transportedVolume,
+        transportedVolumeM3 = representedVolume,
+        retainedCompactionVolumeM3 = math.max(0, volume - representedVolume),
+        left = left,
+        right = right,
         lateralBias = bias,
         plasticWetness01 = plasticWetness,
         slipActivation01 = slipActivation
