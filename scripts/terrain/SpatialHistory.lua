@@ -177,9 +177,12 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
                 local raiseM = math.min(maxRaiseM, rut * fraction)
                 if raiseM > 0 then
                     local remaining = math.max(0, rut - raiseM)
-                    local accepted = callback == nil
-                        or callback(x, z, raiseM, remaining, h) ~= false
-                    if accepted then
+                    local callbackResult = callback == nil
+                        and raiseM or callback(x, z, raiseM, remaining, h)
+                    local appliedRaiseM = callbackResult == true and raiseM
+                        or (type(callbackResult) == "number" and math.max(0, math.min(raiseM, callbackResult)) or 0)
+                    if appliedRaiseM > 0 then
+                        remaining = math.max(0, rut - appliedRaiseM)
                         local ratio = rut > 0 and remaining / rut or 0
                         h.rutDepthM = remaining
                         h.longitudinalShearDistanceM =
@@ -192,7 +195,7 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
                             (tonumber(h.deformationExposure) or 0) * ratio
                         h._lastRecoveryMs = nowMs
                         recoveredCells = recoveredCells + 1
-                        recoveredDepthM = recoveredDepthM + raiseM
+                        recoveredDepthM = recoveredDepthM + appliedRaiseM
                     end
                 end
             end
