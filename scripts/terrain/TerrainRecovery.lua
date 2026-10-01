@@ -71,8 +71,10 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
                 hardness = Recovery.DEFAULTS.brushHardness
             }) then
                 Recovery.stats.brushesEnqueued = Recovery.stats.brushesEnqueued + 1
+                return true
             else
                 Recovery.stats.brushesRejected = Recovery.stats.brushesRejected + 1
+                return false
             end
         end
     )
