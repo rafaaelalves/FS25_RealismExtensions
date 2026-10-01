@@ -99,6 +99,18 @@ function RealismExtensionsCore:update(dt)
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
 
+                if RealismExtensionsTerrainPerformance ~= nil then
+                    local p = RealismExtensionsTerrainPerformance.snapshot()
+                    local vu, fl, cb = p.vehicleUpdate, p.flush, p.callback
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flush=%d avg=%.4fms max=%.3fms total=%.1fms callback=%d avg=%.4fms max=%.3fms total=%.1fms",
+                        tostring(p.timerAvailable),
+                        vu.samples or 0, vu.avgMs or 0, vu.maxMs or 0, vu.totalMs or 0,
+                        fl.samples or 0, fl.avgMs or 0, fl.maxMs or 0, fl.totalMs or 0,
+                        cb.samples or 0, cb.avgMs or 0, cb.maxMs or 0, cb.totalMs or 0
+                    ))
+                end
+
                 RealismExtensionsDiagnostics.verbose(string.format(
                     "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
