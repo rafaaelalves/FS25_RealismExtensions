@@ -176,20 +176,23 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
                 local raiseM = math.min(maxRaiseM, rut * fraction)
                 if raiseM > 0 then
                     local remaining = math.max(0, rut - raiseM)
-                    local ratio = rut > 0 and remaining / rut or 0
-                    h.rutDepthM = remaining
-                    h.longitudinalShearDistanceM =
-                        (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
-                    h.lateralShearDistanceM =
-                        (tonumber(h.lateralShearDistanceM) or 0) * ratio
-                    h.slipExcavationDistanceM =
-                        (tonumber(h.slipExcavationDistanceM) or 0) * ratio
-                    h.deformationExposure =
-                        (tonumber(h.deformationExposure) or 0) * ratio
-                    h._lastRecoveryMs = nowMs
-                    recoveredCells = recoveredCells + 1
-                    recoveredDepthM = recoveredDepthM + raiseM
-                    if callback ~= nil then callback(x, z, raiseM, remaining, h) end
+                    local accepted = callback == nil
+                        or callback(x, z, raiseM, remaining, h) ~= false
+                    if accepted then
+                        local ratio = rut > 0 and remaining / rut or 0
+                        h.rutDepthM = remaining
+                        h.longitudinalShearDistanceM =
+                            (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+                        h.lateralShearDistanceM =
+                            (tonumber(h.lateralShearDistanceM) or 0) * ratio
+                        h.slipExcavationDistanceM =
+                            (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+                        h.deformationExposure =
+                            (tonumber(h.deformationExposure) or 0) * ratio
+                        h._lastRecoveryMs = nowMs
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepthM = recoveredDepthM + raiseM
+                    end
                 end
             end
         end
