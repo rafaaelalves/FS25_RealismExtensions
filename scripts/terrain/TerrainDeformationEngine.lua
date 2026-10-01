@@ -215,7 +215,11 @@ function Engine.computeCentralTerrainCrest(left, right, heightFn)
 end
 
 function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
-    if not diagnosticsEnabled() or vehicle == nil
+    if not diagnosticsEnabled()
+        or RealismExtensionsConfig == nil
+        or RealismExtensionsConfig.diagnostics == nil
+        or RealismExtensionsConfig.diagnostics.expensiveGeometry ~= true
+        or vehicle == nil
         or physics == nil or context == nil then return end
 
     local localX = tonumber(physics.positionX)
