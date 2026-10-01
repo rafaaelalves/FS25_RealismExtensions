@@ -35,6 +35,7 @@ Model.DEFAULTS = {
     raiseRealizationCalibration = 0.10,
     minRaiseHeightM = 0.0004,
     maxRaiseHeightM = 0.0030,
+    maxInnerRaiseHeightM = 0.0010,
 
     -- Lateral scrub can bias mass, but the berm facing the vehicle center is
     -- deliberately small to avoid building a rigid center ridge between wheel
@@ -186,7 +187,9 @@ function Model.compute(input, options)
             radiusM = bermRadius,
             raiseHeightM = math.min(
                 calibratedHeight,
-                tonumber(options.maxRaiseHeightM) or 0.003
+                isInner
+                    and (tonumber(options.maxInnerRaiseHeightM) or 0.001)
+                    or (tonumber(options.maxRaiseHeightM) or 0.003)
             ),
             targetVolumeM3 = targetVolume,
             side = side < 0 and "RIGHT" or "LEFT",
