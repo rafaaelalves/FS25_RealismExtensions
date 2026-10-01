@@ -93,3 +93,50 @@ Do not assume a dual must be represented as two separate RE contacts yet. The ex
 - validate player + GIANTS AI + Courseplay + wheeled implements with True AI Tracks disabled;
 - resolve native AI tire-track permission ownership;
 - complete external-source crosswalk before declaring TerrainDeformation finished.
+
+
+## v9 experimental SoilMassTransport
+
+Branch: `feat/terrain-mass-transport-v9`
+
+This is a TerrainDeformation feature, not a separate gameplay module.
+
+Purpose:
+- replace pure height removal with partial surface-mass redistribution;
+- use GIANTS callback `displacedVolume` as the mass budget;
+- create positive terrain berms only after a successful lowering callback;
+- keep the untransported fraction as compaction/sub-surface rearrangement;
+- preserve v7 distance/cadence-invariant rut response.
+
+Current v9 behavior:
+- moving wheel samples carry travel direction, wetness, deformability and slip into the writer;
+- lowering jobs remain the authoritative rut operation;
+- successful callbacks allocate the actual displaced volume across contributing brushes;
+- `SoilMassTransportModel` computes a bounded transport fraction from wetness, deformability and longitudinal slip;
+- transported volume is split into left/right lateral berms perpendicular to travel;
+- lateral slip can bias which berm receives more material;
+- berms are queued as separate positive TerrainDeformation jobs;
+- raise jobs never generate further transport, preventing recursion;
+- coalescing remains enabled only when transport direction/state are compatible.
+
+Mass-balance telemetry:
+`SoilMassTransport runtime | source=... targetTransport=... raised=... realization=... compaction=... balanceError=... berms=... raiseJobs=... rejects=...`
+
+Interpretation:
+- `source`: real lowering volume reported by GIANTS for brushes eligible for transport;
+- `targetTransport`: fraction of source volume assigned to surface berms;
+- `raised`: real positive volume reported by GIANTS for berm jobs;
+- `realization = raised / targetTransport`;
+- `compaction`: source volume intentionally not returned to the surface;
+- `balanceError = raised - targetTransport`.
+
+The first runtime goal is calibration/shape validation, not acceptance:
+1. verify berms appear on both sides of moving wheel ruts;
+2. ensure berms do not create unstable walls or obvious terrain inflation;
+3. measure realization ratio and mass-balance error;
+4. compare dry/firm vs wet/plastic soil;
+5. compare low-slip rolling vs wheelspin;
+6. verify performance/job counts remain acceptable;
+7. only then decide whether to extend toward rearward shear, relaxation and implement-driven field repair.
+
+Do not merge v9 until runtime evidence shows both geometry and mass balance are plausible.
