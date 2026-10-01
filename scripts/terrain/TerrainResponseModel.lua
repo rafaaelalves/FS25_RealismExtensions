@@ -506,6 +506,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         sinkPlasticTransfer01 = sinkPlasticTransfer01,
         wetPlasticity01 = wetPlasticity01,
         sinkSlipActivation01 = sinkSlipActivation01,
+        physicalGroundWetness01 = clamp(tonumber(context.physicalGroundWetness) or 0, 0, 1),
+        longitudinalSlip01 = clamp(math.abs(tonumber(context.longitudinalSlip) or 0), 0, 1),
         staticRutCapacityM = staticRutCapacityM,
         slipRutCapacityM = slipRutCapacityM,
         slipSinkage01 = slipSinkage01,
