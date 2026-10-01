@@ -74,7 +74,8 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
                 mode = "RAISE",
                 raiseHeightM = writerRaiseM,
                 radiusM = Recovery.DEFAULTS.brushRadiusM,
-                hardness = Recovery.DEFAULTS.brushHardness
+                hardness = Recovery.DEFAULTS.brushHardness,
+                source = "RECOVERY"
             }) then
                 Recovery.stats.brushesEnqueued = Recovery.stats.brushesEnqueued + 1
                 return writerRaiseM
@@ -89,9 +90,14 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 end
 
 function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
+    local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+        and RealismExtensionsTerrainPerformance.begin() or nil
     Recovery.stats.workAreaCalls = Recovery.stats.workAreaCalls + 1
     local realArea, area = superFunc(vehicle, workArea, dt)
     recoverWorkedArea(vehicle, workArea, realArea)
+    if RealismExtensionsTerrainPerformance ~= nil then
+        RealismExtensionsTerrainPerformance.finish("recovery", perfStarted)
+    end
     return realArea, area
 end
 
