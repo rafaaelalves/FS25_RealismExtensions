@@ -134,20 +134,20 @@ function Model.compute(input, options)
         0.10
     )
 
-    local wheelSideSign = tonumber(input.wheelSideSign)
+    local innerBermSide = tonumber(input.innerBermSide)
     local leftShare, rightShare
-    if wheelSideSign == -1 or wheelSideSign == 1 then
+    if innerBermSide == -1 or innerBermSide == 1 then
         -- side=1 is world-left relative to travel; side=-1 is world-right.
         -- Given FS local wheel X convention used by our axle diagnostics,
         -- wheelSideSign identifies the inward berm side directly:
         -- left wheel (-1) -> world-right (-1) is inward
         -- right wheel (+1) -> world-left (+1) is inward.
         local innerShare = clamp(
-            (tonumber(options.innerSideShare) or 0.12) + bias * wheelSideSign,
+            (tonumber(options.innerSideShare) or 0.12) + bias * innerBermSide,
             0.05,
             tonumber(options.maxInnerSideShare) or 0.18
         )
-        if wheelSideSign == 1 then
+        if innerBermSide == 1 then
             leftShare, rightShare = innerShare, 1 - innerShare
         else
             leftShare, rightShare = 1 - innerShare, innerShare
@@ -166,7 +166,7 @@ function Model.compute(input, options)
             0.01,
             tonumber(options.raiseRealizationCalibration) or 0.10
         )
-        local isInner = wheelSideSign ~= nil and side == wheelSideSign
+        local isInner = innerBermSide ~= nil and side == innerBermSide
 
         -- Never round a microscopic berm upward to the terrain writer's
         -- minimum brush height. If the calibrated displacement is below the
