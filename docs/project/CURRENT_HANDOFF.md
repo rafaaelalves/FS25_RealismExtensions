@@ -93,3 +93,80 @@ Do not assume a dual must be represented as two separate RE contacts yet. The ex
 - validate player + GIANTS AI + Courseplay + wheeled implements with True AI Tracks disabled;
 - resolve native AI tire-track permission ownership;
 - complete external-source crosswalk before declaring TerrainDeformation finished.
+
+
+## v9 experimental SoilMassTransport
+
+Branch: `feat/terrain-mass-transport-v9`
+
+This is a TerrainDeformation feature, not a separate gameplay module.
+
+Purpose:
+- replace pure height removal with partial surface-mass redistribution;
+- use GIANTS callback `displacedVolume` as the mass budget;
+- create positive terrain berms only after a successful lowering callback;
+- keep the untransported fraction as compaction/sub-surface rearrangement;
+- preserve v7 distance/cadence-invariant rut response.
+
+Current v9 behavior:
+- moving wheel samples carry travel direction, wetness, deformability and slip into the writer;
+- lowering jobs remain the authoritative rut operation;
+- successful callbacks allocate the actual displaced volume across contributing brushes;
+- `SoilMassTransportModel` computes a bounded transport fraction from wetness, deformability and longitudinal slip;
+- transported volume is split into left/right lateral berms perpendicular to travel;
+- lateral slip can bias which berm receives more material;
+- berms are queued as separate positive TerrainDeformation jobs;
+- raise jobs never generate further transport, preventing recursion;
+- coalescing remains enabled only when transport direction/state are compatible.
+
+Mass-balance telemetry:
+`SoilMassTransport runtime | source=... targetTransport=... raised=... realization=... compaction=... balanceError=... berms=... raiseJobs=... rejects=...`
+
+Interpretation:
+- `source`: real lowering volume reported by GIANTS for brushes eligible for transport;
+- `targetTransport`: fraction of source volume assigned to surface berms;
+- `raised`: real positive volume reported by GIANTS for berm jobs;
+- `realization = raised / targetTransport`;
+- `compaction`: source volume intentionally not returned to the surface;
+- `balanceError = raised - targetTransport`.
+
+The first runtime goal is calibration/shape validation, not acceptance:
+1. verify berms appear on both sides of moving wheel ruts;
+2. ensure berms do not create unstable walls or obvious terrain inflation;
+3. measure realization ratio and mass-balance error;
+4. compare dry/firm vs wet/plastic soil;
+5. compare low-slip rolling vs wheelspin;
+6. verify performance/job counts remain acceptable;
+7. only then decide whether to extend toward rearward shear, relaxation and implement-driven field repair.
+
+Do not merge v9 until runtime evidence shows both geometry and mass balance are plausible.
+
+
+## v9.0 runtime result and v9.1 retune
+
+The first mass-transport runtime proved the architecture works but rejected the initial calibration.
+
+Observed in the 2026-10-01 S780 test:
+- berms were visually far too aggressive, especially toward vehicle center;
+- early realization ratios reached 16-17x;
+- later realization stabilized around 7-8x;
+- at source=16.841 m3, targetTransport=5.814 m3, GIANTS reported raised=48.054 m3 (realization=8.26);
+- the test commonly ran near local wetness ~0.35-0.51 with 1.00 bar tire pressure;
+- therefore the first linear wetness transport curve moved far too much surface soil for merely damp/trafficable conditions.
+
+v9.1 changes:
+- transport is now strongly nonlinear with a plastic-wetness threshold;
+- around ~0.50 wetness + low slip, surface transport is intended to remain around 0.5-1% and compaction dominates;
+- truly wet/plastic soil + severe slip can ramp toward a hard 18% surface-transport ceiling;
+- additive raise height is calibrated by 0.10 based on the measured runtime over-realization;
+- microscopic berms are no longer rounded upward to the minimum terrain brush; their mass is folded into compaction instead;
+- the berm facing vehicle center is resolved geometrically from vehicle root/contact position, not from wheel-side assumptions;
+- inner berm share is capped near 18% of transported mass and its per-operation raise height is capped at 1 mm;
+- outer berms may reach 3 mm per operation in severe conditions.
+
+Next runtime acceptance criteria:
+1. ordinary 0.35-0.55 wetness should show rutting/compaction with little or no obvious berm;
+2. inner berms must not create a center ridge capable of interfering with the vehicle;
+3. realization should move much closer to 1.0 and must no longer sit at 7-17x;
+4. severe wetness + wheelspin should still produce visible lateral displacement;
+5. job/brush growth must remain manageable.

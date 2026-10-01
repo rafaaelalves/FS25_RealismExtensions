@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 3
+Writer.VERSION = 4
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -49,7 +49,14 @@ function Writer.new(options)
             callbackSuccessJobs = 0,
             callbackDisplacedVolumeM3 = 0,
             callbackMaxDisplacedVolumeM3 = 0,
-            callbackVolumeMissing = 0
+            callbackVolumeMissing = 0,
+            massTransportSourceVolumeM3 = 0,
+            massTransportTargetVolumeM3 = 0,
+            massTransportRaisedVolumeM3 = 0,
+            massTransportCompactionVolumeM3 = 0,
+            massTransportBermsEnqueued = 0,
+            massTransportModelRejects = 0,
+            massTransportRaiseJobs = 0
         }
     }
     return setmetatable(self, { __index = Writer })
@@ -61,13 +68,20 @@ function Writer:enqueue(brush)
         return false
     end
 
+    local mode = brush ~= nil and brush.mode or "LOWER"
+    local amount = brush ~= nil and tonumber(brush.depthM) or nil
+    if mode == "RAISE" then
+        amount = brush ~= nil and tonumber(brush.raiseHeightM or brush.depthM) or nil
+    end
+
     if type(brush) ~= "table"
         or type(brush.x) ~= "number"
         or type(brush.z) ~= "number"
-        or type(brush.depthM) ~= "number"
+        or type(amount) ~= "number"
         or type(brush.radiusM) ~= "number"
-        or brush.depthM < self.options.minDepthM
-        or brush.radiusM <= 0 then
+        or amount < self.options.minDepthM
+        or brush.radiusM <= 0
+        or (mode ~= "LOWER" and mode ~= "RAISE") then
         self.stats.droppedInvalid = self.stats.droppedInvalid + 1
         return false
     end
@@ -75,13 +89,16 @@ function Writer:enqueue(brush)
     self.queue[#self.queue + 1] = {
         x = brush.x,
         z = brush.z,
-        depthM = brush.depthM,
+        depthM = amount,
+        mode = mode,
         radiusM = math.max(self.options.minRadiusM, brush.radiusM),
         hardness = clamp(
             tonumber(brush.hardness) or self.options.defaultHardness,
             0.05,
             0.98
-        )
+        ),
+        massTransport = brush.massTransport,
+        targetVolumeM3 = tonumber(brush.targetVolumeM3)
     }
     self.stats.enqueued = self.stats.enqueued + 1
     return true
@@ -91,24 +108,55 @@ local function depthBucket(depth, bucket)
     return math.max(bucket, math.floor(depth / bucket + 0.5) * bucket)
 end
 
+local function compatibleTransport(a, b)
+    local ma, mb = a.massTransport, b.massTransport
+    if ma == nil and mb == nil then return true end
+    if ma == nil or mb == nil then return false end
+
+    local ax, az = tonumber(ma.travelDirX), tonumber(ma.travelDirZ)
+    local bx, bz = tonumber(mb.travelDirX), tonumber(mb.travelDirZ)
+    if ax == nil or az == nil or bx == nil or bz == nil then return false end
+    local dot = ax * bx + az * bz
+    if dot < 0.95 then return false end
+
+    local aw, bw = tonumber(ma.wetness01) or 0, tonumber(mb.wetness01) or 0
+    local ad, bd = tonumber(ma.deformability01) or 0, tonumber(mb.deformability01) or 0
+    return math.abs(aw - bw) <= 0.15 and math.abs(ad - bd) <= 0.15
+end
+
 local function tryCoalesce(group, brush, factor)
-    -- Coalesce only brushes already compatible by depth bucket. Preserve the
-    -- strongest requested depth (the batch owns the bucket) and expand the
-    -- surviving footprint just enough to cover near-identical contacts.
+    -- Coalesce only brushes compatible by operation, depth bucket and transport
+    -- direction/state. This keeps the performance win without turning two
+    -- unrelated wheel paths into one averaged berm source.
     for _, existing in ipairs(group) do
-        local dx, dz = brush.x - existing.x, brush.z - existing.z
-        local distance = math.sqrt(dx * dx + dz * dz)
-        local threshold = math.min(existing.radiusM, brush.radiusM) * factor
-        if distance <= threshold then
-            local minX = math.min(existing.x - existing.radiusM, brush.x - brush.radiusM)
-            local maxX = math.max(existing.x + existing.radiusM, brush.x + brush.radiusM)
-            local minZ = math.min(existing.z - existing.radiusM, brush.z - brush.radiusM)
-            local maxZ = math.max(existing.z + existing.radiusM, brush.z + brush.radiusM)
-            existing.x = (minX + maxX) * 0.5
-            existing.z = (minZ + maxZ) * 0.5
-            existing.radiusM = math.max(maxX - minX, maxZ - minZ) * 0.5
-            existing.hardness = math.max(existing.hardness, brush.hardness)
-            return true
+        if existing.mode == brush.mode and compatibleTransport(existing, brush) then
+            local dx, dz = brush.x - existing.x, brush.z - existing.z
+            local distance = math.sqrt(dx * dx + dz * dz)
+            local threshold = math.min(existing.radiusM, brush.radiusM) * factor
+            if distance <= threshold then
+                local minX = math.min(existing.x - existing.radiusM, brush.x - brush.radiusM)
+                local maxX = math.max(existing.x + existing.radiusM, brush.x + brush.radiusM)
+                local minZ = math.min(existing.z - existing.radiusM, brush.z - brush.radiusM)
+                local maxZ = math.max(existing.z + existing.radiusM, brush.z + brush.radiusM)
+                existing.x = (minX + maxX) * 0.5
+                existing.z = (minZ + maxZ) * 0.5
+                existing.radiusM = math.max(maxX - minX, maxZ - minZ) * 0.5
+                existing.hardness = math.max(existing.hardness, brush.hardness)
+
+                if existing.massTransport ~= nil and brush.massTransport ~= nil then
+                    local a, b = existing.massTransport, brush.massTransport
+                    a.wetness01 = math.max(tonumber(a.wetness01) or 0, tonumber(b.wetness01) or 0)
+                    a.deformability01 = math.max(tonumber(a.deformability01) or 0, tonumber(b.deformability01) or 0)
+                    a.longitudinalSlip = math.max(
+                        math.abs(tonumber(a.longitudinalSlip) or 0),
+                        math.abs(tonumber(b.longitudinalSlip) or 0)
+                    )
+                    if math.abs(tonumber(b.lateralSlip) or 0) > math.abs(tonumber(a.lateralSlip) or 0) then
+                        a.lateralSlip = b.lateralSlip
+                    end
+                end
+                return true
+            end
         end
     end
     return false
@@ -142,7 +190,7 @@ local function configureDeformationConstraints(deformation)
     end
 end
 
-function Writer:_submitBatch(depthM, brushes)
+function Writer:_submitBatch(depthM, brushes, mode)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
     if TerrainDeformation == nil or terrain == nil or terrain == 0 then
@@ -153,7 +201,9 @@ function Writer:_submitBatch(depthM, brushes)
     if deformation == nil then return false, "could not allocate TerrainDeformation" end
 
     deformation:enableAdditiveDeformationMode()
-    deformation:setAdditiveHeightChangeAmount(-math.abs(depthM))
+    local signedHeight = math.abs(depthM)
+    if mode ~= "RAISE" then signedHeight = -signedHeight end
+    deformation:setAdditiveHeightChangeAmount(signedHeight)
     configureDeformationConstraints(deformation)
 
     local heightSamples = {}
@@ -177,6 +227,7 @@ function Writer:_submitBatch(depthM, brushes)
         owner = self,
         terrain = terrain,
         depthM = math.abs(depthM),
+        mode = mode or "LOWER",
         brushes = brushes,
         heightSamples = heightSamples
     }
@@ -191,14 +242,85 @@ function Writer:_submitBatch(depthM, brushes)
             or state == TerrainDeformation.STATE_SUCCESS then
             local stats = self.owner.stats
             stats.callbackSuccessJobs = stats.callbackSuccessJobs + 1
+            local callbackVolume = nil
             if type(displacedVolume) == "number" and displacedVolume == displacedVolume then
-                local volume = math.abs(displacedVolume)
+                callbackVolume = math.abs(displacedVolume)
                 stats.callbackDisplacedVolumeM3 =
-                    stats.callbackDisplacedVolumeM3 + volume
+                    stats.callbackDisplacedVolumeM3 + callbackVolume
                 stats.callbackMaxDisplacedVolumeM3 =
-                    math.max(stats.callbackMaxDisplacedVolumeM3, volume)
+                    math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
+                if self.mode == "RAISE" then
+                    stats.massTransportRaisedVolumeM3 =
+                        stats.massTransportRaisedVolumeM3 + callbackVolume
+                    stats.massTransportRaiseJobs = stats.massTransportRaiseJobs + 1
+                end
             else
                 stats.callbackVolumeMissing = stats.callbackVolumeMissing + 1
+            end
+
+            if self.mode ~= "RAISE"
+                and callbackVolume ~= nil
+                and callbackVolume > 0
+                and RealismExtensionsSoilMassTransportModel ~= nil then
+
+                local weighted = {}
+                local totalBatchWeight = 0
+                for _, brush in ipairs(self.brushes or {}) do
+                    local weight = math.max(0.001, math.pi * brush.radiusM * brush.radiusM)
+                    totalBatchWeight = totalBatchWeight + weight
+                    if brush.massTransport ~= nil then
+                        weighted[#weighted + 1] = { brush=brush, weight=weight }
+                    end
+                end
+
+                for _, item in ipairs(weighted) do
+                    local brush = item.brush
+                    local sourceVolume = callbackVolume * item.weight / math.max(0.001, totalBatchWeight)
+                    local mt = brush.massTransport
+                    local result = RealismExtensionsSoilMassTransportModel.compute({
+                        x = brush.x,
+                        z = brush.z,
+                        rutRadiusM = brush.radiusM,
+                        displacedVolumeM3 = sourceVolume,
+                        travelDirX = mt.travelDirX,
+                        travelDirZ = mt.travelDirZ,
+                        wetness01 = mt.wetness01,
+                        deformability01 = mt.deformability01,
+                        longitudinalSlip = mt.longitudinalSlip,
+                        lateralSlip = mt.lateralSlip,
+                        innerBermSide = mt.innerBermSide
+                    })
+
+                    stats.massTransportSourceVolumeM3 =
+                        stats.massTransportSourceVolumeM3 + sourceVolume
+
+                    if result ~= nil and result.available == true then
+                        stats.massTransportTargetVolumeM3 =
+                            stats.massTransportTargetVolumeM3
+                            + (result.transportedVolumeM3 or 0)
+                        stats.massTransportCompactionVolumeM3 =
+                            stats.massTransportCompactionVolumeM3
+                            + (result.retainedCompactionVolumeM3 or 0)
+
+                        for _, berm in ipairs({ result.left, result.right }) do
+                            if berm ~= nil and berm.skipped ~= true and self.owner:enqueue({
+                                x = berm.x,
+                                z = berm.z,
+                                mode = "RAISE",
+                                raiseHeightM = berm.raiseHeightM,
+                                radiusM = berm.radiusM,
+                                hardness = brush.hardness,
+                                targetVolumeM3 = berm.targetVolumeM3
+                            }) then
+                                stats.massTransportBermsEnqueued =
+                                    stats.massTransportBermsEnqueued + 1
+                            end
+                        end
+                    else
+                        stats.massTransportModelRejects =
+                            stats.massTransportModelRejects + 1
+                    end
+                end
             end
             for i, brush in ipairs(self.brushes or {}) do
                 local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
@@ -286,8 +408,10 @@ function Writer:flush()
     while consumed < brushBudget and #self.queue > 0 do
         local brush = table.remove(self.queue, 1)
         local bucket = depthBucket(brush.depthM, bucketM)
-        groups[bucket] = groups[bucket] or {}
-        local group = groups[bucket]
+        local groupKey = tostring(brush.mode or "LOWER") .. ":" .. tostring(bucket)
+        groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
+        local groupInfo = groups[groupKey]
+        local group = groupInfo.brushes
         local factor = math.max(0, tonumber(self.options.coalesceDistanceFactor) or 0)
         if factor > 0 and tryCoalesce(group, brush, factor) then
             self.stats.coalescedBrushes = self.stats.coalescedBrushes + 1
@@ -297,16 +421,23 @@ function Writer:flush()
         consumed = consumed + 1
     end
 
-    local depths = {}
-    for depth in pairs(groups) do depths[#depths + 1] = depth end
-    table.sort(depths, function(a, b) return a > b end)
+    local groupKeys = {}
+    for key in pairs(groups) do groupKeys[#groupKeys + 1] = key end
+    table.sort(groupKeys, function(a, b)
+        local ga, gb = groups[a], groups[b]
+        if ga.mode ~= gb.mode then return ga.mode == "LOWER" end
+        return ga.depth > gb.depth
+    end)
 
     local jobs = 0
     local submitted = 0
     local leftovers = {}
 
-    for _, depth in ipairs(depths) do
-        local group = groups[depth]
+    for _, key in ipairs(groupKeys) do
+        local info = groups[key]
+        local depth = info.depth
+        local mode = info.mode
+        local group = info.brushes
         local index = 1
 
         while index <= #group do
@@ -322,7 +453,7 @@ function Writer:flush()
                 index = index + 1
             end
 
-            local ok = self:_submitBatch(depth, batch)
+            local ok = self:_submitBatch(depth, batch, mode)
             if ok then
                 jobs = jobs + 1
                 submitted = submitted + #batch
