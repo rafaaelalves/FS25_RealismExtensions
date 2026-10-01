@@ -19,6 +19,8 @@ Recovery.DEFAULTS = {
     historyCooldownMs = 1500
 }
 
+Recovery.accumulationByVehicle = Recovery.accumulationByVehicle or setmetatable({}, {__mode="k"})
+
 Recovery.stats = Recovery.stats or {
     workAreaCalls = 0,
     workedAreaCalls = 0,
@@ -110,18 +112,23 @@ local function smoothWorkedArea(vehicle, workArea, realArea, dt)
     if movedM == nil or movedM <= 0 then
         movedM = math.max(0, (speedKmh / 3.6) * ((tonumber(dt) or 0) / 1000))
     end
-    local smoothAmount = movedM * perMeter
-    if smoothAmount <= 0 then return end
+    local added = movedM * perMeter
+    if added <= 0 then return end
 
+    local accumulated = (Recovery.accumulationByVehicle[vehicle] or 0) + added
     Recovery.stats.smoothingAttempts = Recovery.stats.smoothingAttempts + 1
     local rounded = DensityMapHeightUtil.getRoundedHeightValue ~= nil
-        and DensityMapHeightUtil.getRoundedHeightValue(smoothAmount)
-        or smoothAmount
-    if rounded == nil or rounded <= 0 then return end
+        and DensityMapHeightUtil.getRoundedHeightValue(accumulated)
+        or accumulated
+    if rounded == nil or rounded <= 0 then
+        Recovery.accumulationByVehicle[vehicle] = accumulated
+        return
+    end
+    Recovery.accumulationByVehicle[vehicle] = math.max(0, accumulated - rounded)
 
     local ok = pcall(
         DensityMapHeightUtil.smoothAroundLine,
-        g.node, g.width * 0.5, radius, Recovery.DEFAULTS.overlap, rounded, true
+        g.node, g.width, radius, Recovery.DEFAULTS.overlap, rounded
     )
     if not ok then
         Recovery.stats.smoothingErrors = Recovery.stats.smoothingErrors + 1
