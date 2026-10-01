@@ -99,6 +99,19 @@ function RealismExtensionsCore:update(dt)
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
 
+                if RealismExtensionsTerrainRecovery ~= nil then
+                    local r = RealismExtensionsTerrainRecovery.getDiagnostics()
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainRecovery runtime | calls=%d worked=%d cells=%d requestedRaise=%.3fm brushes=%d rejected=%d",
+                        r.workAreaCalls or 0,
+                        r.workedAreaCalls or 0,
+                        r.recoveredCells or 0,
+                        r.requestedRaiseM or 0,
+                        r.brushesEnqueued or 0,
+                        r.brushesRejected or 0
+                    ))
+                end
+
                 if RealismExtensionsTerrainPerformance ~= nil then
                     local p = RealismExtensionsTerrainPerformance.snapshot()
                     local vu, fl, cb = p.vehicleUpdate, p.flush, p.callback
