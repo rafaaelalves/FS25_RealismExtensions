@@ -6,13 +6,13 @@ RealismExtensionsTerrainPerformance = nil
 local smoothCalls = 0
 DensityMapHeightUtil = {
     getRoundedHeightValue=function(v) return v end,
-    smoothAroundLine=function(node,width,radius,overlap,amount,raise)
+    smoothAroundLine=function(node,width,radius,overlap,amount,...)
         smoothCalls=smoothCalls+1
         assert(node==101)
-        assert(width>0)
+        assert(math.abs(width-4.0)<0.000001)
         assert(radius>0)
         assert(amount>0)
-        assert(raise==true)
+        assert(select("#",...)==0)
     end
 }
 getWorldTranslation=function(node)
