@@ -22,6 +22,27 @@ local function distance2D(x1, z1, x2, z2)
     return math.sqrt(dx * dx + dz * dz)
 end
 
+local function resolveInnerBermSide(vehicle, x, z, travelDirX, travelDirZ)
+    if vehicle == nil or vehicle.rootNode == nil
+        or getWorldTranslation == nil
+        or travelDirX == nil or travelDirZ == nil then
+        return nil
+    end
+
+    local ok, vx, _, vz = pcall(getWorldTranslation, vehicle.rootNode)
+    if not ok or type(vx) ~= "number" or type(vz) ~= "number" then
+        return nil
+    end
+
+    local toCenterX, toCenterZ = vx - x, vz - z
+    local leftX, leftZ = -travelDirZ, travelDirX
+    local dot = toCenterX * leftX + toCenterZ * leftZ
+    if math.abs(dot) < 0.01 then return nil end
+
+    -- +1 is the berm on the travel-left side, -1 travel-right.
+    return dot > 0 and 1 or -1
+end
+
 local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     local h = {}
     for k, v in pairs(response.nextHistory or {}) do h[k] = v end
@@ -312,9 +333,9 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
             deformability01 = tonumber(surface.deformability01) or 0,
             longitudinalSlip = tonumber(context.longitudinalSlip) or 0,
             lateralSlip = tonumber(context.lateralSlip) or 0,
-            wheelSideSign = (tonumber(wheel.physics ~= nil and wheel.physics.positionX) or 0) < 0
-                and -1
-                or (((tonumber(wheel.physics ~= nil and wheel.physics.positionX) or 0) > 0) and 1 or nil)
+            innerBermSide = resolveInnerBermSide(
+                vehicle, x, z, travelDirX, travelDirZ
+            )
         }
     end
 
