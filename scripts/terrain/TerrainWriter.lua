@@ -232,6 +232,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     local callbackTarget = {
+        perfStarted = RealismExtensionsTerrainPerformance ~= nil
+            and RealismExtensionsTerrainPerformance.begin() or nil,
         deformation = deformation,
         owner = self,
         terrain = terrain,
@@ -370,6 +372,10 @@ function Writer:_submitBatch(depthM, brushes, mode)
             end
         end
 
+        if RealismExtensionsTerrainPerformance ~= nil then
+            RealismExtensionsTerrainPerformance.finish("callback", self.perfStarted)
+        end
+
         local d = self.deformation
         self.deformation = nil
 
@@ -411,6 +417,8 @@ end
 
 function Writer:flush()
     if #self.queue == 0 then return 0, 0 end
+    local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+        and RealismExtensionsTerrainPerformance.begin() or nil
 
     local brushBudget = math.max(1, math.floor(self.options.maxBrushesPerFrame))
     local jobBudget = math.max(1, math.floor(self.options.maxJobsPerFrame))
@@ -488,6 +496,9 @@ function Writer:flush()
         self.queue = nextQueue
     end
 
+    if RealismExtensionsTerrainPerformance ~= nil then
+        RealismExtensionsTerrainPerformance.finish("flush", perfStarted)
+    end
     return submitted, jobs
 end
 
