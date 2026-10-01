@@ -3,10 +3,15 @@ local Recovery = RealismExtensionsTerrainRecovery
 
 Recovery.VERSION = 1
 Recovery.DEFAULTS = {
-    shallowFraction = 0.55,
-    shallowMaxRaiseM = 0.025,
-    deepFraction = 0.35,
-    deepMaxRaiseM = 0.020,
+    -- Surface repair strength is deliberately conservative while GIANTS
+    -- additive RAISE still over-realizes requested displacement at runtime.
+    -- These are per-pass logical targets; physical writer requests are further
+    -- calibrated below.
+    shallowFraction = 0.45,
+    shallowMaxRaiseM = 0.015,
+    deepFraction = 0.25,
+    deepMaxRaiseM = 0.010,
+    raiseCalibration = 0.30,
     minRutM = 0.003,
     cooldownMs = 1500,
     maxCellsPerWorkAreaCall = 48,
@@ -62,16 +67,17 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
             maxCells = Recovery.DEFAULTS.maxCellsPerWorkAreaCall
         },
         function(x, z, raiseM)
+            local writerRaiseM = raiseM * Recovery.DEFAULTS.raiseCalibration
             if runtime.writer:enqueue({
                 x = x,
                 z = z,
                 mode = "RAISE",
-                raiseHeightM = raiseM,
+                raiseHeightM = writerRaiseM,
                 radiusM = Recovery.DEFAULTS.brushRadiusM,
                 hardness = Recovery.DEFAULTS.brushHardness
             }) then
                 Recovery.stats.brushesEnqueued = Recovery.stats.brushesEnqueued + 1
-                return true
+                return writerRaiseM
             else
                 Recovery.stats.brushesRejected = Recovery.stats.brushesRejected + 1
                 return false
@@ -95,18 +101,15 @@ function Recovery.getDiagnostics()
     return out
 end
 
-function Recovery.install()
-    if Recovery.installed == true then return true end
-    if Cultivator == nil or type(Cultivator.processCultivatorArea) ~= "function"
-        or Utils == nil or type(Utils.overwrittenFunction) ~= "function" then
-        return false
-    end
-    Cultivator.processCultivatorArea = Utils.overwrittenFunction(
-        Cultivator.processCultivatorArea,
-        Recovery.processCultivatorArea
-    )
-    Recovery.installed = true
-    return true
+function Recovery.prerequisitesPresent(specializations)
+    return Cultivator ~= nil
+        and SpecializationUtil.hasSpecialization(Cultivator, specializations)
 end
 
-Recovery.install()
+function Recovery.registerOverwrittenFunctions(vehicleType)
+    SpecializationUtil.registerOverwrittenFunction(
+        vehicleType,
+        "processCultivatorArea",
+        Recovery.processCultivatorArea
+    )
+end
