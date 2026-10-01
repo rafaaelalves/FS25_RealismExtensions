@@ -287,7 +287,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
                         wetness01 = mt.wetness01,
                         deformability01 = mt.deformability01,
                         longitudinalSlip = mt.longitudinalSlip,
-                        lateralSlip = mt.lateralSlip
+                        lateralSlip = mt.lateralSlip,
+                        innerBermSide = mt.innerBermSide
                     })
 
                     stats.massTransportSourceVolumeM3 =
@@ -302,7 +303,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             + (result.retainedCompactionVolumeM3 or 0)
 
                         for _, berm in ipairs({ result.left, result.right }) do
-                            if berm ~= nil and self.owner:enqueue({
+                            if berm ~= nil and berm.skipped ~= true and self.owner:enqueue({
                                 x = berm.x,
                                 z = berm.z,
                                 mode = "RAISE",
