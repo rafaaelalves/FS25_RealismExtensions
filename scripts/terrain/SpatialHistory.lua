@@ -150,10 +150,11 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
     local nowMs = tonumber(options.nowMs) or 0
     local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
 
-    local minX = math.min(xs, xw, xh)
-    local maxX = math.max(xs, xw, xh)
-    local minZ = math.min(zs, zw, zh)
-    local maxZ = math.max(zs, zw, zh)
+    local xo, zo = xw + xh - xs, zw + zh - zs
+    local minX = math.min(xs, xw, xh, xo)
+    local maxX = math.max(xs, xw, xh, xo)
+    local minZ = math.min(zs, zw, zh, zo)
+    local maxZ = math.max(zs, zw, zh, zo)
     local minIx, minIz = self:getCellCoordinates(minX, minZ)
     local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
 
