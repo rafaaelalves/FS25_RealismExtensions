@@ -553,6 +553,8 @@ function Engine.processWheel(vehicle, wheel, dt)
 end
 
 function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, isSelected)
+    local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+        and RealismExtensionsTerrainPerformance.begin() or nil
     diagCount("vehicleUpdateCalls", 1)
     if RealismExtensionsConfig == nil
         or RealismExtensionsConfig.modules == nil
@@ -573,6 +575,9 @@ function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, 
 
     for _, wheel in pairs(spec.wheels or {}) do
         Engine.processWheel(self, wheel, dt)
+    end
+    if RealismExtensionsTerrainPerformance ~= nil then
+        RealismExtensionsTerrainPerformance.finish("vehicleUpdate", perfStarted)
     end
 end
 
