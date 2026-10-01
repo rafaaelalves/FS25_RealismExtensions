@@ -108,3 +108,19 @@ local cellsRejected = rh:recoverParallelogram(
 )
 assert(cellsRejected == 0)
 assert(math.abs(rh:get(0.20,0.20).rutDepthM - beforeReject) < 0.000001)
+
+-- Numeric callback result couples logical recovery to a calibrated physical
+-- writer request instead of assuming the full candidate raise was applied.
+local calibrated = RealismExtensionsSpatialHistory.new({ cellSizeM=0.20, maxCells=100 })
+calibrated:commit(0.20, 0.20, { rutDepthM=0.10, deformationExposure=1.0 })
+local ccells, craised = calibrated:recoverParallelogram(
+    0,0, 1,0, 0,1,
+    { fraction=0.5, maxRaiseM=0.03, nowMs=1000, cooldownMs=1500 },
+    function(x,z,raiseM)
+        assert(math.abs(raiseM - 0.03) < 0.000001)
+        return raiseM * 0.30
+    end
+)
+assert(ccells == 1)
+assert(math.abs(craised - 0.009) < 0.000001)
+assert(math.abs(calibrated:get(0.20,0.20).rutDepthM - 0.091) < 0.000001)
