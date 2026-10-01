@@ -1,47 +1,71 @@
 dofile("scripts/terrain/SoilMassTransportModel.lua")
 local M = RealismExtensionsSoilMassTransportModel
 
-local r = M.compute({
+-- Moderate field wetness with low slip should be dominated by compaction and
+-- may not produce a representable surface berm at all.
+local moderate = M.compute({
     x=10,z=20,
     rutRadiusM=0.30,
     displacedVolumeM3=0.10,
     travelDirX=0,
     travelDirZ=1,
-    wetness01=0.70,
+    wetness01=0.50,
     deformability01=1.0,
-    longitudinalSlip=0.20,
-    lateralSlip=0
+    longitudinalSlip=0.05,
+    lateralSlip=0,
+    innerBermSide=1
 })
-assert(r.available == true)
-assert(r.transportFraction > 0 and r.transportFraction < 1)
-assert(r.transportedVolumeM3 > 0)
-assert(r.transportedVolumeM3 < r.displacedVolumeM3)
+assert(moderate.transportFraction <= 0.02)
+assert(moderate.retainedCompactionVolumeM3 > 0.095)
+
+-- Truly wet/plastic soil under severe slip must transport more mass laterally.
+local severe = M.compute({
+    x=10,z=20,
+    rutRadiusM=0.30,
+    displacedVolumeM3=1.0,
+    travelDirX=0,
+    travelDirZ=1,
+    wetness01=0.95,
+    deformability01=1.0,
+    longitudinalSlip=0.95,
+    lateralSlip=0,
+    innerBermSide=1
+})
+assert(severe.available == true)
+assert(severe.transportFraction > moderate.transportFraction)
+assert(severe.transportFraction <= 0.18 + 0.000001)
+assert(severe.transportedVolumeM3 > 0)
+assert(severe.transportedVolumeM3 < severe.displacedVolumeM3)
 assert(math.abs(
-    r.transportedVolumeM3 + r.retainedCompactionVolumeM3
-    - r.displacedVolumeM3
+    severe.transportedVolumeM3 + severe.retainedCompactionVolumeM3
+    - severe.displacedVolumeM3
 ) < 0.000001)
-assert(r.left.x < 10 and r.right.x > 10)
-assert(math.abs(r.left.z - 20) < 0.000001)
-assert(math.abs(r.right.z - 20) < 0.000001)
-assert(r.left.raiseHeightM > 0 and r.right.raiseHeightM > 0)
+assert(severe.left.role == "INNER")
+assert(severe.right.role == "OUTER")
+assert(severe.left.targetVolumeM3 < severe.right.targetVolumeM3)
+assert(severe.left.targetVolumeM3 / severe.requestedTransportedVolumeM3 <= 0.18 + 0.000001)
+assert(severe.left.raiseHeightM <= 0.003 + 0.000001)
+assert(severe.right.raiseHeightM <= 0.003 + 0.000001)
 
-local wet = M.compute({
-    x=0,z=0,rutRadiusM=0.30,displacedVolumeM3=0.10,
+-- The same physical state with no known vehicle-center side falls back to a
+-- near-symmetric distribution rather than guessing an inner berm.
+local symmetric = M.compute({
+    x=0,z=0,rutRadiusM=0.30,displacedVolumeM3=1.0,
     travelDirX=1,travelDirZ=0,
-    wetness01=0.9,deformability01=1,longitudinalSlip=0.4,lateralSlip=0
+    wetness01=0.95,deformability01=1,longitudinalSlip=0.95,lateralSlip=0
 })
-local dry = M.compute({
-    x=0,z=0,rutRadiusM=0.30,displacedVolumeM3=0.10,
-    travelDirX=1,travelDirZ=0,
-    wetness01=0.1,deformability01=1,longitudinalSlip=0,lateralSlip=0
-})
-assert(wet.transportFraction > dry.transportFraction)
+assert(symmetric.available == true)
+assert(math.abs(
+    symmetric.left.targetVolumeM3 - symmetric.right.targetVolumeM3
+) < 0.000001)
 
+-- Lateral slip can bias the split, but only gently.
 local biased = M.compute({
-    x=0,z=0,rutRadiusM=0.30,displacedVolumeM3=0.10,
+    x=0,z=0,rutRadiusM=0.30,displacedVolumeM3=1.0,
     travelDirX=1,travelDirZ=0,
-    wetness01=0.7,deformability01=1,longitudinalSlip=0.1,lateralSlip=0.8
+    wetness01=0.95,deformability01=1,longitudinalSlip=0.95,lateralSlip=0.8
 })
+assert(biased.available == true)
 assert(biased.left.targetVolumeM3 > biased.right.targetVolumeM3)
 
 local noDir = M.compute({
