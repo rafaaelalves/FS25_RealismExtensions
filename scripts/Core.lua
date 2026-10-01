@@ -206,6 +206,23 @@ function RealismExtensionsCore:update(dt)
                     ))
                 end
 
+                if (d.samplesProcessed or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainPlasticity sample | wet=%.2f slip=%.3f instantSink=%.3f transfer=%.2f persistentSink=%.3f staticCap=%.3f slipCap=%.3f rut=%.3f maxInstant=%.3f maxPersistent=%.3f maxTransfer=%.2f",
+                        d.lastPlasticWetness01 or 0,
+                        d.lastPlasticSlip01 or 0,
+                        d.lastObservedSinkDepthM or 0,
+                        d.lastSinkPlasticTransfer01 or 0,
+                        d.lastPersistentSinkDepthM or 0,
+                        d.lastStaticRutCapacityM or 0,
+                        d.lastSlipRutCapacityM or 0,
+                        d.lastRutDepthM or 0,
+                        d.maxObservedSinkDepthM or 0,
+                        d.maxPersistentSinkDepthM or 0,
+                        d.maxSinkPlasticTransfer or 0
+                    ))
+                end
+
                 if (writerStats.massTransportSourceVolumeM3 or 0) > 0 then
                     local target = writerStats.massTransportTargetVolumeM3 or 0
                     local raised = writerStats.massTransportRaisedVolumeM3 or 0

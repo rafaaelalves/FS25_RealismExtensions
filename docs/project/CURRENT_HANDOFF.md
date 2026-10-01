@@ -170,3 +170,44 @@ Next runtime acceptance criteria:
 3. realization should move much closer to 1.0 and must no longer sit at 7-17x;
 4. severe wetness + wheelspin should still produce visible lateral displacement;
 5. job/brush growth must remain manageable.
+
+
+## v10 experimental plasticity response
+
+Branch: `feat/terrain-plasticity-response-v10`
+
+Purpose:
+- decouple instantaneous Mud sink from persistent RE rut geometry;
+- preserve Mud authority over mobility while letting RE decide how much sink becomes permanent plastic terrain deformation;
+- stop treating every transient wheel-radius sink peak as an immediate permanent heightfield lower bound.
+
+Runtime motivation:
+- v9.1 S780 test often operated around local wetness ~0.35-0.57 at 1.00 bar;
+- the RE static/slip capacities peaked around ~0.05 m while `modelRut/modelCap` reached ~0.138 m;
+- this happened because `observedSinkM` from Mud was included directly in `rutCapacityM=max(static, slip, observedSink)`;
+- the same session began with ~49,294 restored history cells, so existing field geometry is heavily contaminated by earlier experimental versions.
+
+v10 model:
+- `observedSinkDepthM` remains the authoritative instantaneous Mud consequence;
+- `sinkPlasticTransfer01` is computed from a nonlinear wet-plasticity curve plus slip activation;
+- `persistentSinkDepthM = observedSinkDepthM * sinkPlasticTransfer01`;
+- only `persistentSinkDepthM`, static rut capacity and slip rut capacity participate in persistent geometry;
+- around moderate wetness (~0.50) and low slip, transient sink transfer is deliberately small;
+- near very wet/plastic conditions, and especially with severe slip, transfer rises strongly but remains bounded below 100%;
+- existing rut history is never automatically healed.
+
+Diagnostic line:
+`TerrainPlasticity sample | wet=... slip=... instantSink=... transfer=... persistentSink=... staticCap=... slipCap=... rut=... maxInstant=... maxPersistent=... maxTransfer=...`
+
+Mass-accounting correction:
+- source-volume shares rejected by SoilMassTransport are now counted as compaction/sub-surface rearrangement;
+- the harness requires `source = targetTransport + compaction` before positive raise realization is considered.
+
+Runtime test requirement:
+- use a previously undeformed area or a clean backup; the current field contains ~49k persisted experimental cells and earlier heightmap edits cannot be safely reconstructed;
+- compare moderate damp/trafficable soil against substantially wetter soil;
+- keep tire pressure appropriate for field work;
+- verify moderate wetness can show instantaneous sink/resistance without converting the full sink into a permanent rut;
+- verify genuinely wet + high-slip conditions still produce deeper persistent deformation.
+
+Do not merge v10 until this separation is validated in runtime.

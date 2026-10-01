@@ -1,7 +1,7 @@
 RealismExtensionsTerrainResponseModel = RealismExtensionsTerrainResponseModel or {}
 local Model = RealismExtensionsTerrainResponseModel
 
-Model.VERSION = 3
+Model.VERSION = 4
 
 Model.DEFAULTS = {
     referencePressurePa = 100000,
@@ -10,6 +10,17 @@ Model.DEFAULTS = {
     drySusceptibilityFloor = 0.06,
     wetnessExponent = 1.65,
     mudPotentialWeight = 0.25,
+
+    -- Mud sink is an instantaneous mobility state, not automatically a
+    -- permanent terrain displacement. Only a wetness/slip-dependent fraction
+    -- is transferred into persistent plastic rut geometry.
+    plasticSinkStartWetness = 0.45,
+    plasticSinkFullWetness = 0.90,
+    plasticSinkMaxTransfer = 0.75,
+    plasticSinkSlipBoost = 0.15,
+    plasticSinkMaxWithSlip = 0.90,
+    plasticSinkSlipStart = 0.15,
+    plasticSinkSlipFull = 0.85,
 
     hardFreezeMultiplier = 0.02,
 
@@ -131,6 +142,45 @@ local function computeSoilSusceptibility(context, options)
     end
 
     return clamp(susceptibility, 0, 1), "WETNESS"
+end
+
+local function smoothstep01(value)
+    local t = clamp(tonumber(value) or 0, 0, 1)
+    return t * t * (3 - 2 * t)
+end
+
+local function computePlasticSinkTransfer(context, options)
+    if context.hardFrozen == true then return 0, 0, 0 end
+
+    local wetness = clamp(tonumber(context.physicalGroundWetness) or 0, 0, 1)
+    local wetStart = clamp(tonumber(options.plasticSinkStartWetness) or 0.45, 0, 0.99)
+    local wetFull = clamp(
+        tonumber(options.plasticSinkFullWetness) or 0.90,
+        wetStart + 0.01,
+        1
+    )
+    local wetPlasticity = smoothstep01((wetness - wetStart) / (wetFull - wetStart))
+
+    local slip = math.abs(tonumber(context.longitudinalSlip) or 0)
+    local slipStart = clamp(tonumber(options.plasticSinkSlipStart) or 0.15, 0, 0.99)
+    local slipFull = math.max(
+        slipStart + 0.01,
+        tonumber(options.plasticSinkSlipFull) or 0.85
+    )
+    local slipActivation = smoothstep01((slip - slipStart) / (slipFull - slipStart))
+
+    local baseTransfer = wetPlasticity
+        * math.max(0, tonumber(options.plasticSinkMaxTransfer) or 0.75)
+    local slipBoost = wetPlasticity * slipActivation
+        * math.max(0, tonumber(options.plasticSinkSlipBoost) or 0.15)
+
+    local transfer = clamp(
+        baseTransfer + slipBoost,
+        0,
+        tonumber(options.plasticSinkMaxWithSlip) or 0.90
+    )
+
+    return transfer, wetPlasticity, slipActivation
 end
 
 local function computeShearIncrement(context, dtSeconds, slip, deadband)
@@ -291,14 +341,17 @@ function Model.compute(context, footprint, history, dtMs, options)
 
     local sinkDepthM = tonumber(context.sinkDepthM)
     local observedSinkM = validNumber(sinkDepthM) and math.max(0, sinkDepthM) or 0
+    local sinkPlasticTransfer01, wetPlasticity01, sinkSlipActivation01 =
+        computePlasticSinkTransfer(context, options)
+    local persistentSinkM = observedSinkM * sinkPlasticTransfer01
 
-    -- If the active physics owner already says the wheel sank deeper than our
-    -- modeled capacity, geometry must never contradict that authoritative
-    -- state. The RE caps apply only to deformation invented by RE.
+    -- Mud owns instantaneous sink/mobility. RE owns persistent heightfield
+    -- geometry. A transient radius reduction therefore informs plastic rutting
+    -- but is not an automatic permanent lower bound.
     local rutCapacityM = math.max(
         staticRutCapacityM,
         slipRutCapacityM,
-        observedSinkM
+        persistentSinkM
     )
 
     local verticalImprint01 = clamp(
@@ -392,21 +445,20 @@ function Model.compute(context, footprint, history, dtMs, options)
         0.999999
     )
 
-    local modeledBaseM = observedSinkM
+    local modeledBaseM = persistentSinkM
     local modeledRangeM = math.max(0, rutCapacityM - modeledBaseM)
     local exposureTargetM = modeledBaseM + modeledRangeM * exposureDrive
 
-    -- Never heal an already-written rut when local conditions/capacity later
-    -- decrease. Authoritative sink is also an immediate lower bound.
+    -- Never heal an already-written rut in history when current conditions
+    -- weaken, but only persistent plastic sink becomes an immediate lower bound.
     local nextRutM = clamp(
-        math.max(previousRutM, observedSinkM, exposureTargetM),
+        math.max(previousRutM, persistentSinkM, exposureTargetM),
         0,
         rutCapacityM
     )
 
     local sinkSeverity = clamp(
-        tonumber(context.sinkSeverity)
-            or (validPositive(radius) and observedSinkM / radius or 0),
+        validPositive(radius) and persistentSinkM / radius or 0,
         0,
         1
     )
@@ -450,6 +502,12 @@ function Model.compute(context, footprint, history, dtMs, options)
         lateralShearDistanceM = cumulativeLat,
 
         observedSinkDepthM = observedSinkM,
+        persistentSinkDepthM = persistentSinkM,
+        sinkPlasticTransfer01 = sinkPlasticTransfer01,
+        wetPlasticity01 = wetPlasticity01,
+        sinkSlipActivation01 = sinkSlipActivation01,
+        physicalGroundWetness01 = clamp(tonumber(context.physicalGroundWetness) or 0, 0, 1),
+        longitudinalSlip01 = clamp(math.abs(tonumber(context.longitudinalSlip) or 0), 0, 1),
         staticRutCapacityM = staticRutCapacityM,
         slipRutCapacityM = slipRutCapacityM,
         slipSinkage01 = slipSinkage01,

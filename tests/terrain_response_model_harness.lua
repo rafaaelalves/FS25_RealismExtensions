@@ -32,7 +32,8 @@ local base = {
 
 local a = Model.compute(base, footprint, nil, 100)
 assert(a.available == true)
-assert(a.rutDepthM >= base.sinkDepthM)
+assert(a.observedSinkDepthM == base.sinkDepthM)
+assert(a.persistentSinkDepthM <= a.observedSinkDepthM)
 assert(a.rutCapacityM >= a.rutDepthM)
 assert(a.rutWidthM >= footprint.supportWidthM)
 assert(a.longitudinalShearIncrementM > 0)
@@ -156,20 +157,37 @@ assert(math.abs(slowTravel.rutDepthM - fastTravel.rutDepthM) < 0.0005)
 assert(math.abs(fastTravel.rutDepthM - finelySubdivided.rutDepthM) < 0.0005)
 assert(math.abs(slowTravel.longitudinalShearDistanceM - fastTravel.longitudinalShearDistanceM) < 0.0005)
 
--- Observed Mud sink is an immediate lower bound.
+-- Instantaneous Mud sink is not automatically a permanent rut.
 local sunk = clone(base)
+sunk.physicalGroundWetness = 0.50
+sunk.longitudinalSlip = 0.05
 sunk.sinkDepthM = 0.12
 sunk.sinkSeverity = 0.15
 local h = Model.compute(sunk, footprint, nil, 16)
-assert(h.rutDepthM >= 0.12)
+assert(h.observedSinkDepthM == 0.12)
+assert(h.sinkPlasticTransfer01 < 0.10)
+assert(h.persistentSinkDepthM < 0.012)
+assert(h.rutDepthM < 0.12)
 
--- Authoritative sink can exceed RE's provisional modeled capacity cap.
-local deepSink = clone(base)
-deepSink.sinkDepthM = 0.40
-deepSink.sinkSeverity = 0.50
-local h2 = Model.compute(deepSink, footprint, nil, 16)
-assert(h2.rutCapacityM >= 0.40)
-assert(h2.rutDepthM >= 0.40)
+-- The same transient sink in very wet/plastic soil transfers much more strongly.
+local deepWetSink = clone(base)
+deepWetSink.physicalGroundWetness = 0.95
+deepWetSink.longitudinalSlip = 0.75
+deepWetSink.sinkDepthM = 0.12
+local h2 = Model.compute(deepWetSink, footprint, nil, 16)
+assert(h2.sinkPlasticTransfer01 > h.sinkPlasticTransfer01)
+assert(h2.persistentSinkDepthM > h.persistentSinkDepthM)
+assert(h2.persistentSinkDepthM <= h2.observedSinkDepthM)
+
+-- Even an extreme instantaneous sink must not bypass the plastic transfer rule.
+local extremeSink = clone(base)
+extremeSink.physicalGroundWetness = 0.50
+extremeSink.longitudinalSlip = 0
+extremeSink.sinkDepthM = 0.40
+local h3 = Model.compute(extremeSink, footprint, nil, 16)
+assert(h3.persistentSinkDepthM < 0.04)
+assert(h3.rutCapacityM < 0.40)
+assert(h3.rutDepthM < 0.40)
 
 -- Hard freeze should almost eliminate deformation response.
 local frozen = clone(wet)

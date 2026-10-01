@@ -72,6 +72,14 @@ local function diagMax(name, value)
     runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or 0, value)
 end
 
+local function diagSet(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    runtime.stats[name] = value
+end
+
 local function diagMin(name, value)
     if not diagnosticsEnabled() or type(value) ~= "number" then return end
     local runtime = RealismExtensionsTerrainRuntime
@@ -306,6 +314,20 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
     diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
     diagMax("maxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier) or 0)
+    diagMax("maxObservedSinkDepthM", tonumber(response.observedSinkDepthM) or 0)
+    diagMax("maxPersistentSinkDepthM", tonumber(response.persistentSinkDepthM) or 0)
+    diagMax("maxSinkPlasticTransfer", tonumber(response.sinkPlasticTransfer01) or 0)
+
+    -- Keep one coherent sample snapshot alongside maxima. This avoids
+    -- comparing peak wetness from one moment to peak rut from another.
+    diagSet("lastPlasticWetness01", tonumber(response.physicalGroundWetness01) or 0)
+    diagSet("lastPlasticSlip01", tonumber(response.longitudinalSlip01) or 0)
+    diagSet("lastObservedSinkDepthM", tonumber(response.observedSinkDepthM) or 0)
+    diagSet("lastSinkPlasticTransfer01", tonumber(response.sinkPlasticTransfer01) or 0)
+    diagSet("lastPersistentSinkDepthM", tonumber(response.persistentSinkDepthM) or 0)
+    diagSet("lastStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
+    diagSet("lastSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
+    diagSet("lastRutDepthM", tonumber(response.rutDepthM) or 0)
 
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
     diagCount("requestedDepthM", desiredDelta)
