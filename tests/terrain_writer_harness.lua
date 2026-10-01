@@ -150,6 +150,11 @@ assert(mw.stats.massTransportSourceVolumeM3 > 0.099)
 assert(mw.stats.massTransportTargetVolumeM3 > 0)
 assert(mw.stats.massTransportTargetVolumeM3 < mw.stats.massTransportSourceVolumeM3)
 assert(mw.stats.massTransportCompactionVolumeM3 > 0)
+assert(math.abs(
+    mw.stats.massTransportSourceVolumeM3
+    - mw.stats.massTransportTargetVolumeM3
+    - mw.stats.massTransportCompactionVolumeM3
+) < 0.000001)
 assert(mw.stats.massTransportBermsEnqueued >= 1 and mw.stats.massTransportBermsEnqueued <= 2)
 assert(#mw.queue == mw.stats.massTransportBermsEnqueued)
 
