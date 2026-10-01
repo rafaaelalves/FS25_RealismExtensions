@@ -311,7 +311,10 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
             wetness01 = tonumber(context.physicalGroundWetness) or 0,
             deformability01 = tonumber(surface.deformability01) or 0,
             longitudinalSlip = tonumber(context.longitudinalSlip) or 0,
-            lateralSlip = tonumber(context.lateralSlip) or 0
+            lateralSlip = tonumber(context.lateralSlip) or 0,
+            wheelSideSign = (tonumber(wheel.physics ~= nil and wheel.physics.positionX) or 0) < 0
+                and -1
+                or (((tonumber(wheel.physics ~= nil and wheel.physics.positionX) or 0) > 0) and 1 or nil)
         }
     end
 
