@@ -317,6 +317,12 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             end
                         end
                     else
+                        -- Every eligible source-volume share must have an
+                        -- accounting destination. If no representable surface
+                        -- berm is produced, fold the whole share into
+                        -- compaction/sub-surface rearrangement.
+                        stats.massTransportCompactionVolumeM3 =
+                            stats.massTransportCompactionVolumeM3 + sourceVolume
                         stats.massTransportModelRejects =
                             stats.massTransportModelRejects + 1
                     end
