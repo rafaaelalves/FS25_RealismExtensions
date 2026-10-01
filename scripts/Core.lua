@@ -206,20 +206,22 @@ function RealismExtensionsCore:update(dt)
                     ))
                 end
 
-                if (d.massTransportSourceVolumeM3 or 0) > 0 then
-                    local target = d.massTransportTargetVolumeM3 or 0
-                    local raised = d.massTransportRaisedVolumeM3 or 0
+                if (writerStats.massTransportSourceVolumeM3 or 0) > 0 then
+                    local target = writerStats.massTransportTargetVolumeM3 or 0
+                    local raised = writerStats.massTransportRaisedVolumeM3 or 0
                     local errorM3 = raised - target
+                    local realization = target > 0 and raised / target or 0
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d",
-                        d.massTransportSourceVolumeM3 or 0,
+                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f realization=%.2f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d",
+                        writerStats.massTransportSourceVolumeM3 or 0,
                         target,
                         raised,
-                        d.massTransportCompactionVolumeM3 or 0,
+                        realization,
+                        writerStats.massTransportCompactionVolumeM3 or 0,
                         errorM3,
-                        d.massTransportBermsEnqueued or 0,
-                        d.massTransportRaiseJobs or 0,
-                        d.massTransportModelRejects or 0
+                        writerStats.massTransportBermsEnqueued or 0,
+                        writerStats.massTransportRaiseJobs or 0,
+                        writerStats.massTransportModelRejects or 0
                     ))
                 end
             end
