@@ -11,7 +11,9 @@ function History.new(options)
         pruneBatch = math.max(1, math.floor(tonumber(options.pruneBatch) or 1000)),
         cells = {},
         count = 0,
-        touchCounter = 0
+        touchCounter = 0,
+        lruHead = nil,
+        lruTail = nil
     }
     return setmetatable(self, { __index = History })
 end
@@ -27,6 +29,39 @@ function History:getKey(x, z)
     return tostring(ix) .. ":" .. tostring(iz), ix, iz
 end
 
+local function unlink(self, key, cell)
+    if cell == nil then return end
+    local prevKey, nextKey = cell.lruPrev, cell.lruNext
+    if prevKey ~= nil and self.cells[prevKey] ~= nil then
+        self.cells[prevKey].lruNext = nextKey
+    else
+        self.lruHead = nextKey
+    end
+    if nextKey ~= nil and self.cells[nextKey] ~= nil then
+        self.cells[nextKey].lruPrev = prevKey
+    else
+        self.lruTail = prevKey
+    end
+    cell.lruPrev, cell.lruNext = nil, nil
+end
+
+local function touchCell(self, key, cell)
+    if cell == nil then return end
+    if self.lruTail == key then return end
+    if cell.lruPrev ~= nil or cell.lruNext ~= nil or self.lruHead == key then
+        unlink(self, key, cell)
+    end
+    local tail = self.lruTail
+    cell.lruPrev = tail
+    cell.lruNext = nil
+    if tail ~= nil and self.cells[tail] ~= nil then
+        self.cells[tail].lruNext = key
+    else
+        self.lruHead = key
+    end
+    self.lruTail = key
+end
+
 function History:get(x, z)
     local key = self:getKey(x, z)
     local cell = self.cells[key]
@@ -34,6 +69,7 @@ function History:get(x, z)
 
     self.touchCounter = self.touchCounter + 1
     cell.touch = self.touchCounter
+    touchCell(self, key, cell)
     return cell.history
 end
 
@@ -57,6 +93,7 @@ function History:commit(x, z, value)
 
     cell.touch = self.touchCounter
     cell.history = copyHistory(value)
+    touchCell(self, key, cell)
 
     if self.count > self.maxCells then
         local target = self.maxCells
@@ -73,19 +110,22 @@ function History:prune(targetCount)
     targetCount = math.max(0, math.floor(tonumber(targetCount) or self.maxCells))
     if self.count <= targetCount then return 0 end
 
-    local ordered = {}
-    for key, cell in pairs(self.cells) do
-        ordered[#ordered + 1] = { key = key, touch = cell.touch or 0 }
+    local removed = 0
+    while self.count > targetCount do
+        local key = self.lruHead
+        if key == nil then break end
+        local cell = self.cells[key]
+        if cell == nil then
+            self.lruHead = nil
+            self.lruTail = nil
+            break
+        end
+        unlink(self, key, cell)
+        self.cells[key] = nil
+        self.count = self.count - 1
+        removed = removed + 1
     end
-    table.sort(ordered, function(a, b) return a.touch < b.touch end)
-
-    local removeCount = math.min(self.count - targetCount, #ordered)
-    for i = 1, removeCount do
-        self.cells[ordered[i].key] = nil
-    end
-
-    self.count = self.count - removeCount
-    return removeCount
+    return removed
 end
 
 
@@ -161,13 +201,15 @@ function History:importSnapshot(snapshot)
             end
 
             self.touchCounter = self.touchCounter + 1
-            self.cells[key] = {
+            local cell = {
                 ix = ix,
                 iz = iz,
                 touch = self.touchCounter,
                 history = history
             }
+            self.cells[key] = cell
             self.count = self.count + 1
+            touchCell(self, key, cell)
         end
     end
 
@@ -179,4 +221,6 @@ function History:clear()
     self.cells = {}
     self.count = 0
     self.touchCounter = 0
+    self.lruHead = nil
+    self.lruTail = nil
 end
