@@ -62,6 +62,12 @@ g_terrainDeformationQueue = {
     end
 }
 
+RealismExtensionsConfig = {
+    diagnostics = {
+        verbose = true,
+        expensiveGeometry = true
+    }
+}
 dofile("scripts/terrain/SoilMassTransportModel.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
 
@@ -107,6 +113,22 @@ assert(w.stats.geometrySamples == 6)
 assert(w.stats.geometryObservedLoweringM > 0)
 assert(w.stats.geometryRequestedDepthM > 0)
 assert(w.stats.maxObservedLoweringM > 0)
+
+-- Production mode skips expensive before/after terrain-height probes while
+-- preserving native TerrainDeformation callbacks and physics.
+RealismExtensionsConfig.diagnostics.expensiveGeometry = false
+local pw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=2,
+    maxJobsPerFrame=1,
+    maxBrushesPerJob=2,
+    minDepthM=0.0004
+})
+assert(pw:enqueue({x=30,z=30,depthM=0.003,radiusM=0.2}))
+local pb,pj = pw:flush()
+assert(pb == 1 and pj == 1)
+assert(pw.stats.geometrySamples == 0)
+assert(pw.stats.callbackSuccessJobs == 1)
+RealismExtensionsConfig.diagnostics.expensiveGeometry = true
 
 assert(w.stats.callbackSuccessJobs == 3)
 assert(math.abs(w.stats.callbackDisplacedVolumeM3 - 0.375) < 0.000001)

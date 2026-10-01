@@ -172,6 +172,12 @@ local function sampleTerrainHeight(terrain, x, z)
     return nil
 end
 
+local function expensiveGeometryDiagnosticsEnabled()
+    return RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.diagnostics ~= nil
+        and RealismExtensionsConfig.diagnostics.expensiveGeometry == true
+end
+
 local function configureDeformationConstraints(deformation)
     -- TerraFarm explicitly clears conservative collision/blocking limits before
     -- applying terrain work. Match that precedent so RE's requested geometric
@@ -206,9 +212,12 @@ function Writer:_submitBatch(depthM, brushes, mode)
     deformation:setAdditiveHeightChangeAmount(signedHeight)
     configureDeformationConstraints(deformation)
 
-    local heightSamples = {}
-    for i, brush in ipairs(brushes) do
-        heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
+    local heightSamples = nil
+    if expensiveGeometryDiagnosticsEnabled() then
+        heightSamples = {}
+        for i, brush in ipairs(brushes) do
+            heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
+        end
     end
 
     for _, brush in ipairs(brushes) do
@@ -330,7 +339,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             end
             for i, brush in ipairs(self.brushes or {}) do
                 local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
-                local afterY = sampleTerrainHeight(self.terrain, brush.x, brush.z)
+                local afterY = beforeY ~= nil and sampleTerrainHeight(self.terrain, brush.x, brush.z) or nil
                 if beforeY ~= nil and afterY ~= nil then
                     local requested = self.depthM or 0
                     local lowering = beforeY - afterY
