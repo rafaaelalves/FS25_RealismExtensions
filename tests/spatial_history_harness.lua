@@ -65,3 +65,46 @@ assert(h.count == 0)
 assert(h:get(0, 0) == nil)
 
 print("spatial_history_harness: OK")
+
+-- Recovery is spatially bounded, proportional, and rate-limited per cell/pass.
+local rh = RealismExtensionsSpatialHistory.new({ cellSizeM=0.20, maxCells=100 })
+rh:commit(0.20, 0.20, {
+    rutDepthM=0.10,
+    deformationExposure=2.0,
+    longitudinalShearDistanceM=1.0
+})
+rh:commit(2.00, 2.00, { rutDepthM=0.10, deformationExposure=2.0 })
+local accepted = 0
+local cells, raised = rh:recoverParallelogram(
+    0,0, 1,0, 0,1,
+    { fraction=0.5, maxRaiseM=0.03, minRutM=0.003, nowMs=1000, cooldownMs=1500 },
+    function(x,z,raiseM)
+        accepted = accepted + 1
+        assert(raiseM <= 0.03)
+        return true
+    end
+)
+assert(cells == 1)
+assert(accepted == 1)
+assert(math.abs(raised - 0.03) < 0.000001)
+local recovered = rh:get(0.20,0.20)
+assert(math.abs(recovered.rutDepthM - 0.07) < 0.000001)
+assert(recovered.deformationExposure < 2.0)
+local cellsCooldown = rh:recoverParallelogram(
+    0,0, 1,0, 0,1,
+    { fraction=0.5, maxRaiseM=0.03, nowMs=2000, cooldownMs=1500 },
+    function() return true end
+)
+assert(cellsCooldown == 0)
+local outside = rh:get(2.00,2.00)
+assert(math.abs(outside.rutDepthM - 0.10) < 0.000001)
+
+-- A rejected writer brush must not erase logical rut history.
+local beforeReject = rh:get(0.20,0.20).rutDepthM
+local cellsRejected = rh:recoverParallelogram(
+    0,0, 1,0, 0,1,
+    { fraction=0.5, maxRaiseM=0.03, nowMs=3000, cooldownMs=1500 },
+    function() return false end
+)
+assert(cellsRejected == 0)
+assert(math.abs(rh:get(0.20,0.20).rutDepthM - beforeReject) < 0.000001)
