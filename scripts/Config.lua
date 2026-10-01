@@ -6,6 +6,7 @@ RealismExtensionsConfig = {
         performanceTiming = true
     },
     modules = {
-        TerrainDeformation = true
+        TerrainDeformation = true,
+        TerrainRecovery = true
     }
 }

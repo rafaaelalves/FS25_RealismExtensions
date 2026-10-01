@@ -99,15 +99,29 @@ function RealismExtensionsCore:update(dt)
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
 
+                if RealismExtensionsTerrainRecovery ~= nil then
+                    local r = RealismExtensionsTerrainRecovery.getDiagnostics()
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainRecovery runtime | calls=%d worked=%d cells=%d requestedRaise=%.3fm brushes=%d rejected=%d",
+                        r.workAreaCalls or 0,
+                        r.workedAreaCalls or 0,
+                        r.recoveredCells or 0,
+                        r.requestedRaiseM or 0,
+                        r.brushesEnqueued or 0,
+                        r.brushesRejected or 0
+                    ))
+                end
+
                 if RealismExtensionsTerrainPerformance ~= nil then
                     local p = RealismExtensionsTerrainPerformance.snapshot()
-                    local vu, fl, cb = p.vehicleUpdate, p.flush, p.callback
+                    local vu, fl, cb, rc = p.vehicleUpdate, p.flush, p.callback, p.recovery
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flush=%d avg=%.4fms max=%.3fms total=%.1fms callback=%d avg=%.4fms max=%.3fms total=%.1fms",
+                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flush=%d avg=%.4fms max=%.3fms total=%.1fms callback=%d avg=%.4fms max=%.3fms total=%.1fms recovery=%d avg=%.4fms max=%.3fms total=%.1fms",
                         tostring(p.timerAvailable),
                         vu.samples or 0, vu.avgMs or 0, vu.maxMs or 0, vu.totalMs or 0,
                         fl.samples or 0, fl.avgMs or 0, fl.maxMs or 0, fl.totalMs or 0,
-                        cb.samples or 0, cb.avgMs or 0, cb.maxMs or 0, cb.totalMs or 0
+                        cb.samples or 0, cb.avgMs or 0, cb.maxMs or 0, cb.totalMs or 0,
+                        rc.samples or 0, rc.avgMs or 0, rc.maxMs or 0, rc.totalMs or 0
                     ))
                 end
 
@@ -241,7 +255,7 @@ function RealismExtensionsCore:update(dt)
                     local errorM3 = raised - target
                     local realization = target > 0 and raised / target or 0
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f realization=%.2f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d",
+                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f realization=%.2f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d recoveryRaised=%.3f recoveryRaiseJobs=%d otherRaised=%.3f otherRaiseJobs=%d",
                         writerStats.massTransportSourceVolumeM3 or 0,
                         target,
                         raised,
@@ -250,7 +264,11 @@ function RealismExtensionsCore:update(dt)
                         errorM3,
                         writerStats.massTransportBermsEnqueued or 0,
                         writerStats.massTransportRaiseJobs or 0,
-                        writerStats.massTransportModelRejects or 0
+                        writerStats.massTransportModelRejects or 0,
+                        writerStats.recoveryRaisedVolumeM3 or 0,
+                        writerStats.recoveryRaiseJobs or 0,
+                        writerStats.unclassifiedRaisedVolumeM3 or 0,
+                        writerStats.unclassifiedRaiseJobs or 0
                     ))
                 end
             end

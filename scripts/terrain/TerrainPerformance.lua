@@ -56,7 +56,8 @@ function Perf.snapshot()
         timerAvailable = Perf.timerAvailable == true,
         vehicleUpdate = Perf.get("vehicleUpdate"),
         flush = Perf.get("flush"),
-        callback = Perf.get("callback")
+        callback = Perf.get("callback"),
+        recovery = Perf.get("recovery")
     }
 end
 

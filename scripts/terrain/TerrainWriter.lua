@@ -56,7 +56,11 @@ function Writer.new(options)
             massTransportCompactionVolumeM3 = 0,
             massTransportBermsEnqueued = 0,
             massTransportModelRejects = 0,
-            massTransportRaiseJobs = 0
+            massTransportRaiseJobs = 0,
+            recoveryRaisedVolumeM3 = 0,
+            recoveryRaiseJobs = 0,
+            unclassifiedRaisedVolumeM3 = 0,
+            unclassifiedRaiseJobs = 0
         }
     }
     return setmetatable(self, { __index = Writer })
@@ -98,7 +102,8 @@ function Writer:enqueue(brush)
             0.98
         ),
         massTransport = brush.massTransport,
-        targetVolumeM3 = tonumber(brush.targetVolumeM3)
+        targetVolumeM3 = tonumber(brush.targetVolumeM3),
+        source = brush.source
     }
     self.stats.enqueued = self.stats.enqueued + 1
     return true
@@ -109,6 +114,7 @@ local function depthBucket(depth, bucket)
 end
 
 local function compatibleTransport(a, b)
+    if a.source ~= b.source then return false end
     local ma, mb = a.massTransport, b.massTransport
     if ma == nil and mb == nil then return true end
     if ma == nil or mb == nil then return false end
@@ -238,6 +244,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
         depthM = math.abs(depthM),
         mode = mode or "LOWER",
         brushes = brushes,
+        source = brushes ~= nil and brushes[1] ~= nil and brushes[1].source or nil,
         heightSamples = heightSamples
     }
 
@@ -261,9 +268,19 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 stats.callbackMaxDisplacedVolumeM3 =
                     math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
                 if self.mode == "RAISE" then
-                    stats.massTransportRaisedVolumeM3 =
-                        stats.massTransportRaisedVolumeM3 + callbackVolume
-                    stats.massTransportRaiseJobs = stats.massTransportRaiseJobs + 1
+                    if self.source == "MASS_TRANSPORT" then
+                        stats.massTransportRaisedVolumeM3 =
+                            stats.massTransportRaisedVolumeM3 + callbackVolume
+                        stats.massTransportRaiseJobs = stats.massTransportRaiseJobs + 1
+                    elseif self.source == "RECOVERY" then
+                        stats.recoveryRaisedVolumeM3 =
+                            stats.recoveryRaisedVolumeM3 + callbackVolume
+                        stats.recoveryRaiseJobs = stats.recoveryRaiseJobs + 1
+                    else
+                        stats.unclassifiedRaisedVolumeM3 =
+                            stats.unclassifiedRaisedVolumeM3 + callbackVolume
+                        stats.unclassifiedRaiseJobs = stats.unclassifiedRaiseJobs + 1
+                    end
                 end
             else
                 stats.callbackVolumeMissing = stats.callbackVolumeMissing + 1
@@ -321,7 +338,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
                                 raiseHeightM = berm.raiseHeightM,
                                 radiusM = berm.radiusM,
                                 hardness = brush.hardness,
-                                targetVolumeM3 = berm.targetVolumeM3
+                                targetVolumeM3 = berm.targetVolumeM3,
+                                source = "MASS_TRANSPORT"
                             }) then
                                 stats.massTransportBermsEnqueued =
                                     stats.massTransportBermsEnqueued + 1
@@ -431,7 +449,9 @@ function Writer:flush()
     while consumed < brushBudget and #self.queue > 0 do
         local brush = table.remove(self.queue, 1)
         local bucket = depthBucket(brush.depthM, bucketM)
-        local groupKey = tostring(brush.mode or "LOWER") .. ":" .. tostring(bucket)
+        local groupKey = tostring(brush.mode or "LOWER")
+            .. ":" .. tostring(brush.source or "DEFAULT")
+            .. ":" .. tostring(bucket)
         groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
         local groupInfo = groups[groupKey]
         local group = groupInfo.brushes

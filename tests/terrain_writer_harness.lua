@@ -164,7 +164,8 @@ assert(mw:enqueue({
         wetness01=0.95,deformability01=1.0,
         longitudinalSlip=0.95,lateralSlip=0,
         innerBermSide=1
-    }
+    },
+    source="RUT"
 }))
 local mb1,mj1 = mw:flush()
 assert(mb1 == 1 and mj1 == 1)
@@ -186,7 +187,28 @@ assert(mj2 >= 1)
 assert(#mw.queue == 0)
 assert(mw.stats.massTransportRaiseJobs >= 1)
 assert(mw.stats.massTransportRaisedVolumeM3 > 0)
+assert(mw.stats.recoveryRaisedVolumeM3 == 0)
+assert(mw.stats.unclassifiedRaisedVolumeM3 == 0)
 assert(mw.stats.geometryObservedRaisingM > 0)
+
+-- Recovery raises must not pollute berm realization telemetry.
+local rw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,
+    maxJobsPerFrame=2,
+    maxBrushesPerJob=4,
+    depthBucketM=0.0005,
+    minDepthM=0.0004
+})
+assert(rw:enqueue({
+    x=40,z=40,mode="RAISE",raiseHeightM=0.003,radiusM=0.13,
+    hardness=0.55,source="RECOVERY"
+}))
+local rb,rj = rw:flush()
+assert(rb == 1 and rj == 1)
+assert(rw.stats.recoveryRaiseJobs == 1)
+assert(rw.stats.recoveryRaisedVolumeM3 > 0)
+assert(rw.stats.massTransportRaiseJobs == 0)
+assert(rw.stats.massTransportRaisedVolumeM3 == 0)
 
 g_terrainDeformationQueue.queueJob = originalQueueJob
 print("terrain_writer_mass_transport_harness: OK")

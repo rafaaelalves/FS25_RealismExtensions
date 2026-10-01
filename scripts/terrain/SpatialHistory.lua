@@ -129,6 +129,81 @@ function History:prune(targetCount)
 end
 
 
+
+local function pointInParallelogram(px, pz, xs, zs, xw, zw, xh, zh)
+    local ux, uz = xw - xs, zw - zs
+    local vx, vz = xh - xs, zh - zs
+    local dx, dz = px - xs, pz - zs
+    local det = ux * vz - uz * vx
+    if math.abs(det) < 0.000001 then return false end
+    local a = (dx * vz - dz * vx) / det
+    local b = (ux * dz - uz * dx) / det
+    return a >= -0.02 and a <= 1.02 and b >= -0.02 and b <= 1.02
+end
+
+function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
+    options = options or {}
+    local fraction = math.max(0, math.min(1, tonumber(options.fraction) or 0.45))
+    local maxRaiseM = math.max(0, tonumber(options.maxRaiseM) or 0.025)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local cooldownMs = math.max(0, tonumber(options.cooldownMs) or 1500)
+    local nowMs = tonumber(options.nowMs) or 0
+    local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
+
+    local xo, zo = xw + xh - xs, zw + zh - zs
+    local minX = math.min(xs, xw, xh, xo)
+    local maxX = math.max(xs, xw, xh, xo)
+    local minZ = math.min(zs, zw, zh, zo)
+    local maxZ = math.max(zs, zw, zh, zo)
+    local minIx, minIz = self:getCellCoordinates(minX, minZ)
+    local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
+
+    local recoveredCells, recoveredDepthM = 0, 0
+    for ix = minIx, maxIx do
+        if recoveredCells >= maxCells then break end
+        for iz = minIz, maxIz do
+            if recoveredCells >= maxCells then break end
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local cell = self.cells[key]
+            local h = cell ~= nil and cell.history or nil
+            local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+            local lastMs = h ~= nil and tonumber(h._lastRecoveryMs) or nil
+            local eligibleByTime = lastMs == nil or nowMs <= 0
+                or nowMs - lastMs >= cooldownMs
+            local x, z = ix * self.cellSizeM, iz * self.cellSizeM
+
+            if rut >= minRutM and eligibleByTime
+                and pointInParallelogram(x, z, xs, zs, xw, zw, xh, zh) then
+                local raiseM = math.min(maxRaiseM, rut * fraction)
+                if raiseM > 0 then
+                    local remaining = math.max(0, rut - raiseM)
+                    local callbackResult = callback == nil
+                        and raiseM or callback(x, z, raiseM, remaining, h)
+                    local appliedRaiseM = callbackResult == true and raiseM
+                        or (type(callbackResult) == "number" and math.max(0, math.min(raiseM, callbackResult)) or 0)
+                    if appliedRaiseM > 0 then
+                        remaining = math.max(0, rut - appliedRaiseM)
+                        local ratio = rut > 0 and remaining / rut or 0
+                        h.rutDepthM = remaining
+                        h.longitudinalShearDistanceM =
+                            (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+                        h.lateralShearDistanceM =
+                            (tonumber(h.lateralShearDistanceM) or 0) * ratio
+                        h.slipExcavationDistanceM =
+                            (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+                        h.deformationExposure =
+                            (tonumber(h.deformationExposure) or 0) * ratio
+                        h._lastRecoveryMs = nowMs
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepthM = recoveredDepthM + appliedRaiseM
+                    end
+                end
+            end
+        end
+    end
+    return recoveredCells, recoveredDepthM
+end
+
 local PERSISTED_FIELDS = {
     "rutDepthM",
     "longitudinalShearDistanceM",
