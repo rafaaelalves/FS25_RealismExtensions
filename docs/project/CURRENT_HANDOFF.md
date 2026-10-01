@@ -140,3 +140,33 @@ The first runtime goal is calibration/shape validation, not acceptance:
 7. only then decide whether to extend toward rearward shear, relaxation and implement-driven field repair.
 
 Do not merge v9 until runtime evidence shows both geometry and mass balance are plausible.
+
+
+## v9.0 runtime result and v9.1 retune
+
+The first mass-transport runtime proved the architecture works but rejected the initial calibration.
+
+Observed in the 2026-10-01 S780 test:
+- berms were visually far too aggressive, especially toward vehicle center;
+- early realization ratios reached 16-17x;
+- later realization stabilized around 7-8x;
+- at source=16.841 m3, targetTransport=5.814 m3, GIANTS reported raised=48.054 m3 (realization=8.26);
+- the test commonly ran near local wetness ~0.35-0.51 with 1.00 bar tire pressure;
+- therefore the first linear wetness transport curve moved far too much surface soil for merely damp/trafficable conditions.
+
+v9.1 changes:
+- transport is now strongly nonlinear with a plastic-wetness threshold;
+- around ~0.50 wetness + low slip, surface transport is intended to remain around 0.5-1% and compaction dominates;
+- truly wet/plastic soil + severe slip can ramp toward a hard 18% surface-transport ceiling;
+- additive raise height is calibrated by 0.10 based on the measured runtime over-realization;
+- microscopic berms are no longer rounded upward to the minimum terrain brush; their mass is folded into compaction instead;
+- the berm facing vehicle center is resolved geometrically from vehicle root/contact position, not from wheel-side assumptions;
+- inner berm share is capped near 18% of transported mass and its per-operation raise height is capped at 1 mm;
+- outer berms may reach 3 mm per operation in severe conditions.
+
+Next runtime acceptance criteria:
+1. ordinary 0.35-0.55 wetness should show rutting/compaction with little or no obvious berm;
+2. inner berms must not create a center ridge capable of interfering with the vehicle;
+3. realization should move much closer to 1.0 and must no longer sit at 7-17x;
+4. severe wetness + wheelspin should still produce visible lateral displacement;
+5. job/brush growth must remain manageable.
