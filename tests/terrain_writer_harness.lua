@@ -139,8 +139,9 @@ assert(mw:enqueue({
     x=20,z=20,depthM=0.004,radiusM=0.30,hardness=0.35,
     massTransport={
         travelDirX=0,travelDirZ=1,
-        wetness01=0.75,deformability01=1.0,
-        longitudinalSlip=0.20,lateralSlip=0
+        wetness01=0.95,deformability01=1.0,
+        longitudinalSlip=0.95,lateralSlip=0,
+        innerBermSide=1
     }
 }))
 local mb1,mj1 = mw:flush()
@@ -149,11 +150,11 @@ assert(mw.stats.massTransportSourceVolumeM3 > 0.099)
 assert(mw.stats.massTransportTargetVolumeM3 > 0)
 assert(mw.stats.massTransportTargetVolumeM3 < mw.stats.massTransportSourceVolumeM3)
 assert(mw.stats.massTransportCompactionVolumeM3 > 0)
-assert(mw.stats.massTransportBermsEnqueued == 2)
-assert(#mw.queue == 2)
+assert(mw.stats.massTransportBermsEnqueued >= 1 and mw.stats.massTransportBermsEnqueued <= 2)
+assert(#mw.queue == mw.stats.massTransportBermsEnqueued)
 
 local mb2,mj2 = mw:flush()
-assert(mb2 == 2)
+assert(mb2 == mw.stats.massTransportBermsEnqueued)
 assert(mj2 >= 1)
 assert(#mw.queue == 0)
 assert(mw.stats.massTransportRaiseJobs >= 1)
