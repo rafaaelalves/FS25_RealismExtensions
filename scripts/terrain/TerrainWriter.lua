@@ -232,8 +232,6 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     local callbackTarget = {
-        perfStarted = RealismExtensionsTerrainPerformance ~= nil
-            and RealismExtensionsTerrainPerformance.begin() or nil,
         deformation = deformation,
         owner = self,
         terrain = terrain,
@@ -244,6 +242,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
+        local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+            and RealismExtensionsTerrainPerformance.begin() or nil
         if state ~= nil
             and TerrainDeformation.STATE_SUCCESS ~= nil
             and state ~= TerrainDeformation.STATE_SUCCESS then
@@ -373,7 +373,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
         end
 
         if RealismExtensionsTerrainPerformance ~= nil then
-            RealismExtensionsTerrainPerformance.finish("callback", self.perfStarted)
+            RealismExtensionsTerrainPerformance.finish("callback", perfStarted)
         end
 
         local d = self.deformation
