@@ -44,7 +44,7 @@ assert(severe.left.role == "INNER")
 assert(severe.right.role == "OUTER")
 assert(severe.left.targetVolumeM3 < severe.right.targetVolumeM3)
 assert(severe.left.targetVolumeM3 / severe.requestedTransportedVolumeM3 <= 0.18 + 0.000001)
-assert(severe.left.raiseHeightM <= 0.003 + 0.000001)
+assert(severe.left.raiseHeightM <= 0.001 + 0.000001)
 assert(severe.right.raiseHeightM <= 0.003 + 0.000001)
 
 -- The same physical state with no known vehicle-center side falls back to a
