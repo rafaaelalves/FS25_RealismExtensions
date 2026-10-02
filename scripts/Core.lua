@@ -102,7 +102,7 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v15 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm",
+                        "TerrainRecovery v17 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.coveragePoints or 0,
@@ -119,7 +119,8 @@ function RealismExtensionsCore:update(dt)
                         r.centerRaised or 0,
                         r.centerLowered or 0,
                         r.historyRecoveredCells or 0,
-                        r.historyRecoveredDepthM or 0
+                        r.historyRecoveredDepthM or 0,
+                        r.protectedCellsMarked or 0
                     ))
                 end
 
@@ -137,7 +138,7 @@ function RealismExtensionsCore:update(dt)
                 end
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d cultivationProtected=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -153,6 +154,7 @@ function RealismExtensionsCore:update(dt)
                     d.footprintAccepted or 0,
                     d.contextAccepted or 0,
                     d.samplesProcessed or 0,
+                    d.cultivationProtectionSkips or 0,
                     d.responseRejects or 0,
                     d.belowBrushThreshold or 0,
                     d.brushesAccepted or 0,
