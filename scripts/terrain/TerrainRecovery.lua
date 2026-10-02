@@ -98,6 +98,42 @@ local function enabled()
         and RealismExtensionsConfig.modules.TerrainRecovery == true
 end
 
+local function markActiveCombination(vehicle, nowMs)
+    local workApi = RealismExtensionsTerrainWorkContext
+    local root = workApi ~= nil
+        and workApi.getCombinationRoot(vehicle) or vehicle
+    if root == nil or nowMs <= 0 then return end
+
+    Recovery.activeCombinationUntil[root] =
+        nowMs + Recovery.DEFAULTS.activeCombinationGraceMs
+    Recovery.stats.activeCombinationMarks =
+        Recovery.stats.activeCombinationMarks + 1
+end
+
+function Recovery.isRutGenerationSuppressed(vehicle, nowMs)
+    Recovery.stats.activeCombinationQueries =
+        Recovery.stats.activeCombinationQueries + 1
+
+    local workApi = RealismExtensionsTerrainWorkContext
+    local root = workApi ~= nil
+        and workApi.getCombinationRoot(vehicle) or vehicle
+    if root == nil then return false end
+
+    nowMs = tonumber(nowMs)
+        or (g_currentMission ~= nil and g_currentMission.time or 0)
+    local expires = Recovery.activeCombinationUntil[root]
+    if type(expires) ~= "number" then return false end
+
+    if nowMs > 0 and expires < nowMs then
+        Recovery.activeCombinationUntil[root] = nil
+        return false
+    end
+
+    Recovery.stats.activeCombinationHits =
+        Recovery.stats.activeCombinationHits + 1
+    return true
+end
+
 local function pointInParallelogram(x,z,g)
     local det = g.ux * g.vz - g.uz * g.vx
     if math.abs(det) < 0.000001 then return false end
