@@ -391,6 +391,8 @@ function RealismExtensionsCore:deleteMap()
     RealismExtensionsState.clearProvider()
     self.providerElapsedMs = self.providerRetryMs
     self.terrainDiagElapsedMs = 0
+    self.terrainDiagPrevious = nil
+    self._terrainDiagNextSnapshot = nil
 
     if RealismExtensionsTerrainRuntime ~= nil then
         RealismExtensionsTerrainRuntime.clear()
