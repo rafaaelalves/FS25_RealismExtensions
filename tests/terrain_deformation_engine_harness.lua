@@ -182,12 +182,12 @@ RealismExtensionsTerrainRecovery.protected = false
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
-assert(contexts == beforeStationary + 2)
+assert(contexts == beforeProtectedContexts + 2)
 
 -- Client vehicles never write terrain.
 RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
-assert(contexts == beforeStationary + 2)
+assert(contexts == beforeProtectedContexts + 2)
 
 print("terrain_deformation_engine_harness: OK")
