@@ -136,3 +136,73 @@ Only after availability is true does `Machine:onUpdate()` use physical work-area
 This is a strong precedent for RE's future `WorkDetector`: represent work eligibility as explicit facts rather than infer it from a downstream result like changed field area. The detector should be able to explain *why* work is active/inactive with reason counters suitable for diagnostics.
 
 Do not retrofit the full abstraction before v22 validation. The current GIANTS Cultivator work-state path is the minimal targeted fix; extraction should follow runtime proof.
+
+
+## Deep-audit expansion (2026-10-02)
+
+The initial audit above remains valid. It is now supplemented by focused documents:
+
+- `MACHINE_LIFECYCLE.md` — machine discovery/configuration, dynamic specialization injection, availability chain, work-area contact, cadence, registry/events and collision behavior.
+- `TERRAIN_PIPELINE.md` — TerrainDeformation operation classes, constraints, preview/apply lifecycle, callback ownership, material-volume accounting, density side effects and AI navigation dirtying.
+- `PERSISTENCE_AREAS_NETWORKING.md` — savegame/network model, persistent path/polygon landscaping areas, target planes, map resources and initial client synchronization.
+- `INTEGRATION_OPPORTUNITIES.md` — compatibility tiers, RC/RE ownership arbitration, event-driven adapters, SpatialHistory strategy, profile registries and proposed runtime tests.
+
+### New high-value conclusions
+
+1. **TerraFarm has two useful extension patterns, but only one is low-risk for RE.**
+   - Low-risk precedent: external XML machine-configuration registry.
+   - Higher-risk mechanism: dynamic per-instance Machine specialization injection through an overwritten `Vehicle.load`.
+   RE should strongly prefer a profile/configuration registry over runtime specialization injection.
+
+2. **Machine family and operation mode are separate concepts.**
+   TerraFarm machine types describe capability while `LOWER/SMOOTH/FLATTEN/RAISE/PAINT/MATERIAL` describe current intent. This is a strong precedent for separating RE `TerrainRecoveryProfile` from active `TerrainOperation`.
+
+3. **Work contact and terrain execution are deliberately decoupled.**
+   Work-area nodes update contact continuously; expensive terrain input executes on an explicit cadence. This reinforces RE's separation between WorkContext/PassTracker and TerrainWriter budgets.
+
+4. **Physical callback volume is the material-accounting authority.**
+   TerraFarm does not assume requested excavation/deposition equals realized volume. This is directly relevant to the planned SoilMassTransport redesign.
+
+5. **Successful heightfield edits have secondary world consequences.**
+   TerraFarm marks modified bounds dirty in GIANTS' AI system. RE currently lacks this path. Large future grading/municipal/world-recovery operations should coalesce modified regions and invalidate AI navigation after successful physical writes.
+
+6. **Persistent target geometry is a mature concept in TerraFarm.**
+   Path areas define 3D corridors and target slope; polygon areas define bounded target planes. These are useful mathematical precedents for road/public maintenance and target-plane grading, but their metadata does not represent RE property/ownership policy.
+
+7. **TerraFarm already offers clean event-driven observation surfaces.**
+   Its machine manager publishes machine add/remove events and its area system publishes register/update/delete events. An optional adapter can observe these instead of adding another global vehicle scan or another `Vehicle.load` wrapper.
+
+8. **Lazy physical SpatialHistory reconciliation remains the preferred compatibility mechanism.**
+   It solves TerraFarm, Construction landscaping and other terrain writers generically. Directly patching TerraFarm deformation callbacks should not be required for baseline correctness.
+
+9. **Visual tire tracks and physical terrain are separate compatibility domains.**
+   TerraFarm documents a multiplayer limitation where client-side tire tracks are not removed by terraforming because base-game tire tracks are not synchronized for that behavior. RE should not assume a repaired heightfield implies repaired/removed visual track decals on all clients.
+
+10. **Compatibility should be layered, not all-or-nothing.**
+    Start with coexistence/diagnostics, then optional ownership awareness, then semantic mapping only if justified. Do not make TerraFarm a hard RE dependency.
+
+## Clean-room / licensing boundary
+
+TerraFarm's repository currently declares Creative Commons Attribution-NonCommercial-NoDerivatives 4.0.
+
+For this project, treat the audit as a **behavioral/architectural precedent only**:
+- document observed engine contracts and design patterns;
+- implement RE/RC behavior independently;
+- do not copy TerraFarm source into RE/RC;
+- do not distribute modified/adapted TerraFarm code as part of this project;
+- where an integration is needed, communicate through runtime state/events/contracts rather than vendoring or modifying TerraFarm.
+
+This is an engineering boundary for the project, not legal advice. Any future code-sharing/collaboration arrangement would require checking the applicable upstream permission/license terms separately.
+
+## Recommended near-term follow-up research
+
+Before writing a TerraFarm adapter:
+1. runtime probe the TerraFarm environment and exact event objects;
+2. inspect ModMixer chains with TerraFarm + RE/RC loaded;
+3. verify whether active TerraFarm operations and RE rut writers overlap in practice;
+4. prototype read-only machine registry subscription;
+5. validate multiplayer visibility of `spec_machine`, active mode and work-area contact;
+6. test large RE heightfield modifications against GIANTS AI path recalculation;
+7. then decide whether RC needs a TerraFarm detector/adapter.
+
+No TerraFarm bridge is required to continue TerrainPassTracker/RecoveryProfile/ContactFootprint development.
