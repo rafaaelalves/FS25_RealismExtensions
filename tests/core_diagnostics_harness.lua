@@ -127,7 +127,7 @@ assert(RealismExtensionsCore.terrainDiagPrevious.brushesAccepted == 5)
 assert(RealismExtensionsCore.terrainDiagPrevious.rutWriter_TestImplement == 5)
 
 local joined = table.concat(Logging.lines, "\n")
-assert(joined:find("TerrainWindow 5s", 1, true) ~= nil)
+assert(joined:find("TerrainWindow 5000ms", 1, true) ~= nil)
 assert(joined:find("RutWriters runtime", 1, true) ~= nil)
 assert(joined:find("TestImplement=5(+2)", 1, true) ~= nil)
 assert(joined:find("TestTractor=5(+2)", 1, true) ~= nil)
