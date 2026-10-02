@@ -100,3 +100,23 @@ Still worth auditing in detail:
 - landscaping-area target planes and how they avoid destructive overshoot.
 
 Those are architecture candidates, not prerequisites for the v22 runtime test.
+
+## Additional audit: guarded terrain operations
+
+TerraFarm's flatten/slope output path uses a useful two-stage pattern:
+1. build the deformation and call `apply(true, previewCallback)`;
+2. inspect the preview's displaced volume;
+3. only call the real `apply(false, callback)` when the predicted change exceeds a radius-scaled threshold.
+
+Its input flatten path also gates each node against the target height and can refuse grading upward unless explicitly allowed.
+
+This suggests a broader RE design principle: **predict/gate destructive or target-seeking terrain operations before committing them when the engine exposes a preview contract**.
+
+For TerrainRecovery SMOOTH specifically, do not change v22 before its runtime test just to add preview semantics; smoothing's desired metric is roughness reduction, not displaced volume. But future recovery modes (target-plane grading, mass-conserving redistribution, maintenance) should evaluate whether preview-first execution can prevent pathological writes and unnecessary jobs.
+
+## Audit-derived engineering questions
+
+- Can RE wrap TerrainDeformation constraints (outside-area, blocked-area, dynamic-object displacement) in one explicit operation profile instead of relying on defaults?
+- Should future WorkFootprint sample configured/derived nodes across implement width similarly to TerraFarm rather than regenerate a generic grid per call?
+- Can target-plane recovery use preview-before-apply to enforce a maximum physically predicted displacement?
+- Which operation telemetry belongs in the generic TerrainOperation layer versus recovery policy?
