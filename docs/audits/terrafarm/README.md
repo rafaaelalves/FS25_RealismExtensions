@@ -208,3 +208,14 @@ Before writing a TerraFarm adapter:
 7. then decide whether RC needs a TerraFarm detector/adapter.
 
 No TerraFarm bridge is required to continue TerrainPassTracker/RecoveryProfile/ContactFootprint development.
+
+
+## Cross-project full-stack companion audit
+
+TerraFarm is also evaluated in RealismCompatibility against the wider realism stack, not only RE:
+
+`FS25_RealismCompatibility/docs/audits/2026-10-02-terrafarm-full-stack-audit.md`
+
+Use the RE audit for TerraFarm architecture, terrain-operation precedent, RE compatibility and possible functional absorption. Use the RC audit for stack-wide ownership/composition questions involving MR, Mud, Reifenverschleiss, SoilCompaction, RMS/ADS, Dynamic PTO/WorkMode, FarmKit, True AI Tracks, MoistureSystem, RealisticHarvesting, LoadSpill/Loose Load, sound/effects and AI/controller systems.
+
+The two documents are complementary; neither assumes the current external-mod stack is permanent.
