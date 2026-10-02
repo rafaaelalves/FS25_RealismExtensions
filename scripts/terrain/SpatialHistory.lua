@@ -217,6 +217,58 @@ function History:applyRecoveryAt(x, z, raiseM, options)
     return applied
 end
 
+
+function History:applyRecoveryCircle(x, z, radiusM, amountM, fraction, options)
+    options = options or {}
+    local radius = math.max(0, tonumber(radiusM) or 0)
+    local amount = math.max(0, tonumber(amountM) or 0)
+    local frac = math.max(0, math.min(1, tonumber(fraction) or 0))
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    if radius <= 0 or amount <= 0 or frac <= 0 then return 0, 0 end
+
+    local minIx, minIz = self:getCellCoordinates(x - radius, z - radius)
+    local maxIx, maxIz = self:getCellCoordinates(x + radius, z + radius)
+    local radiusSq = radius * radius
+    local recoveredCells, recoveredDepth = 0, 0
+
+    for ix = minIx, maxIx do
+        for iz = minIz, maxIz do
+            local cx, cz = ix * self.cellSizeM, iz * self.cellSizeM
+            local dx, dz = cx - x, cz - z
+            if dx * dx + dz * dz <= radiusSq then
+                local key = tostring(ix) .. ":" .. tostring(iz)
+                local cell = self.cells[key]
+                local h = cell ~= nil and cell.history or nil
+                local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if rut >= minRutM then
+                    local applied = math.min(rut * frac, amount, rut)
+                    if applied > 0 then
+                        local remaining = math.max(0, rut - applied)
+                        local ratio = rut > 0 and remaining / rut or 0
+                        h.rutDepthM = remaining
+                        h.longitudinalShearDistanceM =
+                            (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+                        h.lateralShearDistanceM =
+                            (tonumber(h.lateralShearDistanceM) or 0) * ratio
+                        h.slipExcavationDistanceM =
+                            (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+                        h.deformationExposure =
+                            (tonumber(h.deformationExposure) or 0) * ratio
+                        h._lastRecoveryMs = tonumber(options.nowMs) or 0
+                        self.touchCounter = self.touchCounter + 1
+                        cell.touch = self.touchCounter
+                        touchCell(self, key, cell)
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepth = recoveredDepth + applied
+                    end
+                end
+            end
+        end
+    end
+    return recoveredCells, recoveredDepth
+end
+
+
 function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
     options = options or {}
     local fraction = math.max(0, math.min(1, tonumber(options.fraction) or 0.45))
