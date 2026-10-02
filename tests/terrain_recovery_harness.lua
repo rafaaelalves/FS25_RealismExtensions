@@ -1,4 +1,4 @@
--- TerrainRecovery v17 native-Soften convergence harness.
+-- TerrainRecovery v20 cultivation-isolation/native-Soften harness.
 RealismExtensionsConfig = { modules={TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false} }
 
 local enqueued = {}
@@ -54,7 +54,11 @@ SpecializationUtil={
 }
 
 dofile("scripts/terrain/TerrainRecovery.lua")
-local vehicle={spec_cultivator={useDeepMode=false}}
+local rootVehicle={}
+local vehicle={
+    spec_cultivator={useDeepMode=false},
+    getRootVehicle=function(self) return rootVehicle end
+}
 local workArea={start=101,width=102,height=103}
 local function workedSuper(self,wa,dt) return 12,12 end
 
@@ -67,6 +71,9 @@ assert(d.roughnessImproved == firstCount)
 assert(d.centerLowered == firstCount)
 assert(d.historyRecoveredCells > 0 and d.historyRecoveredDepthM > 0)
 assert(d.protectedCellsMarked > 0)
+assert(d.activeCombinationMarks > 0)
+assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,10000)==true)
+assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,11501)==false)
 assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,10000)==true)
 assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,19001)==false)
 
@@ -100,4 +107,4 @@ local function rejectedSuper(self,wa,dt) return 0,12 end
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
-print("terrain_recovery_v17_native_soften_harness: OK")
+print("terrain_recovery_v20_cultivation_isolation_harness: OK")
