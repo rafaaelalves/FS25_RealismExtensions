@@ -109,6 +109,7 @@ function Writer:enqueue(brush)
             0.05,
             0.98
         ),
+        strength = clamp(tonumber(brush.strength) or 1.0, 0.01, 1.0),
         massTransport = brush.massTransport,
         targetVolumeM3 = tonumber(brush.targetVolumeM3),
         source = brush.source,
@@ -257,7 +258,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             brush.z,
             brush.radiusM,
             brush.hardness,
-            1.0,
+            brush.strength or 1.0,
             TerrainDeformation.NO_TERRAIN_BRUSH
         )
     end
