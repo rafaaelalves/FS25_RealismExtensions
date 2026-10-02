@@ -5,7 +5,14 @@ local heights={}
 local function key(x,z) return string.format("%.3f:%.3f",x,z) end
 g_currentMission={time=10000,terrainRootNode=42}
 getTerrainHeightAtWorldPos=function(terrain,x,y,z)
-    return heights[key(x,z)] or (10 + 0.01*x)
+    local explicit=heights[key(x,z)]
+    if explicit~=nil then return explicit end
+    local base=10 + 0.01*x
+    local dr=(x-0.5)*(x-0.5)+(z-0.5)*(z-0.5)
+    local rr=(x-1.5)*(x-1.5)+(z-0.5)*(z-0.5)
+    if dr<0.08 then return base-0.10 end
+    if rr<0.08 then return base+0.10 end
+    return base
 end
 getWorldTranslation=function(node)
     if node==101 then return 0,0,0 end
@@ -14,9 +21,9 @@ getWorldTranslation=function(node)
     error("unexpected node")
 end
 
--- Inject one deep rut and one ridge into an otherwise sloping work area.
-heights[key(0.5,0.5)]=9.90
-heights[key(1.5,0.5)]=10.12
+-- Terrain sampler above injects one localized rut and one ridge into an
+-- otherwise sloping work area. This intentionally verifies that eligibility
+-- probes catch defects that do not sit exactly on a brush center.
 
 local enqueued={}
 local recovered=0
