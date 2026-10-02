@@ -176,7 +176,9 @@ function RealismExtensionsCore:update(dt)
                             snapshot[k] = v
                         end
                     end
-                    self.terrainDiagPrevious = snapshot
+                    -- Keep the snapshot assignment until after writer-window
+                    -- formatting below so all per-window deltas share one baseline.
+                    self._terrainDiagNextSnapshot = snapshot
                 end
 
                 if RealismExtensionsTerrainPerformance ~= nil then
@@ -307,6 +309,10 @@ function RealismExtensionsCore:update(dt)
                         "RutWriters runtime | vehicles=[" .. formatTopWriters(writerParts)
                         .. "] roots=[" .. formatTopWriters(rootWriterParts) .. "]"
                     )
+                end
+                if self._terrainDiagNextSnapshot ~= nil then
+                    self.terrainDiagPrevious = self._terrainDiagNextSnapshot
+                    self._terrainDiagNextSnapshot = nil
                 end
 
                 if (d.footprintAccepted or 0) > 0 then
