@@ -1,23 +1,23 @@
 # Context
 
-Updated: 2026-09-28
+Updated: 2026-10-02
 
 ## Read this first
 
-This is the shortest canonical handoff for a new contributor or a new ChatGPT conversation.
+This is the stable project orientation. For exact current implementation/test state, always continue with `CURRENT_HANDOFF.md`.
 
 ### Purpose
 
-FS25 Realism Extensions adds realism phenomena that are missing from the user's specialist stack. It must **not** become another owner of drivetrain, traction, sink, tire wear, mechanical systems, agronomy or PTO simulation.
+FS25 Realism Extensions adds realism phenomena missing from the specialist stack without becoming another owner of drivetrain, traction, instantaneous sink, tire wear, mechanical systems, agronomy or PTO simulation.
 
-The project is separate from FS25 Realism Compatibility (RC):
-- RC coordinates ownership and adapts specialist mods.
-- RealismExtensions consumes normalized state and creates missing consequences/effects.
+RealismCompatibility (RC) and RealismExtensions (RE) are separate:
+- RC coordinates ownership/adapts specialist mods and exposes normalized state.
+- RE consumes normalized state and creates missing persistent consequences/effects.
 
 ### Target stack ownership
 
 - MoreRealistic (MR): drivetrain, healthy transmission, base vehicle/wheel dynamics and base traction.
-- MudSystemPhysics (Mud): local wetness, sink, terrain resistance, mud/stuck behavior and wheel-ground effects.
+- MudSystemPhysics (Mud): local wetness, instantaneous sink, terrain resistance, mud/stuck behavior and wheel-ground effects.
 - Reifenverschleiss: persistent tire wear and structural radius.
 - SoilCompaction: persistent agronomic compaction.
 - RealisticMechanicalSystems (RMS): mechanical subsystem state/load.
@@ -25,47 +25,35 @@ The project is separate from FS25 Realism Compatibility (RC):
 - RealisticHarvesting: harvesting-process realism.
 - RealismCompatibility: composition/adaptation between those owners.
 
-RealismExtensions should consume those facts; it should not recalculate competing versions of them.
+RE consumes those facts; it does not recalculate competing versions.
 
-### Clean-room rule
+### Clean-room / precedent rule
 
-Do not copy FarmKit source/assets into this project. FarmKit was audited to understand phenomena and architectural gaps, but new implementations must be independently designed and written.
+External source audits are used to understand phenomena, architecture, engine contracts and failure modes. Do not blindly copy another mod's policy/constants and do not create a dependency unless explicitly justified.
 
-### First product direction
+### Active capability
 
-The first active module is planned to be TerrainDeformation:
-- player vehicle wheel ruts;
-- longitudinal-slip excavation;
-- lateral scrub;
-- deformation driven by authoritative wetness/sink/slip/load/footprint;
-- GIANTS AI, Courseplay and implement wheels through the same deformation engine.
+TerrainDeformation is the active capability:
+- persistent wheel ruts;
+- pressure/wetness/slip/plasticity response using normalized specialist state;
+- longitudinal/lateral exposure;
+- implement/AI coverage;
+- physical terrain recovery from agricultural work;
+- future crawler/track support and controlled soil transport.
 
-If successful, this can functionally absorb True AI Tracks and recover the most important FarmKit behavior lost when its monolithic wheel/ground core is suppressed.
+It is runtime-active on the development branch but not complete.
 
-### Current state
+### Development rule
 
-Version 0.0.1.0 is foundation-only.
+Development is evidence-first. Read `docs/DEVELOPMENT_PROCESS.md`.
 
-A capability/absorption audit is now active on `research/capability-audit`:
-- Dynamic PTO 1.1.2.0: strong clean-room absorption candidate;
-- Reifen 1.2.2.67: candidate by layers; state/economy attractive, visual parity requires a shader/material project;
-- FarmKit: capability + asset audit recorded; priority lost features (ruts/furrow/crop interaction) are not blocked by custom assets;
-- Realistic 4x4 Traction System 1.4.0.0: exact ZIP audited; do not run beside RMS, but use its stronger decision-model ideas to improve RMS-facing AUTO/lock control.
-- Real Dirt Color 1.1.5.0: exact ZIP audited; strong candidate for a clean-room SurfaceContamination replacement with no custom runtime-asset blocker.
+Use one active branch per capability. TerrainRecovery currently continues on:
+`feat/terrain-recovery`.
 
-Foundation status:
-- repository/bootstrap exists;
-- CI/build exists;
-- diagnostics exists;
-- normalized StateContract v1 exists;
-- no gameplay module is active.
+Do not infer physical success from an API success code or from a changed logical history counter. Measure the physical state and attribute the change to a writer/operation.
 
-### Next action
+### Current next action
 
-1. Continue candidate-mod capability/asset audits.
-2. Define StateContract v1 wheel/terrain fields from real source/runtime evidence.
-3. Research GIANTS TerrainDeformation lifecycle/cost model.
-4. Design and prototype TerrainDeformation without changing traction/sink ownership.
-5. In parallel, design SurfaceContamination state and an RMS-facing drivetrain decision-provider proposal.
+Read `docs/project/CURRENT_HANDOFF.md`. It contains the v22 recovery bug/fix, runtime test protocol, new five-second causal telemetry and the current TerraFarm architecture audit.
 
-For current detail use PROJECT_STATUS.md. For design rationale use ARCHITECTURE.md and decisions/.
+For design rationale use `docs/decisions/`; for external precedents use `docs/audits/` and `docs/research/`.
