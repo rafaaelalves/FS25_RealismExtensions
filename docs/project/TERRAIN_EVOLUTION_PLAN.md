@@ -424,7 +424,202 @@ No outcome should be assumed before source/runtime audit.
 
 ---
 
-# Phase G — external terrain edits and persistent history
+# Phase G — autonomous / world recovery without direct player action
+
+Terrain recovery must not depend on the player personally driving over every damaged location.
+
+This is separate from control-mode parity. PLAYER/GIANTS_AI/COURSEPLAY parity answers *who controls an active machine*. Autonomous/world recovery answers *how the world evolves when the player is not performing the repair at all*.
+
+## G1. RecoveryAgent / RecoveryCause contract
+
+Every non-wheel recovery action should identify its cause:
+
+- `PLAYER_WORK`;
+- `NPC_FARM_WORK`;
+- `NATURAL_RELAXATION`;
+- `PUBLIC_MAINTENANCE`;
+- `EXTERNAL_TERRAIN_EDIT`;
+- future scripted/world event if justified.
+
+The physical TerrainOperation layer may be shared, but policy, target roughness, cadence and eligible zones differ by cause.
+
+Telemetry/history should preserve recovery cause so a changed field can be explained later.
+
+---
+
+## G2. Natural relaxation / environmental recovery
+
+### Goal
+Allow some terrain defects to soften gradually without an explicit machine pass.
+
+This must be conservative. Natural processes should not magically erase deep vehicle ruts overnight.
+
+Candidate inputs:
+- elapsed game time;
+- local wetness/moisture history from specialist state where available;
+- freeze/thaw if a reliable source exists;
+- precipitation/weather exposure;
+- surface/soil class;
+- defect severity;
+- whether the cell is actively trafficked.
+
+Candidate behavior:
+- tiny/shallow irregularities relax faster;
+- deep compacted ruts relax very slowly or require mechanical work;
+- repeated wet/dry or freeze/thaw cycles may increase relaxation if evidence supports it;
+- hard/public surfaces should not use the agricultural natural-relaxation model.
+
+### Architecture
+Prefer a sparse scheduled process over continuous per-cell updates:
+- SpatialHistory marks cells eligible for future natural relaxation;
+- a bounded scheduler visits a small budget of eligible cells;
+- physical state is rechecked before writing;
+- recovery is applied incrementally and attributed to `NATURAL_RELAXATION`.
+
+### Persistence / offline time
+Store stable timestamps/state needed to evaluate elapsed in-game time after save/load. Do not simulate every missed frame while the save was closed.
+
+### Acceptance
+- shallow damage visibly softens over meaningful in-game time;
+- severe damage remains until enough time or proper work occurs;
+- no frame-rate dependence;
+- bounded CPU cost independent of total historical map size.
+
+---
+
+## G3. NPC / other-farmer agricultural recovery
+
+### Goal
+Fields not owned/worked directly by the player should not remain permanently scarred merely because RE only observes the player.
+
+Possible data sources:
+- GIANTS NPC/contract field-work state;
+- actual AI-controlled machines when spawned/working;
+- field state transitions when GIANTS simulates work without a fully physical machine;
+- future integration with NPC gameplay mods if present.
+
+### Preferred hierarchy
+1. If a real AI/NPC vehicle is physically working the field, use the normal WorkContext/PassTracker/RecoveryProfile pipeline.
+2. If GIANTS advances an NPC field state abstractly without a physical machine, use a bounded **abstract field recovery event** based on the agricultural operation that occurred.
+3. Never invent detailed wheel tracks for an NPC machine that was never physically simulated.
+
+### Policy
+- work only inside the relevant field/property;
+- use tool/operation family where known;
+- target the same recovery profile semantics as equivalent player work;
+- avoid instant whole-field flattening;
+- preserve severe anomalies that the simulated operation should not plausibly fix.
+
+### Acceptance
+NPC-owned fields can recover from persistent RE damage across normal world simulation without player intervention.
+
+---
+
+## G4. Public / municipal maintenance
+
+### Goal
+Public infrastructure should not accumulate permanent damage forever simply because no player-owned implement repairs it.
+
+Candidate zones:
+- public roads/road shoulders if terrain deformation is allowed there;
+- municipal dirt/gravel access paths;
+- public yards/communal areas;
+- map-defined service areas;
+- other non-field public terrain explicitly classified as maintainable.
+
+### Policy model
+Create a `MaintenanceZone` / ownership mask:
+- PRIVATE_FIELD;
+- PLAYER_PROPERTY;
+- NPC_FIELD;
+- PUBLIC_MAINTAINED;
+- NATURAL_UNMAINTAINED;
+- EXCLUDED.
+
+Public maintenance should be periodic/event-driven, not constant smoothing under the player.
+
+Possible behavior:
+- small public-road defects repaired on a schedule;
+- severe damage takes longer or waits for a maintenance cycle;
+- maintenance has its own target roughness/profile;
+- public maintenance must never spill into adjacent private fields.
+
+### Municipality simulation options
+Start abstract:
+- scheduled maintenance event + bounded terrain operation.
+
+Later, optionally:
+- visible service vehicle / grader behavior if a suitable system exists.
+
+The abstract version should come first; visible municipal AI is a presentation/gameplay feature, not a prerequisite for correct world persistence.
+
+---
+
+## G5. Recovery scheduler and spatial budget
+
+Autonomous recovery needs a world-level scheduler that is deliberately different from per-frame vehicle processing.
+
+Candidate responsibilities:
+- maintain sparse priority queues of recoverable historical cells/regions;
+- choose eligible work by recovery cause and zone;
+- enforce per-tick/per-minute physical TerrainDeformation budgets;
+- avoid touching cells near an active player operation if that creates conflicts;
+- coalesce nearby maintenance work;
+- save only stable scheduling state when necessary.
+
+Priority can consider:
+- age of damage;
+- severity;
+- ownership/zone;
+- scheduled field operation;
+- public maintenance cycle;
+- natural-relaxation eligibility.
+
+### Hard requirement
+World recovery cost must scale with **active/eligible damaged regions**, not map area.
+
+---
+
+## G6. World recovery observability
+
+Add aggregate/pass/event telemetry such as:
+```text
+WorldRecovery |
+cause=NATURAL_RELAXATION
+regions=...
+cells=...
+jobs=...
+improved=...
+worsened=...
+skippedActive=...
+budgetUsed=...
+```
+
+and:
+```text
+MaintenanceEvent |
+zone=PUBLIC_MAINTAINED
+reason=scheduled
+roughnessBefore=...
+roughnessAfter=...
+```
+
+This is essential because autonomous recovery may happen outside the player's camera.
+
+---
+
+## G7. Recovery ownership safety rules
+
+- do not let autonomous systems silently undo an active player-created experiment/worksite immediately;
+- do not apply public maintenance inside private/NPC fields unless the zone explicitly overlaps by map design;
+- do not use natural relaxation to replace proper agricultural repair for severe damage;
+- do not let multiple recovery agents process the same region simultaneously without arbitration;
+- physical callbacks remain authoritative before SpatialHistory reconciliation.
+
+---
+
+# Phase H — external terrain edits and persistent history
+
 
 ## G1. Lazy physical history reconciliation
 
@@ -447,7 +642,7 @@ Manually repaired terrain does not retain phantom historical damage that distort
 
 ---
 
-# Phase H — SoilMassTransport redesign
+# Phase I — SoilMassTransport redesign
 
 Status: disabled.
 
@@ -475,7 +670,7 @@ If this cannot be made robust, leave it disabled permanently. Correct recovery h
 
 ---
 
-# Phase I — later terrain interaction research
+# Phase J — later terrain interaction research
 
 Only after the above is stable:
 - event-triggered underbody/high-centering diagnostics;
@@ -504,9 +699,13 @@ Underbody deformation must not be inferred from current wheel writers; it requir
 11. native `CRAWLER` footprint
 12. PLAYER / GIANTS_AI / COURSEPLAY parity validation
 13. True AI Tracks audit + retire/coexist/bridge decision
-14. lazy SpatialHistory physical reconciliation
-15. SoilMassTransport redesign
-16. underbody/high-centering and later interaction research
+14. RecoveryAgent / ownership-zone contract
+15. NPC/other-farmer field recovery
+16. natural-relaxation scheduler
+17. public/municipal maintenance scheduler
+18. lazy SpatialHistory physical reconciliation
+19. SoilMassTransport redesign
+20. underbody/high-centering and later interaction research
 
 ## Development rule for this sequence
 
