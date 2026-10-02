@@ -101,6 +101,34 @@ The next build records:
 
 Reason: cumulative writer counts made it impossible to tell whether a write happened during transport or during active cultivation. Windowed attribution should expose that immediately.
 
+
+## Testable refactor checkpoint — 2026-10-02
+
+Runtime-test checkpoint: `d696024642cf7e0798a0ff1730456433ceae787a`.
+
+GitHub Actions run: `37053455198`.
+Artifact: `FS25_RealismExtensions-d696024642cf7e0798a0ff1730456433ceae787a`.
+
+This checkpoint preserves the v22 physical behavior while refactoring the surrounding architecture/observability:
+
+- added `TerrainWorkContext` as the single owner of combination root, vehicle labels, speed, cultivator pre/post work semantics and work-area geometry;
+- TerrainRecovery consumes that shared context, including the `realArea=0, area>0` repeated-pass case;
+- TerrainDeformation writer attribution uses the same root/label semantics;
+- removed abandoned v18-v20 Construction/native-recovery writer paths from `TerrainWriter`;
+- made terrain job ordering deterministic (`LOWER -> SMOOTH -> RAISE`);
+- added `TerrainTelemetry` for causal windows and per-window writer attribution instead of calculating it ad hoc in Core;
+- diagnostics use an explicit development profile with configurable window cadence;
+- added CI build identity stamping (branch/commit/run/time) and ZIP identity verification;
+- TerrainRecovery temporary state now has an explicit per-map lifecycle reset;
+- added/expanded harnesses for work context, causal telemetry, Core diagnostics and recovery lifecycle;
+- CI parses every Lua source before running harnesses.
+
+All harnesses and packaging checks passed on run `37053455198`.
+
+The connection interruption after this checkpoint occurred during a read-only broad source audit. No uncommitted implementation was lost. The broad audit was not completed; specifically, no WorkFootprint extraction or further physics changes were made after this checkpoint.
+
+For the next runtime test, use the artifact above and verify the startup `BuildIdentity` reports exactly this commit before interpreting the log.
+
 ## Next runtime test
 
 Do not tune smoothing strength/radius before this test.
