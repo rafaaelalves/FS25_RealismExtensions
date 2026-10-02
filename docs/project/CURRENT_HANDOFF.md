@@ -206,6 +206,37 @@ Remaining calibration issue:
 
 Status: TerrainRecovery mechanism is **runtime validated; calibration/stabilization pending**.
 
+## Canonical next-phase terrain plan
+
+The detailed implementation sequence now lives in:
+`docs/project/TERRAIN_EVOLUTION_PLAN.md`.
+
+It explicitly preserves the following future work so it is not lost across chats:
+
+- TerrainPassTracker and pass-based recovery dose;
+- RecoveryPassSummary and direct `rutAcceptedWhileActive == 0` invariant;
+- slope-aware roughness, roughness distributions and target/convergence roughness;
+- severity-adaptive recovery;
+- TerrainWorkFootprint and TerrainRecoveryProfile;
+- tool-family differences (cultivator/disc/subsoiler/plow/roller), later moisture/direction response;
+- ContactFootprint abstraction for single, dual/twin, wide/flotation and implement wheels;
+- first-class native GIANTS crawler/track footprints from `spec_crawlers.crawlers`;
+- PLAYER / GIANTS_AI / COURSEPLAY parity;
+- True AI Tracks / `FS25_aiTracks` ownership audit and retire/coexist/bridge decision;
+- recovery independent of direct player action:
+  - natural relaxation;
+  - NPC/other-farmer field work;
+  - public/municipal maintenance;
+  - sparse world-recovery scheduler;
+  - ownership/maintenance zones;
+  - persisted elapsed-time handling;
+  - arbitration so background recovery does not race active machine work;
+- lazy SpatialHistory reconciliation after Construction/TerraFarm/external edits;
+- SoilMassTransport redesign;
+- underbody/high-centering research.
+
+This plan is the canonical source for sequencing/dependencies; CURRENT_HANDOFF should record only the current implementation/runtime evidence.
+
 ## Separate unresolved TerrainDeformation blockers
 
 Do not lose these while focusing on recovery:
