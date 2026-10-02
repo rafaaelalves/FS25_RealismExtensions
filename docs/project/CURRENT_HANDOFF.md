@@ -206,6 +206,29 @@ Remaining calibration issue:
 
 Status: TerrainRecovery mechanism is **runtime validated; calibration/stabilization pending**.
 
+## TerraFarm deep audit status
+
+The TerraFarm audit has been expanded beyond the initial smoothing precedent. Canonical entry:
+`docs/audits/terrafarm/README.md`.
+
+Focused supplements now cover:
+- machine lifecycle/configuration and work detection;
+- TerrainDeformation operation/constraint/callback/material pipeline;
+- persistence, multiplayer, path/polygon areas and map resources;
+- RC/RE integration opportunities and compatibility tiers;
+- integration risk/decision matrix;
+- official TerraFarm Machines addon extensibility pattern.
+
+Important current conclusions:
+- prefer event/state observation over patching TerraFarm internals;
+- lazy physical SpatialHistory reconciliation is the preferred generic compatibility mechanism;
+- if ownership-aware integration is needed, an event-driven machine adapter is preferable to another `Vehicle.load` hook;
+- large future RE heightfield edits may need coalesced GIANTS AI `setAreaDirty` updates;
+- external declarative profile packs are a strong precedent for future RecoveryProfile/ContactFootprint equipment corrections;
+- keep implementation clean-room/independent; do not vendor/adapt TerraFarm source.
+
+No TerraFarm runtime bridge has been implemented yet.
+
 ## Canonical next-phase terrain plan
 
 The detailed implementation sequence now lives in:
