@@ -17,6 +17,10 @@ function TerrainDeformation.new(terrain)
         self.additive = true
     end
 
+    function d:enableSmoothingMode()
+        self.smoothing = true
+    end
+
     function d:setAdditiveHeightChangeAmount(value)
         self.depth = value
     end
@@ -55,7 +59,11 @@ g_terrainDeformationQueue = {
         queued[#queued + 1] = deformation
         for _, brush in ipairs(deformation.brushes) do
             local key = tostring(brush.x) .. ":" .. tostring(brush.z)
-            heights[key] = (heights[key] or 10) + deformation.depth
+            if deformation.smoothing then
+                heights[key] = (heights[key] or 10) + 0.002
+            else
+                heights[key] = (heights[key] or 10) + deformation.depth
+            end
         end
         target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0.125, nil)
         return #queued
@@ -212,3 +220,34 @@ assert(rw.stats.massTransportRaisedVolumeM3 == 0)
 
 g_terrainDeformationQueue.queueJob = originalQueueJob
 print("terrain_writer_mass_transport_harness: OK")
+
+
+-- Native smoothing mode uses TerrainDeformation, not DensityMapHeightUtil, and
+-- exposes the observed center-height delta to asynchronous recovery ownership.
+local sw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,
+    maxJobsPerFrame=2,
+    maxBrushesPerJob=4,
+    depthBucketM=0.0005,
+    minDepthM=0.0004
+})
+local smoothDelta = nil
+assert(sw:enqueue({
+    x=50,z=50,mode="SMOOTH",smoothAmountM=0.05,radiusM=0.5,
+    hardness=0.25,strength=0.25,source="RECOVERY",
+    onApplied=function(state,deltaY)
+        assert(state == TerrainDeformation.STATE_SUCCESS)
+        smoothDelta = deltaY
+    end
+}))
+local sb,sj = sw:flush()
+assert(sb == 1 and sj == 1)
+assert(created[#created].smoothing == true)
+assert(created[#created].additive ~= true)
+assert(math.abs(created[#created].brushes[1].opacity - 0.25) < 0.000001)
+assert(smoothDelta ~= nil and smoothDelta > 0.0019)
+assert(sw.stats.recoverySmoothJobs == 1)
+assert(sw.stats.recoverySmoothSamples == 1)
+assert(sw.stats.recoverySmoothRaisedSamples == 1)
+assert(sw.stats.recoverySmoothMaxDeltaM > 0.0019)
+print("terrain_writer_smoothing_harness: OK")
