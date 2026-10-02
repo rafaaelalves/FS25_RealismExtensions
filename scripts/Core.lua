@@ -102,7 +102,7 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v17 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d",
+                        "TerrainRecovery v19 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm nativeSmooth=%d fallback=%d validate=%d/%d/%d",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.coveragePoints or 0,
@@ -120,7 +120,17 @@ function RealismExtensionsCore:update(dt)
                         r.centerLowered or 0,
                         r.historyRecoveredCells or 0,
                         r.historyRecoveredDepthM or 0,
-                        r.protectedCellsMarked or 0
+                        r.protectedCellsMarked or 0,
+                        r.workAreaGeometrySamples or 0,
+                        r.minWorkAreaWidthM or 0,
+                        r.maxWorkAreaWidthM or 0,
+                        r.minWorkAreaDepthM or 0,
+                        r.maxWorkAreaDepthM or 0,
+                        writerStats.recoveryNativeConfigCalls or 0,
+                        writerStats.recoveryNativeConfigFallbacks or 0,
+                        writerStats.recoverySmoothValidationAttempts or 0,
+                        writerStats.recoverySmoothValidationSuccess or 0,
+                        writerStats.recoverySmoothValidationFailures or 0
                     ))
                 end
 
