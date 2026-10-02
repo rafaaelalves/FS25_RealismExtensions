@@ -113,6 +113,7 @@ function Writer:enqueue(brush)
         massTransport = brush.massTransport,
         targetVolumeM3 = tonumber(brush.targetVolumeM3),
         source = brush.source,
+        probeRadiusM = tonumber(brush.probeRadiusM),
         onApplied = brush.onApplied
     }
     self.stats.enqueued = self.stats.enqueued + 1
@@ -144,6 +145,9 @@ local function tryCoalesce(group, brush, factor)
     -- Callback-bearing brushes keep one-to-one identity so asynchronous
     -- recovery can reconcile the exact history cell only after geometry moves.
     if brush.onApplied ~= nil then return false end
+    -- MASS_TRANSPORT brushes encode a calibrated volume in radius + height.
+    -- Merging them by enlarging radius while keeping height inflates volume.
+    if brush.source == "MASS_TRANSPORT" then return false end
 
     -- Coalesce only brushes compatible by operation, depth bucket and transport
     -- direction/state. This keeps the performance win without turning two
@@ -193,6 +197,42 @@ local function sampleTerrainHeight(terrain, x, z)
     local ok, value = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
     if ok and type(value) == "number" then return value end
     return nil
+end
+
+
+local function sampleRoughnessProbe(terrain, brush)
+    if brush == nil then return nil end
+    local r = math.max(0.05, tonumber(brush.probeRadiusM) or tonumber(brush.radiusM) * 0.75)
+    local offsets = {
+        {0,0}, {r,0}, {-r,0}, {0,r}, {0,-r},
+        {r*0.7071,r*0.7071}, {-r*0.7071,r*0.7071},
+        {r*0.7071,-r*0.7071}, {-r*0.7071,-r*0.7071}
+    }
+    local samples = {}
+    local sumY, sumDxY, sumDzY, sumDx2, sumDz2 = 0,0,0,0,0
+    for i,o in ipairs(offsets) do
+        local y = sampleTerrainHeight(terrain, brush.x + o[1], brush.z + o[2])
+        if type(y) ~= "number" then return nil end
+        samples[i] = {dx=o[1], dz=o[2], y=y}
+        sumY = sumY + y
+        sumDxY = sumDxY + o[1] * y
+        sumDzY = sumDzY + o[2] * y
+        sumDx2 = sumDx2 + o[1] * o[1]
+        sumDz2 = sumDz2 + o[2] * o[2]
+    end
+    local mean = sumY / #samples
+    local ax = sumDx2 > 0 and sumDxY / sumDx2 or 0
+    local az = sumDz2 > 0 and sumDzY / sumDz2 or 0
+    local ss = 0
+    for _,s in ipairs(samples) do
+        local plane = mean + ax * s.dx + az * s.dz
+        local e = s.y - plane
+        ss = ss + e * e
+    end
+    return {
+        centerY = samples[1].y,
+        roughnessM = math.sqrt(ss / #samples)
+    }
 end
 
 local function expensiveGeometryDiagnosticsEnabled()
@@ -245,10 +285,18 @@ function Writer:_submitBatch(depthM, brushes, mode)
     configureDeformationConstraints(deformation)
 
     local heightSamples = nil
+    local roughnessSamples = nil
     if mode == "SMOOTH" or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
             heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
+        end
+    end
+    if mode == "SMOOTH" and brushes ~= nil
+        and brushes[1] ~= nil and brushes[1].source == "RECOVERY" then
+        roughnessSamples = {}
+        for i, brush in ipairs(brushes) do
+            roughnessSamples[i] = sampleRoughnessProbe(terrain, brush)
         end
     end
 
@@ -271,7 +319,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
         mode = mode or "LOWER",
         brushes = brushes,
         source = brushes ~= nil and brushes[1] ~= nil and brushes[1].source or nil,
-        heightSamples = heightSamples
+        heightSamples = heightSamples,
+        roughnessSamples = roughnessSamples
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
@@ -314,7 +363,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 stats.callbackVolumeMissing = stats.callbackVolumeMissing + 1
             end
 
-            if self.mode ~= "RAISE"
+            local massTransportEnabled = RealismExtensionsConfig ~= nil
+                and RealismExtensionsConfig.modules ~= nil
+                and RealismExtensionsConfig.modules.SoilMassTransport == true
+            if massTransportEnabled
+                and self.mode ~= "RAISE"
                 and callbackVolume ~= nil
                 and callbackVolume > 0
                 and RealismExtensionsSoilMassTransportModel ~= nil then
@@ -435,8 +488,24 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     end
                 end
 
+                local recoveryGeometry = nil
+                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                    local beforeProbe = self.roughnessSamples ~= nil
+                        and self.roughnessSamples[i] or nil
+                    local afterProbe = beforeProbe ~= nil
+                        and sampleRoughnessProbe(self.terrain, brush) or nil
+                    if beforeProbe ~= nil and afterProbe ~= nil then
+                        recoveryGeometry = {
+                            roughnessBeforeM = beforeProbe.roughnessM,
+                            roughnessAfterM = afterProbe.roughnessM,
+                            roughnessDeltaM = beforeProbe.roughnessM - afterProbe.roughnessM,
+                            centerBeforeY = beforeProbe.centerY,
+                            centerAfterY = afterProbe.centerY
+                        }
+                    end
+                end
                 if type(brush.onApplied) == "function" then
-                    pcall(brush.onApplied, state, deltaY, beforeY, afterY, callbackVolume)
+                    pcall(brush.onApplied, state, deltaY, beforeY, afterY, callbackVolume, recoveryGeometry)
                 end
             end
         end
