@@ -53,6 +53,7 @@ SpecializationUtil={
     registerOverwrittenFunction=function() end
 }
 
+dofile("scripts/terrain/TerrainWorkContext.lua")
 dofile("scripts/terrain/TerrainRecovery.lua")
 local rootVehicle={}
 local vehicle={
