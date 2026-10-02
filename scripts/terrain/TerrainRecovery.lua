@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 8
+Recovery.VERSION = 9
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -27,7 +27,15 @@ Recovery.DEFAULTS = {
     -- space stamps ensure one physical patch is smoothed once per pass rather
     -- than being recursively re-selected while the callback is in flight.
     stampCellSizeM = 0.40,
-    passageCooldownMs = 5000,
+    -- Native Construction smooth is continuous while the mouse is held.
+    -- Revisit a worked patch during the same agricultural pass at a restrained
+    -- cadence instead of giving it only one tiny native smoothing pulse.
+    passageCooldownMs = 750,
+
+    -- While a cultivator is genuinely processing ground, suspend only RE's
+    -- persistent rut-writing for the complete tractor/implement combination.
+    -- Contact, MR/Mud physics, footprint and visual tyre tracks remain active.
+    activeCombinationGraceMs = 1500,
 
     -- Logical RE history follows verified reduction in physical roughness.
     -- Center-height sign is deliberately irrelevant: flattening a ridge may
@@ -43,6 +51,8 @@ Recovery.DEFAULTS = {
 Recovery.processedStamps = Recovery.processedStamps or {}
 Recovery.pendingStamps = Recovery.pendingStamps or {}
 Recovery.protectedCells = Recovery.protectedCells or {}
+Recovery.activeCombinationUntil = Recovery.activeCombinationUntil
+    or setmetatable({}, { __mode = "k" })
 Recovery.stats = Recovery.stats or {
     workAreaCalls = 0,
     workedAreaCalls = 0,
@@ -67,7 +77,10 @@ Recovery.stats = Recovery.stats or {
     minWorkAreaWidthM = nil,
     maxWorkAreaWidthM = 0,
     minWorkAreaDepthM = nil,
-    maxWorkAreaDepthM = 0
+    maxWorkAreaDepthM = 0,
+    activeCombinationMarks = 0,
+    activeCombinationQueries = 0,
+    activeCombinationHits = 0
 }
 
 local function enabled()
@@ -75,6 +88,52 @@ local function enabled()
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsConfig.modules.TerrainRecovery == true
+end
+
+local function getCombinationRoot(vehicle)
+    if vehicle == nil then return nil end
+    if type(vehicle.getRootVehicle) == "function" then
+        local ok, root = pcall(vehicle.getRootVehicle, vehicle)
+        if ok and root ~= nil then return root end
+    end
+
+    local current = vehicle
+    local seen = {}
+    for _ = 1, 8 do
+        if current == nil or seen[current] == true then break end
+        seen[current] = true
+        if type(current.getAttacherVehicle) ~= "function" then break end
+        local ok, parent = pcall(current.getAttacherVehicle, current)
+        if not ok or parent == nil or parent == current then break end
+        current = parent
+    end
+    return current
+end
+
+local function markActiveCombination(vehicle, nowMs)
+    local root = getCombinationRoot(vehicle)
+    if root == nil or nowMs <= 0 then return end
+    Recovery.activeCombinationUntil[root] =
+        nowMs + Recovery.DEFAULTS.activeCombinationGraceMs
+    Recovery.stats.activeCombinationMarks =
+        Recovery.stats.activeCombinationMarks + 1
+end
+
+function Recovery.isRutGenerationSuppressed(vehicle, nowMs)
+    Recovery.stats.activeCombinationQueries =
+        Recovery.stats.activeCombinationQueries + 1
+    local root = getCombinationRoot(vehicle)
+    if root == nil then return false end
+    nowMs = tonumber(nowMs) or (g_currentMission ~= nil and g_currentMission.time or 0)
+    local expires = Recovery.activeCombinationUntil[root]
+    if type(expires) ~= "number" then return false end
+    if nowMs > 0 and expires < nowMs then
+        Recovery.activeCombinationUntil[root] = nil
+        return false
+    end
+    Recovery.stats.activeCombinationHits =
+        Recovery.stats.activeCombinationHits + 1
+    return true
 end
 
 local function getWorkAreaGeometry(workArea)
@@ -347,6 +406,8 @@ function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
     local realArea, area = superFunc(vehicle, workArea, dt)
     if (tonumber(realArea) or 0) > 0 then
         Recovery.stats.workedAreaCalls = Recovery.stats.workedAreaCalls + 1
+        local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+        markActiveCombination(vehicle, nowMs)
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
             and RealismExtensionsTerrainPerformance.begin() or nil
 
