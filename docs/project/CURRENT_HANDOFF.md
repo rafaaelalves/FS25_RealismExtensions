@@ -1,243 +1,166 @@
 # Current development handoff
 
-Updated: 2026-09-30
+Updated: 2026-10-02
 
-## Active work
+## Read this first
 
-- Branch: `feat/terrain-distance-response-v7`
-- Purpose: remove low-speed/update-cadence excavation bias and collect explicit dual/twin footprint evidence.
-- v6 remains the baseline integrated in `main`; TerrainDeformation is not complete yet.
-- This v7 branch is a runtime-test branch, so TerrainDeformation and verbose diagnostics are intentionally enabled here only.
+Canonical active branch for TerrainRecovery work: `feat/terrain-recovery`.
 
-## New runtime evidence from 2026-09-30 log
+Do **not** create a branch for every experimental version. Historical v11-v22 branches remain as old snapshots, but new iterations continue on the canonical feature branch. Commits, CI artifacts and this handoff preserve milestones.
 
-- True AI Tracks 2.2.0.1 was loaded in the supplied session, so that run cannot prove RE parity with AI/implement deformation.
-- John Deere S700/S780 asset load shows `dual002.i3d`.
-- Mud restored tire pressure at 2.40 bar in that session.
-- RE remained stable during the longer run: 4,083 accepted brushes, 574 native jobs, 0 failed jobs, and terrain history grew from 12,483 to 16,155 persisted cells.
-- RC reuse remained healthy: 10,956 contexts, 10,956 slip snapshot hits, 0 direct slip reads, and 10,956 speed/wheel-speed hint hits.
+Development/test policy: `docs/DEVELOPMENT_PROCESS.md`.
+TerraFarm architecture audit: `docs/audits/terrafarm/README.md`.
 
-## v7 model change
+## Architecture ownership
 
-The v6 response could deepen the same history cell more simply because a slow vehicle generated more 250 ms samples over the same ground.
+Target dataflow remains:
 
-v7 changes progression from sample-driven recursion to cumulative physical exposure:
-- normal rolling exposure comes from vehicle travel distance relative to contact-patch length;
-- longitudinal excavation exposure comes from newly accumulated relative longitudinal displacement;
-- lateral scrub exposure comes from newly accumulated lateral displacement;
-- the terrain cell stores cumulative `deformationExposure`;
-- rut target is reconstructed from total exposure + current capacity instead of applying another pseudo-pass each sample.
+`MR/Mud -> RealismCompatibility normalized state -> RealismExtensions persistent geometry/history`
 
-A harness now compares equal 2 m traversals at 2 km/h and 12 km/h, plus a finer 50 ms subdivision. Equivalent physical travel must converge within 0.5 mm.
+- MR owns base vehicle/wheel dynamics and traction.
+- Mud owns local wetness, instantaneous sink, resistance/stuck and related wheel-ground state.
+- RC normalizes/reuses specialist state and coordinates overlaps.
+- RE consumes that state to create persistent terrain geometry/history.
+- RE must not become a second Mud traction/sink solver.
 
-Stationary wheelspin remains supported because relative wheel/soil displacement still grows when body speed is near zero.
+## TerrainDeformation state before current recovery test
 
-## Dual/twin diagnostics added
+Validated/important:
+- distance/cadence-based rut progression removed the simple low-speed sample-count bias;
+- Mud instantaneous sink is plasticized before becoming persistent RE geometry;
+- TerrainWriter LOWER/RAISE/SMOOTH paths execute through GIANTS TerrainDeformation;
+- v13 proved `DensityMapHeightUtil.smoothAroundLine` was physically ineffective for this use;
+- TerrainDeformation smoothing physically changes the heightfield;
+- recovery must be evaluated by local roughness/relief, not center-height sign alone;
+- SoilMassTransport remains disabled during current recovery isolation;
+- crawler/native track modeling is still incomplete and remains a separate blocker.
 
-The runtime log now reports:
-- base tire width;
-- total support width;
-- support/base width ratio;
-- wheel load;
-- contact area;
-- min/max ground pressure;
-- tire inflation pressure;
-- count of contexts with wide support geometry.
+## v21 runtime findings (2026-10-02)
 
-Do not add a hard-coded dual multiplier yet. Exact SoilCompaction source notes that FS may represent a dual set as one wider wheel contact; RE first needs runtime evidence of how MR/Mud expose the S700's load/width/pressure combination.
+Two runtime logs showed a repeated destructive pattern.
+
+Representative later run:
+- v21 recovery active;
+- thousands of smoothing operations executed and most measured callbacks reduced local roughness;
+- `activeCultivatorRutSkips` proved the new root-combination suppression path was active;
+- nevertheless `MR_Koralin_9-840` remained the dominant RE LOWER writer under root `Steiger_785_Quadtrac`.
+
+This initially looked like an incomplete root/implement suppression leak.
+
+Source review of current GIANTS `Cultivator.lua` identified the deeper semantic bug:
+- `processCultivatorArea` returns `realArea, area`;
+- `realArea` is agricultural terrain state that actually changed;
+- `area` is processed area;
+- repeated passes over already-cultivated ground can therefore produce `realArea=0, area>0`;
+- GIANTS sets `spec.isWorking` from physical movement/work state separately.
+
+v21 incorrectly used `realArea > 0` to:
+1. mark the tractor/implement combination as active for rut suppression; and
+2. invoke recovery.
+
+Therefore a repeated pass could become:
+`SMOOTH OFF + RE LOWER ON`.
+
+This matches the observed user report that additional passes could make a repaired area worse.
+
+## v22 correction
+
+v22 is now the current code on `feat/terrain-recovery`.
+
+Behavior:
+- before the vanilla call, an enabled moving cultivator marks its root combination active so same-frame wheel sampling cannot reopen persistent ruts;
+- after vanilla processing, GIANTS `spec.isWorking` is used as physical work evidence;
+- recovery uses processed `area`, not changed `realArea`;
+- repeated physical passes continue smoothing even if the agricultural density-map state no longer changes;
+- active combination suppression remains refreshed during those passes.
+
+Regression harness explicitly covers:
+- first pass: `realArea>0, area>0`;
+- repeated pass: `realArea=0, area>0, isWorking=true`;
+- inactive/no-area path.
+
+CI passed before runtime testing.
+
+## New telemetry discipline added after v22
+
+The next build records:
+- cumulative physical/changed/repeated work-area calls;
+- cumulative changed/processed/repeated area units;
+- pre-super active marks;
+- five-second `TerrainWindow` causal summaries:
+  - physical work;
+  - changed work;
+  - repeated work;
+  - processed/repeated area;
+  - smoothing enqueue/callbacks;
+  - roughness improved/worsened;
+  - rut writes blocked;
+  - recently-cultivated skips;
+  - accepted rut writes;
+- `RutWriters` now prints cumulative counts plus per-window deltas.
+
+Reason: cumulative writer counts made it impossible to tell whether a write happened during transport or during active cultivation. Windowed attribution should expose that immediately.
 
 ## Next runtime test
 
-1. Use the same S700/S780 with duals.
-2. Compare controlled straight driving over similar wet field ground at:
-   - ~2-3 km/h with low slip;
-   - ~10-12 km/h with similarly low slip.
-3. Then deliberately induce wheelspin at low vehicle speed.
-4. Keep tire pressure unchanged for the speed comparison; record whether it is 2.40 bar.
-5. For a second comparison, if convenient, repeat one pass at Mud's lower field pressure.
-6. True AI Tracks may remain installed for this specific low-speed/dual test, but a later dedicated AI parity test must run with it disabled.
+Do not tune smoothing strength/radius before this test.
 
-Expected v7 result:
-- controlled low-speed travel must no longer dig more merely because it is slow;
-- true wheelspin must still excavate progressively;
-- diagnostics must reveal whether dual support width is actually reaching RE and what ground pressure the current stack computes.
+Use the build from current `feat/terrain-recovery`.
 
-## Additional runtime findings from the S780 field test
+Preferred scenario:
+1. use a known manually repaired/smooth strip as a destructive-regression sentinel;
+2. lower/activate the cultivator and make one pass;
+3. make a second pass over the same path;
+4. make a third pass if safe/useful;
+5. include a visibly rutted region in the same session;
+6. preserve the full log.
 
-The user lowered Mud tire pressure from 2.40 bar to the automatic field target near 1.00 bar and was able to recover the S780 from the original rut. During the later re-stuck period:
-- local wetness observed by RC was commonly ~0.32-0.54, not near 1.0 saturation;
-- wide support reached RE (max support width 1.30 m, ratio up to 2.0);
-- contact area reached ~0.62 m2 and minimum calculated ground pressure ~110 kPa;
-- MRMud telemetry showed applied radius deltas typically around 0.07-0.13 m rather than the previous raw ~0.30 m sink interpretation;
-- perma-stuck remained false and drag ratio stayed low while vehicle speed fell to fractions of km/h.
+Acceptance:
+- repeated passes report `repeat > 0`;
+- `processedArea` continues growing when `changedArea` stops;
+- active rut-block counts continue growing during repeated work;
+- Koralin/root writer **window deltas** should remain zero or explainable while physical cultivation is active;
+- manually repaired ground must not be newly excavated by RE;
+- rutted ground should show nonzero smoothing callbacks and net roughness improvement.
 
-This makes a chassis/terrain high-centering hypothesis plausible: the wheel/radius model may still have traction available while the undeformed terrain between wheel tracks contacts the vehicle body.
+If destructive LOWER writes still occur in the same five-second windows as physical/repeated cultivation, attribution is now sufficient to investigate the remaining path directly.
 
-Do not assume a dual must be represented as two separate RE contacts yet. The exact SoilCompaction source records an in-game precedent where FS exposes a dual/twin set as one wider physics contact. We need authoritative spacing/visual geometry before splitting that footprint.
+## TerraFarm audit findings relevant now
 
-## Diagnostics added after that finding
+Source: `scfmod/FS25_TerraFarm` commit `b50e677cdef062d605ab188f8982ae1faa2789e7`.
 
-- RE now measures the terrain height at the midpoint between left/right wheel contacts on each axle and compares it with the plane interpolated between both wheel-track heights.
-- Runtime telemetry reports max central crest and counts above 5/10/15 cm.
-- The diagnostic is slope-invariant in the harness: a planar cross-slope produces zero crest while a true 12 cm center ridge is reported as 12 cm.
-- RC MRRMS now emits per-vehicle drivetrain state: primary/engageable wheel indices, active 4WD state and MR-driven wheel indices/count. This avoids interpreting the old global lastDrivenWheelCount gauge as if it necessarily belonged to the S780.
+Useful architecture:
+- Machine specialization owns activation/state/cadence;
+- MachineWorkArea owns spatial nodes and direct terrain-contact state;
+- Landscaping operation classes own TerrainDeformation mode/execution;
+- common input/output layer owns brush construction, constraints and async callbacks;
+- machine input operations are cadence-controlled (50 ms);
+- wide work areas are represented by multiple nodes across width;
+- smooth input uses TerrainDeformation smoothing with 0.05 height-change amount; default machine input state uses radius 2 m, strength 0.25, hardness 0.2;
+- async success callbacks own downstream consequences.
 
-## Completion blockers after v7
+RE lesson: split future recovery architecture into WorkDetector / WorkFootprint / TerrainOperation / HistoryReconciliation rather than letting Cultivator semantics leak into generic terrain writing.
 
-- validate that the v7 distance-based response behaves correctly in runtime;
-- determine whether central terrain crest/high-centering is the dominant cause of the remaining S780 stalls;
-- verify S780 rear-wheel-assist/4WD reaches MR wheel ownership correctly;
-- validate dual/twin behavior without inventing unsupported split-contact geometry;
-- design soft-ground underbody/belly interaction only after high-centering is measured;
-- implement grouped crawler/track support;
-- validate player + GIANTS AI + Courseplay + wheeled implements with True AI Tracks disabled;
-- resolve native AI tire-track permission ownership;
-- complete external-source crosswalk before declaring TerrainDeformation finished.
+Important: TerraFarm values are precedents/configuration, not empirical constants and not automatically correct for agricultural recovery.
 
+## Separate unresolved TerrainDeformation blockers
 
-## v9 experimental SoilMassTransport
+Do not lose these while focusing on recovery:
+- first-class native crawler/track footprint;
+- avoid generic wheel-contact errors for crawler shapes;
+- implement-wheel ordering relative to work operation;
+- SoilMassTransport adaptive mass realization (latest enabled test had ~2x over-realization; currently disabled);
+- player/GIANTS AI/Courseplay parity;
+- event-triggered underbody/high-centering diagnostics;
+- True AI Tracks external-mod integration/retirement decision;
+- performance/persistence regression validation.
 
-Branch: `feat/terrain-mass-transport-v9`
+## Context-continuity rule
 
-This is a TerrainDeformation feature, not a separate gameplay module.
+A new chat should read, in order:
+1. `docs/project/CONTEXT.md`
+2. `docs/project/CURRENT_HANDOFF.md`
+3. `docs/DEVELOPMENT_PROCESS.md`
+4. relevant decision/audit docs.
 
-Purpose:
-- replace pure height removal with partial surface-mass redistribution;
-- use GIANTS callback `displacedVolume` as the mass budget;
-- create positive terrain berms only after a successful lowering callback;
-- keep the untransported fraction as compaction/sub-surface rearrangement;
-- preserve v7 distance/cadence-invariant rut response.
-
-Current v9 behavior:
-- moving wheel samples carry travel direction, wetness, deformability and slip into the writer;
-- lowering jobs remain the authoritative rut operation;
-- successful callbacks allocate the actual displaced volume across contributing brushes;
-- `SoilMassTransportModel` computes a bounded transport fraction from wetness, deformability and longitudinal slip;
-- transported volume is split into left/right lateral berms perpendicular to travel;
-- lateral slip can bias which berm receives more material;
-- berms are queued as separate positive TerrainDeformation jobs;
-- raise jobs never generate further transport, preventing recursion;
-- coalescing remains enabled only when transport direction/state are compatible.
-
-Mass-balance telemetry:
-`SoilMassTransport runtime | source=... targetTransport=... raised=... realization=... compaction=... balanceError=... berms=... raiseJobs=... rejects=...`
-
-Interpretation:
-- `source`: real lowering volume reported by GIANTS for brushes eligible for transport;
-- `targetTransport`: fraction of source volume assigned to surface berms;
-- `raised`: real positive volume reported by GIANTS for berm jobs;
-- `realization = raised / targetTransport`;
-- `compaction`: source volume intentionally not returned to the surface;
-- `balanceError = raised - targetTransport`.
-
-The first runtime goal is calibration/shape validation, not acceptance:
-1. verify berms appear on both sides of moving wheel ruts;
-2. ensure berms do not create unstable walls or obvious terrain inflation;
-3. measure realization ratio and mass-balance error;
-4. compare dry/firm vs wet/plastic soil;
-5. compare low-slip rolling vs wheelspin;
-6. verify performance/job counts remain acceptable;
-7. only then decide whether to extend toward rearward shear, relaxation and implement-driven field repair.
-
-Do not merge v9 until runtime evidence shows both geometry and mass balance are plausible.
-
-
-## v9.0 runtime result and v9.1 retune
-
-The first mass-transport runtime proved the architecture works but rejected the initial calibration.
-
-Observed in the 2026-10-01 S780 test:
-- berms were visually far too aggressive, especially toward vehicle center;
-- early realization ratios reached 16-17x;
-- later realization stabilized around 7-8x;
-- at source=16.841 m3, targetTransport=5.814 m3, GIANTS reported raised=48.054 m3 (realization=8.26);
-- the test commonly ran near local wetness ~0.35-0.51 with 1.00 bar tire pressure;
-- therefore the first linear wetness transport curve moved far too much surface soil for merely damp/trafficable conditions.
-
-v9.1 changes:
-- transport is now strongly nonlinear with a plastic-wetness threshold;
-- around ~0.50 wetness + low slip, surface transport is intended to remain around 0.5-1% and compaction dominates;
-- truly wet/plastic soil + severe slip can ramp toward a hard 18% surface-transport ceiling;
-- additive raise height is calibrated by 0.10 based on the measured runtime over-realization;
-- microscopic berms are no longer rounded upward to the minimum terrain brush; their mass is folded into compaction instead;
-- the berm facing vehicle center is resolved geometrically from vehicle root/contact position, not from wheel-side assumptions;
-- inner berm share is capped near 18% of transported mass and its per-operation raise height is capped at 1 mm;
-- outer berms may reach 3 mm per operation in severe conditions.
-
-Next runtime acceptance criteria:
-1. ordinary 0.35-0.55 wetness should show rutting/compaction with little or no obvious berm;
-2. inner berms must not create a center ridge capable of interfering with the vehicle;
-3. realization should move much closer to 1.0 and must no longer sit at 7-17x;
-4. severe wetness + wheelspin should still produce visible lateral displacement;
-5. job/brush growth must remain manageable.
-
-
-## v10 experimental plasticity response
-
-Branch: `feat/terrain-plasticity-response-v10`
-
-Purpose:
-- decouple instantaneous Mud sink from persistent RE rut geometry;
-- preserve Mud authority over mobility while letting RE decide how much sink becomes permanent plastic terrain deformation;
-- stop treating every transient wheel-radius sink peak as an immediate permanent heightfield lower bound.
-
-Runtime motivation:
-- v9.1 S780 test often operated around local wetness ~0.35-0.57 at 1.00 bar;
-- the RE static/slip capacities peaked around ~0.05 m while `modelRut/modelCap` reached ~0.138 m;
-- this happened because `observedSinkM` from Mud was included directly in `rutCapacityM=max(static, slip, observedSink)`;
-- the same session began with ~49,294 restored history cells, so existing field geometry is heavily contaminated by earlier experimental versions.
-
-v10 model:
-- `observedSinkDepthM` remains the authoritative instantaneous Mud consequence;
-- `sinkPlasticTransfer01` is computed from a nonlinear wet-plasticity curve plus slip activation;
-- `persistentSinkDepthM = observedSinkDepthM * sinkPlasticTransfer01`;
-- only `persistentSinkDepthM`, static rut capacity and slip rut capacity participate in persistent geometry;
-- around moderate wetness (~0.50) and low slip, transient sink transfer is deliberately small;
-- near very wet/plastic conditions, and especially with severe slip, transfer rises strongly but remains bounded below 100%;
-- existing rut history is never automatically healed.
-
-Diagnostic line:
-`TerrainPlasticity sample | wet=... slip=... instantSink=... transfer=... persistentSink=... staticCap=... slipCap=... rut=... maxInstant=... maxPersistent=... maxTransfer=...`
-
-Mass-accounting correction:
-- source-volume shares rejected by SoilMassTransport are now counted as compaction/sub-surface rearrangement;
-- the harness requires `source = targetTransport + compaction` before positive raise realization is considered.
-
-Runtime test requirement:
-- use a previously undeformed area or a clean backup; the current field contains ~49k persisted experimental cells and earlier heightmap edits cannot be safely reconstructed;
-- compare moderate damp/trafficable soil against substantially wetter soil;
-- keep tire pressure appropriate for field work;
-- verify moderate wetness can show instantaneous sink/resistance without converting the full sink into a permanent rut;
-- verify genuinely wet + high-slip conditions still produce deeper persistent deformation.
-
-Do not merge v10 until this separation is validated in runtime.
-
-
-## v12 runtime result and v13 verification pass
-
-Branch: `feat/terrain-recovery-v13`
-
-The 2026-10-01 v12 runtime proves that the cultivator hook and GIANTS native smoothing path execute:
-- 449 cultivator work-area calls, 348 worked calls;
-- 348 smoothing attempts and 340 native `smoothAroundLine` calls;
-- 0 smoothing call errors;
-- 1,233 history cells were logically relaxed by 2.282 m total.
-
-That is not yet proof that the heightmap changed. v12 treated a successful native call as sufficient to reconcile `SpatialHistory`, which can make RE forget a rut even if the sampled physical surface did not move.
-
-v13 closes that evidence gap:
-- samples five terrain-height points across the worked parallelogram immediately before native smoothing;
-- re-samples those same points immediately after `smoothAroundLine`;
-- reports changed/no-change/unverified native calls plus observed absolute/max height delta;
-- relaxes RE history only when at least one physical sample changes beyond the configured epsilon;
-- caps each logical history relaxation by the largest physical height delta observed for that smoothing call;
-- scopes smoothing accumulation per vehicle + work-area node rather than sharing one accumulator across every cultivator work area on a vehicle;
-- measures `TerrainPerf.recovery` only around RE post-processing. v12 incorrectly included the base cultivator `superFunc`, so its 257.751 ms maximum could not be attributed to TerrainRecovery.
-
-Next runtime acceptance:
-1. cultivate across a clearly RE-rutted patch;
-2. confirm `physicalChanged > 0` and `maxDelta > 0`;
-3. visually verify the rut is physically softened;
-4. verify `historyRelaxedCells` advances only together with physically changed calls;
-5. if `smoothCalls` rises while `physicalNoChange` rises and `physicalChanged` stays zero, the current GIANTS call geometry/contract is still ineffective and must be corrected before tuning recovery strength;
-6. inspect the corrected recovery-only performance timing; the v12 257.751 ms outlier is not a valid RE-cost measurement.
+CURRENT_HANDOFF is expected to be updated after every meaningful runtime conclusion, not only at release boundaries.
