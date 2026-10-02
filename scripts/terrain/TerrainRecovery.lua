@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 7
+Recovery.VERSION = 8
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -62,7 +62,12 @@ Recovery.stats = Recovery.stats or {
     historyRecoveredCells = 0,
     historyRecoveredDepthM = 0,
     protectedCellsMarked = 0,
-    protectionSkips = 0
+    protectionSkips = 0,
+    workAreaGeometrySamples = 0,
+    minWorkAreaWidthM = nil,
+    maxWorkAreaWidthM = 0,
+    minWorkAreaDepthM = nil,
+    maxWorkAreaDepthM = 0
 }
 
 local function enabled()
@@ -213,6 +218,17 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 
     local g = getWorkAreaGeometry(workArea)
     if g == nil then return end
+
+    Recovery.stats.workAreaGeometrySamples =
+        Recovery.stats.workAreaGeometrySamples + 1
+    Recovery.stats.minWorkAreaWidthM = Recovery.stats.minWorkAreaWidthM == nil
+        and g.widthM or math.min(Recovery.stats.minWorkAreaWidthM, g.widthM)
+    Recovery.stats.maxWorkAreaWidthM =
+        math.max(Recovery.stats.maxWorkAreaWidthM, g.widthM)
+    Recovery.stats.minWorkAreaDepthM = Recovery.stats.minWorkAreaDepthM == nil
+        and g.depthM or math.min(Recovery.stats.minWorkAreaDepthM, g.depthM)
+    Recovery.stats.maxWorkAreaDepthM =
+        math.max(Recovery.stats.maxWorkAreaDepthM, g.depthM)
 
     local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
     local deep = spec ~= nil and spec.useDeepMode == true
