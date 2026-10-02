@@ -547,7 +547,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 end
 
                 local recoveryGeometry = nil
-                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                if (self.mode == "SMOOTH" or self.mode == "LEVEL")
+                    and self.source == "RECOVERY" then
                     local beforeProbe = self.roughnessSamples ~= nil
                         and self.roughnessSamples[i] or nil
                     local afterProbe = beforeProbe ~= nil
