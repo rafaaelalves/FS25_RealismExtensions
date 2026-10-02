@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 8
+Writer.VERSION = 9
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -65,11 +65,6 @@ function Writer.new(options)
             recoverySmoothLoweredSamples = 0,
             recoverySmoothAbsDeltaM = 0,
             recoverySmoothMaxDeltaM = 0,
-            recoverySmoothValidationAttempts = 0,
-            recoverySmoothValidationSuccess = 0,
-            recoverySmoothValidationFailures = 0,
-            recoveryNativeConfigCalls = 0,
-            recoveryNativeConfigFallbacks = 0,
             recoveryMachineSmoothJobs = 0,
             recoveryMachineSmoothBrushes = 0,
             unclassifiedRaisedVolumeM3 = 0,
@@ -266,64 +261,6 @@ local function configureDeformationConstraints(deformation)
     end
 end
 
-local function configureNativeLandscapingConstraints(deformation)
-    -- Match Landscaping:sculpt() for SMOOTH. Unlike RE rut writing, native
-    -- Amenizar does NOT set outside-area constraints and does not zero these
-    -- limits.
-    if type(deformation.setBlockedAreaMaxDisplacement) == "function" then
-        deformation:setBlockedAreaMaxDisplacement(0.01)
-    end
-    if type(deformation.setDynamicObjectCollisionMask) == "function"
-        and CollisionMask ~= nil and CollisionMask.LANDSCAPING ~= nil then
-        deformation:setDynamicObjectCollisionMask(CollisionMask.LANDSCAPING)
-    end
-    if type(deformation.setDynamicObjectMaxDisplacement) == "function" then
-        deformation:setDynamicObjectMaxDisplacement(0.03)
-    end
-    if type(deformation.setBlockedAreaMap) == "function"
-        and g_densityMapHeightManager ~= nil
-        and g_densityMapHeightManager.placementCollisionMap ~= nil then
-        deformation:setBlockedAreaMap(
-            g_densityMapHeightManager.placementCollisionMap, 0
-        )
-    end
-end
-
-local function configureRuntimeNativeSmooth(deformation, brush)
-    -- Prefer the actual Landscaping function loaded by this FS25 build. This
-    -- removes our assumptions about native hardness/height-change semantics.
-    if Landscaping ~= nil
-        and type(Landscaping.assignSmoothingParameters) == "function" then
-        local unit = tonumber(Landscaping.TERRAIN_UNIT) or 2
-        local proxy = {
-            terrainUnit = unit,
-            halfTerrainUnit = unit * 0.5,
-            modifiedAreas = {}
-        }
-        setmetatable(proxy, { __index = Landscaping })
-        local circle = Landscaping.BRUSH_SHAPE ~= nil
-            and Landscaping.BRUSH_SHAPE.CIRCLE or 2
-        local ok = pcall(
-            Landscaping.assignSmoothingParameters,
-            proxy,
-            deformation,
-            brush.x, brush.z,
-            brush.radiusM,
-            brush.strength or 1.0,
-            circle
-        )
-        if ok then return true end
-    end
-
-    -- Harness/compat fallback matching known GIANTS semantics.
-    deformation:setAdditiveHeightChangeAmount(0.05)
-    deformation:addSoftCircleBrush(
-        brush.x, brush.z, brush.radiusM, 0.20, brush.strength or 1.0
-    )
-    deformation:enableSmoothingMode()
-    return false
-end
-
 function Writer:_submitBatch(depthM, brushes, mode)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
@@ -335,11 +272,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
     if deformation == nil then return false, "could not allocate TerrainDeformation" end
 
     local amount = math.abs(depthM)
-    local nativeRecoverySmooth = mode == "SMOOTH"
+    local machineRecoverySmooth = mode == "SMOOTH"
         and brushes ~= nil and brushes[1] ~= nil
         and brushes[1].source == "RECOVERY"
 
-    if nativeRecoverySmooth then
+    if machineRecoverySmooth then
         -- Machine smoothing follows TerraFarm's machine-work path rather than
         -- Construction landscaping. A vehicle is physically occupying the
         -- deformation area, so dynamic/blocking constraints must not veto the
@@ -384,8 +321,9 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     for _, brush in ipairs(brushes) do
         local terrainBrush = TerrainDeformation.NO_TERRAIN_BRUSH
-        if nativeRecoverySmooth then
-            -- TerraFarm machine input smoothing uses -1 here.
+        if machineRecoverySmooth then
+            -- TerraFarm machine input smoothing uses -1 here; keep the machine
+        -- terrain path separate from Construction landscaping semantics.
             terrainBrush = -1
         end
         deformation:addSoftCircleBrush(
@@ -409,53 +347,6 @@ function Writer:_submitBatch(depthM, brushes, mode)
         heightSamples = heightSamples,
         roughnessSamples = roughnessSamples
     }
-
-    function callbackTarget:validated(state, displacedVolume, blockedObjectName)
-        local stats = self.owner.stats
-        if state ~= nil
-            and TerrainDeformation.STATE_SUCCESS ~= nil
-            and state ~= TerrainDeformation.STATE_SUCCESS then
-            stats.recoverySmoothValidationFailures =
-                stats.recoverySmoothValidationFailures + 1
-            stats.failedJobs = stats.failedJobs + 1
-            for _, brush in ipairs(self.brushes or {}) do
-                if type(brush.onApplied) == "function" then
-                    pcall(brush.onApplied, state, nil, nil, nil, nil, nil)
-                end
-            end
-            local d = self.deformation
-            self.deformation = nil
-            if d ~= nil then d:delete() end
-            return
-        end
-
-        stats.recoverySmoothValidationSuccess =
-            stats.recoverySmoothValidationSuccess + 1
-
-        local missionNow = g_currentMission
-        local q = g_terrainDeformationQueue
-            or (missionNow ~= nil and missionNow.terrainDeformationQueue)
-
-        if q ~= nil and type(q.queueJob) == "function" then
-            local ok = pcall(q.queueJob, q, self.deformation, false, "done", self)
-            if ok then return end
-        elseif self.deformation ~= nil and type(self.deformation.apply) == "function" then
-            local ok = pcall(self.deformation.apply, self.deformation, false, "done", self)
-            if ok then return end
-        end
-
-        stats.recoverySmoothValidationFailures =
-            stats.recoverySmoothValidationFailures + 1
-        stats.failedJobs = stats.failedJobs + 1
-        for _, brush in ipairs(self.brushes or {}) do
-            if type(brush.onApplied) == "function" then
-                pcall(brush.onApplied, TerrainDeformation.STATE_FAILED_BLOCKED, nil, nil, nil, nil, nil)
-            end
-        end
-        local d = self.deformation
-        self.deformation = nil
-        if d ~= nil then d:delete() end
-    end
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
@@ -670,7 +561,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
-    if nativeRecoverySmooth then
+    if machineRecoverySmooth then
         -- TerraFarm machine landscaping applies directly with preview=false.
         -- This deliberately avoids Construction's dynamic-object validation
         -- semantics, which made nearly every under-machine smoothing job a
@@ -753,10 +644,14 @@ function Writer:flush()
 
     local groupKeys = {}
     for key in pairs(groups) do groupKeys[#groupKeys + 1] = key end
+    local modeOrder = { LOWER=1, SMOOTH=2, RAISE=3 }
     table.sort(groupKeys, function(a, b)
         local ga, gb = groups[a], groups[b]
-        if ga.mode ~= gb.mode then return ga.mode == "LOWER" end
-        return ga.depth > gb.depth
+        if ga.mode ~= gb.mode then
+            return (modeOrder[ga.mode] or 99) < (modeOrder[gb.mode] or 99)
+        end
+        if ga.depth ~= gb.depth then return ga.depth > gb.depth end
+        return a < b
     end)
 
     local jobs = 0
