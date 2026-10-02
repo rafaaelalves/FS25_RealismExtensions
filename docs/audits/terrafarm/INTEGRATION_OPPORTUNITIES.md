@@ -312,3 +312,318 @@ RE should not jump directly to Tier 3 by patching internal callback methods.
 5. Test server/client visibility of `spec_machine` state in multiplayer.
 6. Verify operation footprint/nodes are stable enough for read-only ownership arbitration.
 7. Measure AI pathing after large RE terrain edits before deciding AI-dirty policy.
+
+
+## 18. Stack-wide capability evaluation model
+
+TerraFarm should not be evaluated only as "TerraFarm vs RE" or "TerraFarm vs RC".
+
+The target realism stack is intentionally fluid. A mod may enter, leave, remain external, be partially composed through RC, or eventually be functionally absorbed by RE depending on:
+- implementation quality;
+- ownership conflicts;
+- API/extension surface;
+- runtime stability;
+- asset burden;
+- maintenance burden;
+- multiplayer support;
+- performance architecture;
+- user-facing coherence;
+- whether a clean-room replacement provides enough benefit to justify ownership.
+
+### Preferred project destinations
+
+Today there are two preferred project roles:
+
+**RealismCompatibility (RC)**
+Use when the desired capability already exists in one or more external mods and the real problem is:
+- conflicting ownership;
+- lost hook/semantic path;
+- duplicated writes;
+- translating authoritative state from one owner into another owner's formulas;
+- suppressing overlapping fallback behavior;
+- version/contract adaptation;
+- maintaining a coherent stack without reimplementing the phenomenon.
+
+**RealismExtensions (RE)**
+Use when:
+- no external owner provides the desired capability;
+- the external implementation is monolithic and cannot expose the needed sub-capability cleanly;
+- RC would need brittle/private hooks to recover the behavior;
+- multiple fragmented implementations are better replaced by one coherent clean-room capability;
+- persistent/world-level state belongs naturally in RE;
+- functional absorption materially reduces conflicts or enables better authoritative inputs.
+
+A third project is not ruled out, but should require a genuinely different ownership/lifecycle/deployment boundary rather than being created for organizational convenience.
+
+### Consequence for TerraFarm
+
+Each TerraFarm capability should be classified independently:
+
+```text
+KEEP EXTERNAL
+    TerraFarm remains owner; RC only observes if necessary.
+
+COMPOSE THROUGH RC
+    TerraFarm remains owner, but authoritative state/ownership must be coordinated with the rest of the stack.
+
+OPTIONAL RE CONSUMER/ADAPTER
+    RE consumes TerraFarm geometry/state/events while keeping its own capability owner.
+
+CANDIDATE ABSORB INTO RE
+    Reimplement the behavior independently if there is a concrete architectural/gameplay benefit.
+
+DO NOT ADOPT
+    Capability is outside the desired realism model or introduces more burden than value.
+```
+
+Do not decide at mod granularity if capability granularity gives a better result.
+
+## 19. Stack-wide TerraFarm interaction matrix
+
+The following is the current source-derived/provisional view. "No direct conflict found" means only that the audited TerraFarm source does not touch the relevant owner surfaces; runtime validation is still required for the full stack.
+
+### MoreRealistic (MR)
+
+**Observed TerraFarm behavior**
+- no motor torque/load/PTO/friction ownership found in audited TerraFarm source;
+- TerraFarm primarily owns deliberate terrain landscaping and its machine/work-area state.
+
+**Relationship**
+- largely orthogonal mechanically;
+- indirect interaction occurs because TerraFarm changes physical terrain geometry that MR-driven vehicles later traverse.
+
+**Potential RC role**
+- none required for drivetrain ownership from current evidence;
+- if TerraFarm machines later gain physics/load semantics, re-audit before composing.
+
+**Potential RE role**
+- consume changed heightfield physically through normal terrain queries/history reconciliation.
+
+**Current disposition**
+KEEP both; no MR↔TerraFarm bridge justified today.
+
+### MudSystemPhysics
+
+**Observed domains**
+- Mud owns local wetness, sink, resistance, stuck and wheel-ground terramechanics.
+- TerraFarm owns explicit excavation/grading/smoothing/material terrain operations.
+
+**Relationship**
+- no source-level direct friction/sink ownership collision found;
+- TerraFarm can radically alter the geometry on which Mud subsequently operates.
+
+**Opportunity**
+- future TerraFarm machine operations could optionally consume RC-normalized wetness/material context for operation quality, but only if TerraFarm exposes/needs such semantics.
+- RE natural/recovery systems should continue consuming Mud state independently; TerraFarm must not become a replacement soil-wetness source.
+
+**Current disposition**
+KEEP specialist separation. RC bridge not currently required.
+
+### Reifenverschleiss / tire wear
+
+TerraFarm does not appear to own tread wear, wheel radius or tire friction.
+
+Indirectly, TerraFarm equipment still uses normal vehicle wheels and therefore Reifen/MR/Mud physics may apply to the carrier vehicle.
+
+**Current disposition**
+No TerraFarm-specific RC bridge justified.
+
+### SoilCompaction
+
+This is a more interesting semantic interaction.
+
+SoilCompaction owns persistent agronomic compaction and tillage relief.
+TerraFarm can physically lower/raise/smooth terrain but does not appear to update SoilCompaction's compaction map.
+
+Therefore a TerraFarm operation can visually/physically reshape soil while agronomic compaction remains unchanged.
+
+This is not automatically a bug:
+- grading a surface is not equivalent to removing subsoil compaction;
+- excavation may physically remove/redeposit soil without SoilCompaction understanding that process.
+
+**Future integration questions**
+- Should a TerraFarm ripper operation count as tillage relief in SoilCompaction?
+- Should a compactor machine add SoilCompaction state?
+- Should excavation/replacement reset, translate or preserve cell compaction?
+- Can this be expressed through SoilCompaction public/existing work-operation contracts rather than copied formulas?
+
+**Likely project destination**
+RC if SoilCompaction exposes enough semantic entry points.
+RE only if a broader unified soil-volume/history model eventually owns the missing physical consequence.
+
+This is a high-value future audit item.
+
+### RMS / ADS branch
+
+TerraFarm does not currently appear to inject mechanical load, PTO load, wear, thermal or failure state.
+
+But TerraFarm machines represent physically demanding operations such as ripping/excavating/compacting.
+
+That means the current stack may visually perform heavy earthmoving without RMS necessarily seeing a corresponding mechanical work demand beyond normal vehicle movement/hydraulics.
+
+**Opportunity**
+Audit whether TerraFarm-native machines already generate GIANTS power/hydraulic/PTO demand through their vehicle definitions.
+
+If not, a future integration could expose operation effort/load to RMS/MR through existing owner contracts.
+
+**Project destination**
+RC if this is translation into existing MR/RMS load mechanisms.
+Do not put a second engine-load model in RE.
+
+### Dynamic PTO / WorkMode
+
+No direct TerraFarm PTO semantics were found in the audited core.
+
+Most TerraFarm equipment appears landscaping/hydraulic rather than PTO-centric, but individual configured machines may still use native power consumers.
+
+**Opportunity**
+No generic TerraFarm↔DynamicPTO bridge should be invented.
+Evaluate only concrete equipment where the machine definition actually uses PTO.
+
+WorkMode may already provide hydraulic/work RPM behavior for some TerraFarm-capable vehicles; this is a runtime interaction worth testing if the equipment needs raised working RPM.
+
+### FarmKit
+
+This is the largest terrain-domain overlap in the current ecosystem.
+
+FarmKit historically provided:
+- custom player slip/scrub terrain ruts;
+- furrow/crop/effects systems;
+- other bundled realism features.
+
+RC's conservative FarmKit profile already suppresses overlapping FarmKit ground-core behavior where MR/Mud/Reifen/True AI Tracks own the same domain, and RE now owns player persistent geometric ruts/recovery.
+
+TerraFarm adds another deliberate TerrainDeformation writer.
+
+**Stack implication**
+Terrain ownership now has at least three conceptual sources:
+- RE: persistent consequence of vehicle/soil interaction and recovery;
+- TerraFarm: explicit landscaping/earthmoving operation;
+- FarmKit: residual unique terrain/crop systems such as furrow interaction, with its custom rut core already suppressed in the target profile.
+
+**RC opportunity**
+A single terrain-write ownership model may be preferable to pairwise "FarmKit vs TerraFarm", "RE vs TerraFarm", etc.
+
+Candidate capability ownership states:
+- passive wheel consequence;
+- agricultural work recovery;
+- deliberate landscaping;
+- furrow/crop interaction;
+- AI/native-style deformation;
+- world/public maintenance.
+
+RC should coordinate only where two external/current owners write the same phenomenon.
+
+### True AI Tracks
+
+True AI Tracks restores native-style deformation for AI and implement wheels.
+
+TerraFarm is not an AI-rut replacement. Its machine operations are explicit landscaping behavior.
+
+Potential overlap occurs only when:
+- an AI-controlled TerraFarm machine is physically driving/working;
+- True AI Tracks deforms wheels/implement wheels;
+- TerraFarm simultaneously reshapes the operation footprint.
+
+This is analogous to the RE cultivator problem:
+the tool operation may need to own/overwrite some wheel-generated geometry while active.
+
+**Future decision**
+Once RE reaches AI/implement parity and True AI Tracks is reconsidered, include TerraFarm AI-machine scenarios in the retirement/coexistence test matrix.
+
+### MoistureSystem
+
+MoistureSystem owns agronomic/material moisture.
+TerraFarm owns fill/material earthmoving and map resource types.
+
+Potential future opportunity:
+- excavated/deposited materials could eventually carry material moisture;
+- soil/material removed by TerraFarm could interact with MoistureSystem's pile/material state.
+
+No such integration is established in the current audited code.
+
+This is a candidate ecosystem integration, but it is outside current terrain-recovery scope.
+
+### RealisticHarvesting
+
+No direct TerraFarm overlap found.
+
+Indirect overlap may arise only if landscaping affects fields/crops/density state. TerraFarm can clear field/deco/weed/stone states during terrain modification, but it is not a harvest-processing owner.
+
+No RC bridge justified from current evidence.
+
+### RealPhysics LoadSpill / Loose Load
+
+TerraFarm has material excavation/deposition into fill units and terrain.
+LoadSpill/Loose Load own material escaping from vehicles and/or discharge dynamics.
+
+Potential overlap:
+- TerraFarm output/discharge machinery may use fill units/discharge nodes that a load-spill mod also observes;
+- TerraFarm modifies discharge behavior for some configured machines.
+
+This deserves equipment-specific testing because TerraFarm can overwrite configured discharge methods.
+
+**Likely RC role**
+Ownership arbitration only if the same discharge/material-transfer path is modified by both.
+Do not generalize a bridge without a concrete collision.
+
+### soundExpansionMP / visual effects
+
+No direct TerraFarm sound-extension integration was found.
+
+TerraFarm has its own machine effects and UI; soundExpansionMP owns operational/MP sound patches.
+Likely coexistence, but configured earthmoving equipment should be smoke-tested for duplicated tool sounds.
+
+### Courseplay / AutoDrive / GIANTS AI
+
+No named Courseplay/AutoDrive integration was found in audited TerraFarm source.
+
+TerraFarm machine terrain input is driven by machine state/contact on the server, not by direct player input. Therefore it may naturally work under AI if the machine is activated and the required state remains valid.
+
+Questions for runtime validation:
+- does GIANTS AI activate/retain TerraFarm machine state correctly?
+- can Courseplay control a TerraFarm machine without fighting input/activation?
+- does AutoDrive transport leave TerraFarm inactive as expected?
+- do large TerraFarm heightfield edits invalidate AI navigation promptly?
+
+The last point is partly handled by TerraFarm's own `aiSystem:setAreaDirty` after successful deformation.
+
+## 20. Capability absorption perspective
+
+TerraFarm should not be assumed permanent merely because current integration looks clean.
+
+Potential long-term RE absorption candidates include:
+- generic target-plane grading;
+- path/corridor maintenance;
+- public/municipal terrain maintenance;
+- selected soil-work recovery operations;
+- terrain-operation profiles and area geometry.
+
+Reasons to leave TerraFarm external for the foreseeable future:
+- rich machine ecosystem and maintained equipment configs;
+- UI/editor/HUD;
+- material/fill-unit earthmoving workflow;
+- assets and effects;
+- multiplayer state/events;
+- landscaping-area editor;
+- dedicated author/community maintenance burden.
+
+This is exactly the kind of capability set where external ownership can remain preferable even if RE could technically reproduce it.
+
+Absorption should be justified by a concrete integration or realism benefit, not by theoretical ability to implement it.
+
+## 21. Stack evolution rule
+
+The current stack is a working ownership graph, not a permanent dependency list.
+
+When evaluating any newly discovered mod:
+1. decompose it into capabilities;
+2. identify existing owners in RC/RE/external stack;
+3. classify each capability as keep/compose/absorb/reject;
+4. estimate asset and maintenance cost;
+5. prefer external specialist ownership when quality is high and integration is clean;
+6. prefer RC when composition solves the problem without new simulation ownership;
+7. prefer RE when the capability is missing or cannot be recovered cleanly through compatibility;
+8. revisit decisions when upstream mods improve, regress, expose APIs, disappear, or become costly to maintain.
+
+TerraFarm is now documented under this same rule.
