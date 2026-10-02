@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 4
+Writer.VERSION = 5
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -59,6 +59,12 @@ function Writer.new(options)
             massTransportRaiseJobs = 0,
             recoveryRaisedVolumeM3 = 0,
             recoveryRaiseJobs = 0,
+            recoverySmoothJobs = 0,
+            recoverySmoothSamples = 0,
+            recoverySmoothRaisedSamples = 0,
+            recoverySmoothLoweredSamples = 0,
+            recoverySmoothAbsDeltaM = 0,
+            recoverySmoothMaxDeltaM = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -76,6 +82,8 @@ function Writer:enqueue(brush)
     local amount = brush ~= nil and tonumber(brush.depthM) or nil
     if mode == "RAISE" then
         amount = brush ~= nil and tonumber(brush.raiseHeightM or brush.depthM) or nil
+    elseif mode == "SMOOTH" then
+        amount = brush ~= nil and tonumber(brush.smoothAmountM or brush.depthM) or nil
     end
 
     if type(brush) ~= "table"
@@ -85,7 +93,7 @@ function Writer:enqueue(brush)
         or type(brush.radiusM) ~= "number"
         or amount < self.options.minDepthM
         or brush.radiusM <= 0
-        or (mode ~= "LOWER" and mode ~= "RAISE") then
+        or (mode ~= "LOWER" and mode ~= "RAISE" and mode ~= "SMOOTH") then
         self.stats.droppedInvalid = self.stats.droppedInvalid + 1
         return false
     end
@@ -103,7 +111,8 @@ function Writer:enqueue(brush)
         ),
         massTransport = brush.massTransport,
         targetVolumeM3 = tonumber(brush.targetVolumeM3),
-        source = brush.source
+        source = brush.source,
+        onApplied = brush.onApplied
     }
     self.stats.enqueued = self.stats.enqueued + 1
     return true
@@ -131,11 +140,18 @@ local function compatibleTransport(a, b)
 end
 
 local function tryCoalesce(group, brush, factor)
+    -- Callback-bearing brushes keep one-to-one identity so asynchronous
+    -- recovery can reconcile the exact history cell only after geometry moves.
+    if brush.onApplied ~= nil then return false end
+
     -- Coalesce only brushes compatible by operation, depth bucket and transport
     -- direction/state. This keeps the performance win without turning two
     -- unrelated wheel paths into one averaged berm source.
     for _, existing in ipairs(group) do
-        if existing.mode == brush.mode and compatibleTransport(existing, brush) then
+        if existing.onApplied ~= nil then
+            -- Do not merge work whose completion belongs to another history cell.
+        elseif
+        existing.mode == brush.mode and compatibleTransport(existing, brush) then
             local dx, dz = brush.x - existing.x, brush.z - existing.z
             local distance = math.sqrt(dx * dx + dz * dz)
             local threshold = math.min(existing.radiusM, brush.radiusM) * factor
@@ -212,14 +228,23 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local deformation = TerrainDeformation.new(terrain)
     if deformation == nil then return false, "could not allocate TerrainDeformation" end
 
-    deformation:enableAdditiveDeformationMode()
-    local signedHeight = math.abs(depthM)
-    if mode ~= "RAISE" then signedHeight = -signedHeight end
-    deformation:setAdditiveHeightChangeAmount(signedHeight)
+    local amount = math.abs(depthM)
+    if mode == "SMOOTH" then
+        if type(deformation.enableSmoothingMode) ~= "function" then
+            deformation:delete()
+            return false, "terrain smoothing mode unavailable"
+        end
+        deformation:setAdditiveHeightChangeAmount(amount)
+        deformation:enableSmoothingMode()
+    else
+        deformation:enableAdditiveDeformationMode()
+        local signedHeight = mode == "RAISE" and amount or -amount
+        deformation:setAdditiveHeightChangeAmount(signedHeight)
+    end
     configureDeformationConstraints(deformation)
 
     local heightSamples = nil
-    if expensiveGeometryDiagnosticsEnabled() then
+    if mode == "SMOOTH" or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
             heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
@@ -267,7 +292,9 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     stats.callbackDisplacedVolumeM3 + callbackVolume
                 stats.callbackMaxDisplacedVolumeM3 =
                     math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
-                if self.mode == "RAISE" then
+                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                    stats.recoverySmoothJobs = stats.recoverySmoothJobs + 1
+                elseif self.mode == "RAISE" then
                     if self.source == "MASS_TRANSPORT" then
                         stats.massTransportRaisedVolumeM3 =
                             stats.massTransportRaisedVolumeM3 + callbackVolume
@@ -360,9 +387,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
             for i, brush in ipairs(self.brushes or {}) do
                 local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
                 local afterY = beforeY ~= nil and sampleTerrainHeight(self.terrain, brush.x, brush.z) or nil
+                local deltaY = nil
                 if beforeY ~= nil and afterY ~= nil then
+                    deltaY = afterY - beforeY
                     local requested = self.depthM or 0
-                    local lowering = beforeY - afterY
+                    local lowering = -deltaY
                     stats.geometrySamples = stats.geometrySamples + 1
                     stats.geometryRequestedDepthM =
                         stats.geometryRequestedDepthM + requested
@@ -379,13 +408,34 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             stats.geometryObservedRaisingM + (-lowering)
                     end
 
+                    if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                        local absDelta = math.abs(deltaY)
+                        stats.recoverySmoothSamples = stats.recoverySmoothSamples + 1
+                        stats.recoverySmoothAbsDeltaM =
+                            stats.recoverySmoothAbsDeltaM + absDelta
+                        stats.recoverySmoothMaxDeltaM =
+                            math.max(stats.recoverySmoothMaxDeltaM, absDelta)
+                        if deltaY > 0.00005 then
+                            stats.recoverySmoothRaisedSamples =
+                                stats.recoverySmoothRaisedSamples + 1
+                        elseif deltaY < -0.00005 then
+                            stats.recoverySmoothLoweredSamples =
+                                stats.recoverySmoothLoweredSamples + 1
+                        end
+                    end
+
                     if math.abs(lowering) <= 0.00005 then
                         stats.geometryZeroChangeSamples =
                             stats.geometryZeroChangeSamples + 1
-                    elseif requested > 0 and lowering < requested * 0.25 then
+                    elseif self.mode ~= "SMOOTH"
+                        and requested > 0 and lowering < requested * 0.25 then
                         stats.geometryShallowSamples =
                             stats.geometryShallowSamples + 1
                     end
+                end
+
+                if type(brush.onApplied) == "function" then
+                    pcall(brush.onApplied, state, deltaY, beforeY, afterY, callbackVolume)
                 end
             end
         end
