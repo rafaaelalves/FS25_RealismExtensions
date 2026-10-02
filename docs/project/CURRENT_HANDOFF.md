@@ -171,6 +171,41 @@ RE lesson: split future recovery architecture into WorkDetector / WorkFootprint 
 
 Important: TerraFarm values are precedents/configuration, not empirical constants and not automatically correct for agricultural recovery.
 
+## v22 runtime validation — successful mechanism test (2026-10-02)
+
+Tested artifact identified itself as:
+- branch: `feat/terrain-recovery`
+- commit: `94a10476e45b8fc4ebf14f7a25e6cd7440c92509`
+- run: `37063152919`
+
+That commit is only one documentation commit ahead of the d696 code checkpoint; the runtime implementation is the same tested recovery/refactor code.
+
+User observation: terrain recovery finally behaved correctly and visibly converged instead of becoming progressively worse. More than 2–3 passes were required on the damaged test area, but the result was considered satisfactory.
+
+Runtime evidence from the main work session before soft restart:
+- final cumulative physical work calls: 2759;
+- changed first-state calls: 1098;
+- repeated physical work calls: 1661;
+- recovery brushes/callbacks: 9504/9504;
+- roughness outcomes: 6796 improved, 571 worsened, 2137 neutral;
+- cumulative measured improvement: 4.8308 m vs 0.1885 m worsening;
+- recovered history: 917 cells / 0.649 m;
+- active cultivator rut skips: 20068;
+- no failed TerrainDeformation jobs;
+- late stable work windows repeatedly showed `rutAccepted=0` and Koralin/root writer window delta `(+0)` while recovery continued.
+
+This validates the v22 mechanism-level correction:
+- repeated work (`realArea=0, area>0`) continues recovery;
+- root-combination persistent rut suppression remains active during physical work;
+- machine-style SMOOTH now produces useful convergence rather than the previous destructive/no-op behavior.
+
+Remaining calibration issue:
+- severe historical terrain required substantially more than 2–3 passes.
+- Do not immediately increase strength. First establish a baseline pass-count vs initial roughness/rut-depth relationship and preserve the now-working monotonic convergence.
+- Some 5-second mixed transition windows still show accepted Koralin writes while work also occurred in the same window. Because the window can include both active and lifted/post-work portions, this is not yet proof of an in-work suppression leak. If further refinement is needed, add event-state attribution to accepted writes rather than infer from coarse window overlap.
+
+Status: TerrainRecovery mechanism is **runtime validated; calibration/stabilization pending**.
+
 ## Separate unresolved TerrainDeformation blockers
 
 Do not lose these while focusing on recovery:
