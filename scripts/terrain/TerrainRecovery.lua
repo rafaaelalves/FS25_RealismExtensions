@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 9
+Recovery.VERSION = 10
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -80,7 +80,12 @@ Recovery.stats = Recovery.stats or {
     maxWorkAreaDepthM = 0,
     activeCombinationMarks = 0,
     activeCombinationQueries = 0,
-    activeCombinationHits = 0
+    activeCombinationHits = 0,
+    physicalWorkAreaCalls = 0,
+    changedWorkAreaCalls = 0,
+    repeatWorkAreaCalls = 0,
+    areaPositiveCalls = 0,
+    preSuperActiveMarks = 0
 }
 
 local function enabled()
@@ -266,8 +271,8 @@ local function cleanupOldStamps(nowMs)
     end
 end
 
-local function recoverWorkedArea(vehicle, workArea, realArea)
-    if not enabled() or (tonumber(realArea) or 0) <= 0 then return end
+local function recoverWorkedArea(vehicle, workArea, processedArea)
+    if not enabled() or (tonumber(processedArea) or 0) <= 0 then return end
 
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil or runtime.history == nil or runtime.writer == nil
@@ -403,20 +408,73 @@ end
 function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
     Recovery.stats.workAreaCalls = Recovery.stats.workAreaCalls + 1
 
-    local realArea, area = superFunc(vehicle, workArea, dt)
-    if (tonumber(realArea) or 0) > 0 then
-        Recovery.stats.workedAreaCalls = Recovery.stats.workedAreaCalls + 1
-        local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+    -- GIANTS separates changed agricultural area (realArea) from total
+    -- processed work area (area). realArea legitimately becomes zero when a
+    -- cultivator passes over ground that is already cultivated. That must NOT
+    -- mean the implement stopped physically working.
+    local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+    local specBefore = vehicle ~= nil and vehicle.spec_cultivator or nil
+    local speedBefore = 0
+    if vehicle ~= nil and type(vehicle.getLastSpeed) == "function" then
+        local ok, value = pcall(vehicle.getLastSpeed, vehicle)
+        if ok then speedBefore = tonumber(value) or 0 end
+    end
+    local preWorking = specBefore ~= nil
+        and specBefore.isEnabled ~= false
+        and speedBefore > 0.5
+
+    -- processCultivatorArea itself is only invoked for an active work area.
+    -- Mark before superFunc so wheel sampling later in the same frame cannot
+    -- reopen persistent ruts merely because the density-map state is unchanged.
+    if preWorking then
         markActiveCombination(vehicle, nowMs)
-        local perfStarted = RealismExtensionsTerrainPerformance ~= nil
-            and RealismExtensionsTerrainPerformance.begin() or nil
+        Recovery.stats.preSuperActiveMarks =
+            Recovery.stats.preSuperActiveMarks + 1
+    end
 
-        recoverWorkedArea(vehicle, workArea, realArea)
+    local realArea, area = superFunc(vehicle, workArea, dt)
 
-        if RealismExtensionsTerrainPerformance ~= nil then
-            RealismExtensionsTerrainPerformance.finish("recovery", perfStarted)
+    local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
+    local physicallyWorking = spec ~= nil
+        and spec.isEnabled ~= false
+        and spec.isWorking == true
+
+    if physicallyWorking then
+        Recovery.stats.physicalWorkAreaCalls =
+            Recovery.stats.physicalWorkAreaCalls + 1
+
+        -- Refresh if the pre-super speed state was unavailable/stale.
+        if not preWorking then
+            markActiveCombination(vehicle, nowMs)
+        end
+
+        if (tonumber(realArea) or 0) > 0 then
+            Recovery.stats.changedWorkAreaCalls =
+                Recovery.stats.changedWorkAreaCalls + 1
+        else
+            Recovery.stats.repeatWorkAreaCalls =
+                Recovery.stats.repeatWorkAreaCalls + 1
+        end
+
+        if (tonumber(area) or 0) > 0 then
+            Recovery.stats.workedAreaCalls = Recovery.stats.workedAreaCalls + 1
+            Recovery.stats.areaPositiveCalls =
+                Recovery.stats.areaPositiveCalls + 1
+
+            local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+                and RealismExtensionsTerrainPerformance.begin() or nil
+
+            -- Use total processed area, not changed area. Repeated passes must
+            -- continue smoothing even when the vanilla field state no longer
+            -- changes.
+            recoverWorkedArea(vehicle, workArea, area)
+
+            if RealismExtensionsTerrainPerformance ~= nil then
+                RealismExtensionsTerrainPerformance.finish("recovery", perfStarted)
+            end
         end
     end
+
     return realArea, area
 end
 
