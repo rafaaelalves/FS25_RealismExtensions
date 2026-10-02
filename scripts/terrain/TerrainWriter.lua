@@ -330,6 +330,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
             and TerrainDeformation.STATE_SUCCESS ~= nil
             and state ~= TerrainDeformation.STATE_SUCCESS then
             self.owner.stats.failedJobs = self.owner.stats.failedJobs + 1
+            for _, brush in ipairs(self.brushes or {}) do
+                if type(brush.onApplied) == "function" then
+                    pcall(brush.onApplied, state, nil, nil, nil, nil, nil)
+                end
+            end
         elseif state == nil
             or TerrainDeformation.STATE_SUCCESS == nil
             or state == TerrainDeformation.STATE_SUCCESS then
