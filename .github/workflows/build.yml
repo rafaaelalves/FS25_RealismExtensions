@@ -78,11 +78,13 @@ jobs:
           zip -r build/FS25_RealismExtensions.zip modDesc.xml icon.dds scripts \
             -x "*.DS_Store" "__MACOSX/*"
 
-      - name: Verify ZIP root
+      - name: Verify ZIP root and identity
         run: |
           unzip -l build/FS25_RealismExtensions.zip
           unzip -p build/FS25_RealismExtensions.zip modDesc.xml >/dev/null
           unzip -p build/FS25_RealismExtensions.zip icon.dds >/dev/null
+          unzip -p build/FS25_RealismExtensions.zip scripts/BuildInfo.lua | grep -F "$GITHUB_SHA"
+          unzip -p build/FS25_RealismExtensions.zip scripts/BuildInfo.lua | grep -F "$GITHUB_REF_NAME"
 
       - name: Record build metadata
         run: |
