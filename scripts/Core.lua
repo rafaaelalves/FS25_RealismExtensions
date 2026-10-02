@@ -108,13 +108,14 @@ function RealismExtensionsCore:update(dt)
                 local writerStats = writer ~= nil and writer.stats or {}
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
-                local prev = self.terrainDiagPrevious or {}
+                local r = RealismExtensionsTerrainRecovery ~= nil
+                    and RealismExtensionsTerrainRecovery.getDiagnostics() or {}
+                local telemetry = RealismExtensionsTerrainTelemetry
+                local window, nextSnapshot = telemetry ~= nil
+                    and telemetry.buildWindow(self.terrainDiagPrevious, r, d)
+                    or {}, nil
 
                 if RealismExtensionsTerrainRecovery ~= nil then
-                    local r = RealismExtensionsTerrainRecovery.getDiagnostics()
-                    local function delta(name, value)
-                        return math.max(0, (value or 0) - (prev[name] or 0))
-                    end
                     RealismExtensionsDiagnostics.verbose(string.format(
                         "TerrainRecovery v22 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
@@ -157,37 +158,19 @@ function RealismExtensionsCore:update(dt)
 
                     RealismExtensionsDiagnostics.verbose(string.format(
                         "TerrainWindow 5s | work=%d changed=%d repeat=%d processedArea=%.0f repeatArea=%.0f smooth=%d callbacks=%d improved=%d worsened=%d rutBlocked=%d protected=%d rutAccepted=%d",
-                        delta("physicalWorkAreaCalls", r.physicalWorkAreaCalls),
-                        delta("changedWorkAreaCalls", r.changedWorkAreaCalls),
-                        delta("repeatWorkAreaCalls", r.repeatWorkAreaCalls),
-                        delta("processedAreaUnits", r.processedAreaUnits),
-                        delta("repeatAreaUnits", r.repeatAreaUnits),
-                        delta("brushesEnqueued", r.brushesEnqueued),
-                        delta("callbacks", r.callbacks),
-                        delta("roughnessImproved", r.roughnessImproved),
-                        delta("roughnessWorsened", r.roughnessWorsened),
-                        math.max(0, (d.activeCultivatorRutSkips or 0) - (prev.activeCultivatorRutSkips or 0)),
-                        math.max(0, (d.cultivationProtectionSkips or 0) - (prev.cultivationProtectionSkips or 0)),
-                        math.max(0, (d.brushesAccepted or 0) - (prev.brushesAccepted or 0))
+                        window.work or 0,
+                        window.changed or 0,
+                        window.repeatWork or 0,
+                        window.processedArea or 0,
+                        window.repeatArea or 0,
+                        window.smooth or 0,
+                        window.callbacks or 0,
+                        window.improved or 0,
+                        window.worsened or 0,
+                        window.rutBlocked or 0,
+                        window.protected or 0,
+                        window.rutAccepted or 0
                     ))
-
-                    local snapshot = {}
-                    for k,v in pairs(r) do
-                        if type(v) == "number" then snapshot[k] = v end
-                    end
-                    snapshot.activeCultivatorRutSkips = d.activeCultivatorRutSkips or 0
-                    snapshot.cultivationProtectionSkips = d.cultivationProtectionSkips or 0
-                    snapshot.brushesAccepted = d.brushesAccepted or 0
-                    for k,v in pairs(d) do
-                        if type(v) == "number"
-                            and (string.sub(k,1,10) == "rutWriter_"
-                                or string.sub(k,1,14) == "rutWriterRoot_") then
-                            snapshot[k] = v
-                        end
-                    end
-                    -- Keep the snapshot assignment until after writer-window
-                    -- formatting below so all per-window deltas share one baseline.
-                    self._terrainDiagNextSnapshot = snapshot
                 end
 
                 if RealismExtensionsTerrainPerformance ~= nil then
@@ -284,44 +267,19 @@ function RealismExtensionsCore:update(dt)
                     )
                 end
 
-                local writerParts = {}
-                local rootWriterParts = {}
-                for key, value in pairs(d) do
-                    if type(value) == "number" and value > 0 then
-                        if string.sub(key, 1, 14) == "rutWriterRoot_" then
-                            rootWriterParts[#rootWriterParts + 1] = {
-                                name = string.sub(key, 15),
-                                count = value,
-                                window = math.max(0, value - (prev[key] or 0))
-                            }
-                        elseif string.sub(key, 1, 10) == "rutWriter_" then
-                            writerParts[#writerParts + 1] = {
-                                name = string.sub(key, 11),
-                                count = value,
-                                window = math.max(0, value - (prev[key] or 0))
-                            }
-                        end
-                    end
-                end
-                local function sortWriters(a,b) return a.count > b.count end
-                table.sort(writerParts, sortWriters)
-                table.sort(rootWriterParts, sortWriters)
-                local function formatTopWriters(items)
-                    local parts = {}
-                    for i=1,math.min(5,#items) do
-                        parts[#parts+1] = string.format("%s=%d(+%d)",items[i].name,items[i].count,items[i].window or 0)
-                    end
-                    return table.concat(parts," ")
-                end
-                if #writerParts > 0 or #rootWriterParts > 0 then
+                if telemetry ~= nil
+                    and (#(window.writers or {}) > 0
+                        or #(window.rootWriters or {}) > 0) then
                     RealismExtensionsDiagnostics.verbose(
-                        "RutWriters runtime | vehicles=[" .. formatTopWriters(writerParts)
-                        .. "] roots=[" .. formatTopWriters(rootWriterParts) .. "]"
+                        "RutWriters runtime | vehicles=["
+                        .. telemetry.formatWriters(window.writers,5)
+                        .. "] roots=["
+                        .. telemetry.formatWriters(window.rootWriters,5)
+                        .. "]"
                     )
                 end
-                if self._terrainDiagNextSnapshot ~= nil then
-                    self.terrainDiagPrevious = self._terrainDiagNextSnapshot
-                    self._terrainDiagNextSnapshot = nil
+                if nextSnapshot ~= nil then
+                    self.terrainDiagPrevious = nextSnapshot
                 end
 
                 if (d.footprintAccepted or 0) > 0 then
