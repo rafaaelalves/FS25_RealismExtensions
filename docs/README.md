@@ -14,6 +14,7 @@ Use documents by purpose instead of reading everything.
 - `project/OWNERSHIP.md`: normative phenomenon ownership.
 - `project/ARCHITECTURE.md`: stable module boundaries.
 - `project/ROADMAP.md`: capability progression.
+- `project/TERRAIN_EVOLUTION_PLAN.md`: detailed recovery/contact/AI/world-maintenance implementation plan.
 - `decisions/`: non-obvious decisions and their rationale.
 
 ## Evidence / research
