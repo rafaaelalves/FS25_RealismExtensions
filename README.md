@@ -6,14 +6,14 @@ RealismExtensions does not try to replace mature systems merely to reduce the mo
 
 ## Current state
 
-Version `0.0.1.0` is an infrastructure-only foundation. It has no active gameplay effects.
+Version string `0.0.1.0` still identifies the development line, but TerrainDeformation is now an active experimental gameplay capability on feature branches. It is not finished or release-stable yet.
 
 Start here:
-1. `docs/project/CONTEXT.md` — short handoff for a new contributor/chat.
-2. `docs/project/PROJECT_STATUS.md` — current state and next work.
-3. `docs/project/OWNERSHIP.md` — normative phenomenon ownership.
-4. `docs/project/ARCHITECTURE.md` — boundaries and module rules.
-5. `docs/project/ROADMAP.md` — capability roadmap.
+1. `docs/project/CONTEXT.md` — stable project orientation.
+2. `docs/project/CURRENT_HANDOFF.md` — exact current implementation and next runtime test.
+3. `docs/DEVELOPMENT_PROCESS.md` — evidence/telemetry/testing rules.
+4. `docs/project/PROJECT_STATUS.md` — capability state and blockers.
+5. `docs/project/OWNERSHIP.md` / `ARCHITECTURE.md` — normative ownership and module boundaries.
 
 ## Relationship with RealismCompatibility
 
@@ -34,9 +34,9 @@ FS25_RealismExtensions
 
 RealismCompatibility coordinates overlapping external mods. RealismExtensions owns only missing phenomena. Feature modules should not independently reach into MoreRealistic, MudSystemPhysics, Reifenverschleiss, RMS, SoilCompaction or Dynamic PTO internals.
 
-## First planned module: TerrainDeformation
+## Active module: TerrainDeformation
 
-The first research target is a common player/AI/implement deformation engine driven by authoritative:
+The active research/development target is a common player/AI/implement deformation engine driven by authoritative:
 - longitudinal and lateral slip;
 - local wetness;
 - sink depth;
