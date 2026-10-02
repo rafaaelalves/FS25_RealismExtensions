@@ -16,4 +16,4 @@ Minimum audit record:
 
 Never infer an absorption decision from feature similarity alone.
 
-- [TerraFarm architecture audit](./terrafarm/README.md) — terrain operation lifecycle, work-area/contact architecture, smoothing precedent and reusable RE design lessons.
+- [TerraFarm deep architecture/compatibility audit](./terrafarm/README.md) — machine lifecycle, TerrainDeformation pipeline, multiplayer/persistence, landscaping areas, official machine-addon extensibility, integration tiers and risk matrix.
