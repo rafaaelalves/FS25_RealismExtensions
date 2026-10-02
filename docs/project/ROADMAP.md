@@ -1,59 +1,60 @@
 # Roadmap
 
-The roadmap is intentionally capability-driven, not version-date driven.
+Updated: 2026-10-02
 
-## 0.0.x — Foundation and research
+The roadmap is capability-driven, not version-date driven.
 
-- establish repository/CI/contracts;
-- audit candidate mods;
-- define normalized RC→Extensions state;
-- research GIANTS terrain deformation and runtime budgets;
-- build diagnostics/harnesses.
+## Engineering process (applies to every capability)
 
-## 0.1.x — Terrain deformation prototype
+- source/API research;
+- explicit ownership boundary;
+- hypothesis + acceptance/rejection criteria;
+- harness coverage;
+- high-observability first runtime;
+- physical + causal validation;
+- calibration only after mechanism is proven;
+- stabilization telemetry and regression scenarios;
+- periodic high-observability revalidation after major dependency/game changes.
 
-Goal: produce believable geometric consequences from authoritative wheel/ground state without changing traction or sink physics.
+See `docs/DEVELOPMENT_PROCESS.md`.
 
-Progression:
-1. player tractor, one supported terrain, longitudinal slip;
-2. tire-width/load-aware rut geometry;
-3. local wetness and freeze/thaw response;
-4. lateral scrub;
-5. repeated-pass accumulation with bounded depth;
-6. implement wheels;
-7. GIANTS AI and Courseplay;
-8. assess removal of True AI Tracks from the stack.
+## Terrain deformation / soil interaction — active
 
-## 0.2.x — Crop/vegetation interaction candidate
+Current progression:
+1. normalized MR/Mud/RC wheel-ground state;
+2. tire/load/support-width footprint;
+3. distance/cadence-invariant persistent rutting;
+4. wetness/slip/plasticity response;
+5. persistent history/persistence;
+6. physical terrain recovery by soil-working implements;
+7. implement operation ordering;
+8. native crawler/track footprint;
+9. SoilMassTransport calibration/mass conservation;
+10. GIANTS AI/Courseplay parity;
+11. underbody/high-centering interaction research;
+12. assess retirement/remaining ownership of True AI Tracks.
 
-Research before commitment:
-- speed/load/footprint damage;
-- wetness sensitivity;
-- steering/lateral scrub;
-- off-field grass/meadow interaction;
-- possible functional absorption of CropDestructionAnywhere.
+Current immediate gate: v22 TerrainRecovery runtime validation.
 
-## 0.3.x — Surface contamination candidate
+## Architecture refinement
 
-Research target:
-- replace RealDirtColor's current-target color model with persistent per-wheel/body material contamination;
-- use Mud/RC authoritative contact state where available;
-- preserve GIANTS Washable dirt amount as a separate quantity;
-- save/network persistent contamination;
-- retain existing `dirtColor` shaders as the first presentation backend.
+After v22 mechanism validation, extract reusable boundaries inspired by runtime lessons and the TerraFarm audit:
+- WorkDetector;
+- WorkFootprint;
+- TerrainOperation;
+- HistoryReconciliation;
+- diagnostics/causality context.
 
-## Drivetrain improvement research
+Do not perform a large refactor before the current runtime hypothesis is validated.
 
-Parallel research, not a separate physics owner:
-- enrich RMS AUTO/lock decision semantics using the audited Realistic 4x4 requirements;
-- pursue an RMS public/provider boundary rather than another `updateDifferential` writer;
-- keep CTIS/tyre pressure as a separate future capability.
+## Later capability candidates
 
-## Later candidates
-
-- richer surface contamination visuals beyond `dirtColor`;
-- furrow interaction;
+- crop/vegetation interaction;
+- surface contamination;
+- richer terrain/furrow interaction;
+- RMS-facing drivetrain decision enrichment;
+- CTIS/tire-pressure capability;
 - visual-effect consolidation;
 - unified state-driven HUD.
 
-These are candidates, not promises. Every module must justify ownership and maintenance cost.
+Candidates require their own ownership/audit/test gates before implementation.
