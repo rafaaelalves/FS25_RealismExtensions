@@ -48,48 +48,58 @@ Recovery.DEFAULTS = {
     minHistoryRutM = 0.003
 }
 
-Recovery.processedStamps = Recovery.processedStamps or {}
-Recovery.pendingStamps = Recovery.pendingStamps or {}
-Recovery.protectedCells = Recovery.protectedCells or {}
-Recovery.activeCombinationUntil = Recovery.activeCombinationUntil
-    or setmetatable({}, { __mode = "k" })
-Recovery.stats = Recovery.stats or {
-    workAreaCalls = 0,
-    workedAreaCalls = 0,
-    coveragePoints = 0,
-    stampSkips = 0,
-    brushesEnqueued = 0,
-    brushesRejected = 0,
-    callbacks = 0,
-    roughnessVerified = 0,
-    roughnessImproved = 0,
-    roughnessWorsened = 0,
-    roughnessNeutral = 0,
-    roughnessImprovementM = 0,
-    roughnessWorseningM = 0,
-    centerRaised = 0,
-    centerLowered = 0,
-    historyRecoveredCells = 0,
-    historyRecoveredDepthM = 0,
-    protectedCellsMarked = 0,
-    protectionSkips = 0,
-    workAreaGeometrySamples = 0,
-    minWorkAreaWidthM = nil,
-    maxWorkAreaWidthM = 0,
-    minWorkAreaDepthM = nil,
-    maxWorkAreaDepthM = 0,
-    activeCombinationMarks = 0,
-    activeCombinationQueries = 0,
-    activeCombinationHits = 0,
-    physicalWorkAreaCalls = 0,
-    changedWorkAreaCalls = 0,
-    repeatWorkAreaCalls = 0,
-    areaPositiveCalls = 0,
-    preSuperActiveMarks = 0,
-    changedAreaUnits = 0,
-    processedAreaUnits = 0,
-    repeatAreaUnits = 0
-}
+local function newStats()
+    return {
+        workAreaCalls = 0,
+        workedAreaCalls = 0,
+        coveragePoints = 0,
+        stampSkips = 0,
+        brushesEnqueued = 0,
+        brushesRejected = 0,
+        callbacks = 0,
+        roughnessVerified = 0,
+        roughnessImproved = 0,
+        roughnessWorsened = 0,
+        roughnessNeutral = 0,
+        roughnessImprovementM = 0,
+        roughnessWorseningM = 0,
+        centerRaised = 0,
+        centerLowered = 0,
+        historyRecoveredCells = 0,
+        historyRecoveredDepthM = 0,
+        protectedCellsMarked = 0,
+        protectionSkips = 0,
+        workAreaGeometrySamples = 0,
+        minWorkAreaWidthM = nil,
+        maxWorkAreaWidthM = 0,
+        minWorkAreaDepthM = nil,
+        maxWorkAreaDepthM = 0,
+        activeCombinationMarks = 0,
+        activeCombinationQueries = 0,
+        activeCombinationHits = 0,
+        physicalWorkAreaCalls = 0,
+        changedWorkAreaCalls = 0,
+        repeatWorkAreaCalls = 0,
+        areaPositiveCalls = 0,
+        preSuperActiveMarks = 0,
+        changedAreaUnits = 0,
+        processedAreaUnits = 0,
+        repeatAreaUnits = 0
+    }
+end
+
+function Recovery.resetRuntimeState()
+    Recovery.processedStamps = {}
+    Recovery.pendingStamps = {}
+    Recovery.protectedCells = {}
+    Recovery.activeCombinationUntil = setmetatable({}, { __mode = "k" })
+    Recovery._lastStampCleanupMs = 0
+    Recovery.stats = newStats()
+end
+
+if Recovery.stats == nil then
+    Recovery.resetRuntimeState()
+end
 
 local function enabled()
     return RealismExtensionsConfig ~= nil
