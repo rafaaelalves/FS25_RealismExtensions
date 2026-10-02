@@ -21,6 +21,14 @@ function TerrainDeformation.new(terrain)
         self.smoothing = true
     end
 
+    function d:setHeightTarget(minY,maxY,nx,ny,nz,distance)
+        self.heightTarget={minY=minY,maxY=maxY,nx=nx,ny=ny,nz=nz,d=distance}
+    end
+
+    function d:enableSetDeformationMode()
+        self.setMode=true
+    end
+
     function d:setAdditiveHeightChangeAmount(value)
         self.depth = value
     end
@@ -61,6 +69,12 @@ g_terrainDeformationQueue = {
             local key = tostring(brush.x) .. ":" .. tostring(brush.z)
             if deformation.smoothing then
                 heights[key] = (heights[key] or 10) + 0.002
+            elseif deformation.setMode and deformation.heightTarget ~= nil then
+                local t=deformation.heightTarget
+                local targetY=-(t.nx*brush.x+t.nz*brush.z+t.d)/t.ny
+                local current=heights[key] or 10
+                local delta=math.max(-deformation.depth,math.min(deformation.depth,targetY-current))
+                heights[key]=current+delta
             else
                 heights[key] = (heights[key] or 10) + deformation.depth
             end
@@ -252,3 +266,35 @@ assert(sw.stats.recoverySmoothSamples == 1)
 assert(sw.stats.recoverySmoothRaisedSamples == 1)
 assert(sw.stats.recoverySmoothMaxDeltaM > 0.0019)
 print("terrain_writer_smoothing_harness: OK")
+
+
+-- v16 LEVEL mode must be genuinely bidirectional and preserve the supplied
+-- local slope target instead of using erosive smoothing.
+heights["60:60"]=9.95
+heights["61:60"]=10.05
+local lw=RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,maxJobsPerFrame=4,maxBrushesPerJob=4,
+    depthBucketM=0.0005,minDepthM=0.0004
+})
+local target={key="T1",minY=10,maxY=10,nx=0,ny=1,nz=0,d=-10}
+local deltas={}
+assert(lw:enqueue({
+    x=60,z=60,mode="LEVEL",levelAmountM=0.03,levelTarget=target,
+    radiusM=0.5,hardness=0.3,strength=0.5,source="RECOVERY",
+    probeRadiusM=0.4,onApplied=function(state,deltaY) deltas[#deltas+1]=deltaY end
+}))
+assert(lw:enqueue({
+    x=61,z=60,mode="LEVEL",levelAmountM=0.03,levelTarget=target,
+    radiusM=0.5,hardness=0.3,strength=0.5,source="RECOVERY",
+    probeRadiusM=0.4,onApplied=function(state,deltaY) deltas[#deltas+1]=deltaY end
+}))
+local lb,lj=lw:flush()
+assert(lb==2 and lj==1)
+assert(created[#created].setMode==true)
+assert(created[#created].heightTarget~=nil)
+assert(deltas[1]>0 and deltas[2]<0)
+assert(lw.stats.recoveryLevelJobs==1)
+assert(lw.stats.recoveryLevelSamples==2)
+assert(lw.stats.recoveryLevelRaisedSamples==1)
+assert(lw.stats.recoveryLevelLoweredSamples==1)
+print("terrain_writer_level_harness: OK")
