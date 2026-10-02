@@ -48,9 +48,13 @@ Validated foundation now includes:
 11. native GIANTS crawler/track footprint.
 12. PLAYER / GIANTS_AI / COURSEPLAY parity validation.
 13. True AI Tracks (`FS25_aiTracks`) source/runtime audit and retire/coexist/bridge ownership decision.
-14. lazy physical reconciliation of SpatialHistory after external terrain edits.
-15. SoilMassTransport redesign with measured mass realization.
-16. underbody/high-centering and later terrain-interaction research.
+14. RecoveryAgent / ownership-zone contract.
+15. NPC/other-farmer field recovery.
+16. natural-relaxation scheduler.
+17. public/municipal maintenance scheduler.
+18. lazy physical reconciliation of SpatialHistory after external terrain edits.
+19. SoilMassTransport redesign with measured mass realization.
+20. underbody/high-centering and later terrain-interaction research.
 
 See `TERRAIN_EVOLUTION_PLAN.md` for dependencies, acceptance criteria and ownership boundaries.
 
