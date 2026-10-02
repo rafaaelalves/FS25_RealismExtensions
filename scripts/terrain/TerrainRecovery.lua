@@ -123,6 +123,21 @@ local function stampAvailable(key, nowMs)
         or nowMs - last >= Recovery.DEFAULTS.passageCooldownMs
 end
 
+local function cleanupOldStamps(nowMs)
+    if nowMs <= 0 then return end
+    local lastCleanup = Recovery._lastStampCleanupMs or 0
+    if nowMs - lastCleanup < 10000 then return end
+    Recovery._lastStampCleanupMs = nowMs
+    local maxAge = math.max(20000, Recovery.DEFAULTS.passageCooldownMs * 4)
+    for key, stampMs in pairs(Recovery.processedStamps) do
+        if Recovery.pendingStamps[key] ~= true
+            and type(stampMs) == "number"
+            and nowMs - stampMs > maxAge then
+            Recovery.processedStamps[key] = nil
+        end
+    end
+end
+
 local function recoverWorkedArea(vehicle, workArea, realArea)
     if not enabled() or (tonumber(realArea) or 0) <= 0 then return end
 
@@ -149,6 +164,7 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
         or Recovery.DEFAULTS.shallowMaxHistoryRecoveryM
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+    cleanupOldStamps(nowMs)
     local points = buildCoveragePoints(g, radius)
     Recovery.stats.coveragePoints = Recovery.stats.coveragePoints + #points
 
