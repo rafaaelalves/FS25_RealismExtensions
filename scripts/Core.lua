@@ -100,7 +100,9 @@ function RealismExtensionsCore:update(dt)
             self.terrainDiagElapsedMs = (self.terrainDiagElapsedMs or 0)
                 + math.max(tonumber(dt) or 0, 0)
 
-            if self.terrainDiagElapsedMs >= 5000 then
+            local diagConfig = RealismExtensionsConfig.diagnostics or {}
+            local diagWindowMs = math.max(1000, tonumber(diagConfig.windowMs) or 5000)
+            if self.terrainDiagElapsedMs >= diagWindowMs then
                 self.terrainDiagElapsedMs = 0
                 local runtime = RealismExtensionsTerrainRuntime
                 local writer = runtime.writer
@@ -159,8 +161,10 @@ function RealismExtensionsCore:update(dt)
                         r.repeatAreaUnits or 0
                     ))
 
-                    RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainWindow 5s | work=%d changed=%d repeat=%d processedArea=%.0f repeatArea=%.0f smooth=%d callbacks=%d improved=%d worsened=%d rutBlocked=%d protected=%d rutAccepted=%d",
+                    if diagConfig.causalWindows ~= false then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainWindow %dms | work=%d changed=%d repeat=%d processedArea=%.0f repeatArea=%.0f smooth=%d callbacks=%d improved=%d worsened=%d rutBlocked=%d protected=%d rutAccepted=%d",
+                        diagWindowMs,
                         window.work or 0,
                         window.changed or 0,
                         window.repeatWork or 0,
@@ -173,7 +177,8 @@ function RealismExtensionsCore:update(dt)
                         window.rutBlocked or 0,
                         window.protected or 0,
                         window.rutAccepted or 0
-                    ))
+                        ))
+                    end
                 end
 
                 if RealismExtensionsTerrainPerformance ~= nil then
@@ -270,7 +275,8 @@ function RealismExtensionsCore:update(dt)
                     )
                 end
 
-                if telemetry ~= nil
+                if diagConfig.writerAttribution ~= false
+                    and telemetry ~= nil
                     and (#(window.writers or {}) > 0
                         or #(window.rootWriters or {}) > 0) then
                     RealismExtensionsDiagnostics.verbose(
