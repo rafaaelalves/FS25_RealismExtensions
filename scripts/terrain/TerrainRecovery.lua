@@ -85,7 +85,10 @@ Recovery.stats = Recovery.stats or {
     changedWorkAreaCalls = 0,
     repeatWorkAreaCalls = 0,
     areaPositiveCalls = 0,
-    preSuperActiveMarks = 0
+    preSuperActiveMarks = 0,
+    changedAreaUnits = 0,
+    processedAreaUnits = 0,
+    repeatAreaUnits = 0
 }
 
 local function enabled()
@@ -442,6 +445,17 @@ function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
     if physicallyWorking then
         Recovery.stats.physicalWorkAreaCalls =
             Recovery.stats.physicalWorkAreaCalls + 1
+
+        local changedUnits = math.max(0, tonumber(realArea) or 0)
+        local processedUnits = math.max(0, tonumber(area) or 0)
+        Recovery.stats.changedAreaUnits =
+            Recovery.stats.changedAreaUnits + changedUnits
+        Recovery.stats.processedAreaUnits =
+            Recovery.stats.processedAreaUnits + processedUnits
+        if changedUnits <= 0 and processedUnits > 0 then
+            Recovery.stats.repeatAreaUnits =
+                Recovery.stats.repeatAreaUnits + processedUnits
+        end
 
         -- Refresh if the pre-super speed state was unavailable/stale.
         if not preWorking then
