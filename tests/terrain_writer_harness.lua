@@ -1,5 +1,6 @@
 local created = {}
 local queued = {}
+local heights = {}
 
 TerrainDeformation = {
     STATE_SUCCESS = 1,
@@ -63,7 +64,6 @@ function TerrainDeformation.new(terrain)
     return d
 end
 
-local heights = {}
 function getTerrainHeightAtWorldPos(terrain, x, y, z)
     local key = tostring(x) .. ":" .. tostring(z)
     return heights[key] or 10
@@ -262,7 +262,6 @@ assert(sw:enqueue({
     end
 }))
 local sb,sj = sw:flush()
-print("DEBUG_MACHINE_SMOOTH", sb, sj, sw.stats.failedJobs, sw.stats.recoveryMachineSmoothJobs, sw.stats.recoveryMachineSmoothBrushes, tostring(sw.stats.lastSubmitError))
 assert(sb == 1 and sj == 1)
 assert(created[#created].smoothing == true)
 assert(created[#created].additive ~= true)
