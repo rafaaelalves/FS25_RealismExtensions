@@ -102,7 +102,7 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v20 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm nativeSmooth=%d fallback=%d validate=%d/%d/%d activeMarks=%d activeQueries=%d activeHits=%d",
+                        "TerrainRecovery v21 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.coveragePoints or 0,
@@ -126,11 +126,8 @@ function RealismExtensionsCore:update(dt)
                         r.maxWorkAreaWidthM or 0,
                         r.minWorkAreaDepthM or 0,
                         r.maxWorkAreaDepthM or 0,
-                        writerStats.recoveryNativeConfigCalls or 0,
-                        writerStats.recoveryNativeConfigFallbacks or 0,
-                        writerStats.recoverySmoothValidationAttempts or 0,
-                        writerStats.recoverySmoothValidationSuccess or 0,
-                        writerStats.recoverySmoothValidationFailures or 0,
+                        writerStats.recoveryMachineSmoothJobs or 0,
+                        writerStats.recoveryMachineSmoothBrushes or 0,
                         r.activeCombinationMarks or 0,
                         r.activeCombinationQueries or 0,
                         r.activeCombinationHits or 0
@@ -228,6 +225,40 @@ function RealismExtensionsCore:update(dt)
                     RealismExtensionsDiagnostics.verbose(
                         "SurfaceResponse runtime | seen/brushes/appliedDepthM "
                         .. table.concat(parts, " ")
+                    )
+                end
+
+                local writerParts = {}
+                local rootWriterParts = {}
+                for key, value in pairs(d) do
+                    if type(value) == "number" and value > 0 then
+                        if string.sub(key, 1, 14) == "rutWriterRoot_" then
+                            rootWriterParts[#rootWriterParts + 1] = {
+                                name = string.sub(key, 15),
+                                count = value
+                            }
+                        elseif string.sub(key, 1, 10) == "rutWriter_" then
+                            writerParts[#writerParts + 1] = {
+                                name = string.sub(key, 11),
+                                count = value
+                            }
+                        end
+                    end
+                end
+                local function sortWriters(a,b) return a.count > b.count end
+                table.sort(writerParts, sortWriters)
+                table.sort(rootWriterParts, sortWriters)
+                local function formatTopWriters(items)
+                    local parts = {}
+                    for i=1,math.min(5,#items) do
+                        parts[#parts+1] = string.format("%s=%d",items[i].name,items[i].count)
+                    end
+                    return table.concat(parts," ")
+                end
+                if #writerParts > 0 or #rootWriterParts > 0 then
+                    RealismExtensionsDiagnostics.verbose(
+                        "RutWriters runtime | vehicles=[" .. formatTopWriters(writerParts)
+                        .. "] roots=[" .. formatTopWriters(rootWriterParts) .. "]"
                     )
                 end
 
