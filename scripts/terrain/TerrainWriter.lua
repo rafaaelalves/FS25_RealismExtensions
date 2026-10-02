@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 6
+Writer.VERSION = 7
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -68,6 +68,8 @@ function Writer.new(options)
             recoverySmoothValidationAttempts = 0,
             recoverySmoothValidationSuccess = 0,
             recoverySmoothValidationFailures = 0,
+            recoveryNativeConfigCalls = 0,
+            recoveryNativeConfigFallbacks = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -262,6 +264,64 @@ local function configureDeformationConstraints(deformation)
     end
 end
 
+local function configureNativeLandscapingConstraints(deformation)
+    -- Match Landscaping:sculpt() for SMOOTH. Unlike RE rut writing, native
+    -- Amenizar does NOT set outside-area constraints and does not zero these
+    -- limits.
+    if type(deformation.setBlockedAreaMaxDisplacement) == "function" then
+        deformation:setBlockedAreaMaxDisplacement(0.01)
+    end
+    if type(deformation.setDynamicObjectCollisionMask) == "function"
+        and CollisionMask ~= nil and CollisionMask.LANDSCAPING ~= nil then
+        deformation:setDynamicObjectCollisionMask(CollisionMask.LANDSCAPING)
+    end
+    if type(deformation.setDynamicObjectMaxDisplacement) == "function" then
+        deformation:setDynamicObjectMaxDisplacement(0.03)
+    end
+    if type(deformation.setBlockedAreaMap) == "function"
+        and g_densityMapHeightManager ~= nil
+        and g_densityMapHeightManager.placementCollisionMap ~= nil then
+        deformation:setBlockedAreaMap(
+            g_densityMapHeightManager.placementCollisionMap, 0
+        )
+    end
+end
+
+local function configureRuntimeNativeSmooth(deformation, brush)
+    -- Prefer the actual Landscaping function loaded by this FS25 build. This
+    -- removes our assumptions about native hardness/height-change semantics.
+    if Landscaping ~= nil
+        and type(Landscaping.assignSmoothingParameters) == "function" then
+        local unit = tonumber(Landscaping.TERRAIN_UNIT) or 2
+        local proxy = {
+            terrainUnit = unit,
+            halfTerrainUnit = unit * 0.5,
+            modifiedAreas = {}
+        }
+        setmetatable(proxy, { __index = Landscaping })
+        local circle = Landscaping.BRUSH_SHAPE ~= nil
+            and Landscaping.BRUSH_SHAPE.CIRCLE or 2
+        local ok = pcall(
+            Landscaping.assignSmoothingParameters,
+            proxy,
+            deformation,
+            brush.x, brush.z,
+            brush.radiusM,
+            brush.strength or 1.0,
+            circle
+        )
+        if ok then return true end
+    end
+
+    -- Harness/compat fallback matching known GIANTS semantics.
+    deformation:setAdditiveHeightChangeAmount(0.05)
+    deformation:addSoftCircleBrush(
+        brush.x, brush.z, brush.radiusM, 0.20, brush.strength or 1.0
+    )
+    deformation:enableSmoothingMode()
+    return false
+end
+
 function Writer:_submitBatch(depthM, brushes, mode)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
@@ -273,19 +333,37 @@ function Writer:_submitBatch(depthM, brushes, mode)
     if deformation == nil then return false, "could not allocate TerrainDeformation" end
 
     local amount = math.abs(depthM)
-    if mode == "SMOOTH" then
+    local nativeRecoverySmooth = mode == "SMOOTH"
+        and brushes ~= nil and brushes[1] ~= nil
+        and brushes[1].source == "RECOVERY"
+
+    if nativeRecoverySmooth then
+        if type(deformation.enableSmoothingMode) ~= "function" then
+            deformation:delete()
+            return false, "terrain smoothing mode unavailable"
+        end
+        local usedRuntime = configureRuntimeNativeSmooth(deformation, brushes[1])
+        self.stats.recoveryNativeConfigCalls =
+            self.stats.recoveryNativeConfigCalls + 1
+        if not usedRuntime then
+            self.stats.recoveryNativeConfigFallbacks =
+                self.stats.recoveryNativeConfigFallbacks + 1
+        end
+        configureNativeLandscapingConstraints(deformation)
+    elseif mode == "SMOOTH" then
         if type(deformation.enableSmoothingMode) ~= "function" then
             deformation:delete()
             return false, "terrain smoothing mode unavailable"
         end
         deformation:setAdditiveHeightChangeAmount(amount)
         deformation:enableSmoothingMode()
+        configureDeformationConstraints(deformation)
     else
         deformation:enableAdditiveDeformationMode()
         local signedHeight = mode == "RAISE" and amount or -amount
         deformation:setAdditiveHeightChangeAmount(signedHeight)
+        configureDeformationConstraints(deformation)
     end
-    configureDeformationConstraints(deformation)
 
     local heightSamples = nil
     local roughnessSamples = nil
@@ -303,19 +381,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
         end
     end
 
-    for _, brush in ipairs(brushes) do
-        if mode == "SMOOTH" and brush.source == "RECOVERY" then
-            -- Construction Amenizar calls addSoftCircleBrush with the native
-            -- five-argument form. Keep this path byte-for-byte equivalent in
-            -- shape semantics rather than forcing NO_TERRAIN_BRUSH explicitly.
-            deformation:addSoftCircleBrush(
-                brush.x,
-                brush.z,
-                brush.radiusM,
-                brush.hardness,
-                brush.strength or 1.0
-            )
-        else
+    if not nativeRecoverySmooth then
+        for _, brush in ipairs(brushes) do
             deformation:addSoftCircleBrush(
                 brush.x,
                 brush.z,
@@ -598,9 +665,6 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
-
-    local nativeRecoverySmooth = mode == "SMOOTH"
-        and callbackTarget.source == "RECOVERY"
 
     if nativeRecoverySmooth then
         -- Native Construction Amenizar validates the *same* deformation first
