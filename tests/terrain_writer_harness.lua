@@ -262,7 +262,7 @@ assert(sw:enqueue({
     end
 }))
 local sb,sj = sw:flush()
-print("DEBUG_MACHINE_SMOOTH", sb, sj, sw.stats.failedJobs, sw.stats.recoveryMachineSmoothJobs, sw.stats.recoveryMachineSmoothBrushes)
+print("DEBUG_MACHINE_SMOOTH", sb, sj, sw.stats.failedJobs, sw.stats.recoveryMachineSmoothJobs, sw.stats.recoveryMachineSmoothBrushes, tostring(sw.stats.lastSubmitError))
 assert(sb == 1 and sj == 1)
 assert(created[#created].smoothing == true)
 assert(created[#created].additive ~= true)
