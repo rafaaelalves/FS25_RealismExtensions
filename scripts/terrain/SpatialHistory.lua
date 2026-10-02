@@ -1,7 +1,7 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 3
+History.VERSION = 4
 
 function History.new(options)
     options = options or {}
@@ -139,6 +139,82 @@ local function pointInParallelogram(px, pz, xs, zs, xw, zw, xh, zh)
     local a = (dx * vz - dz * vx) / det
     local b = (ux * dz - uz * dx) / det
     return a >= -0.02 and a <= 1.02 and b >= -0.02 and b <= 1.02
+end
+
+function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, options)
+    options = options or {}
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local cooldownMs = math.max(0, tonumber(options.cooldownMs) or 1500)
+    local nowMs = tonumber(options.nowMs) or 0
+    local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
+
+    local xo, zo = xw + xh - xs, zw + zh - zs
+    local minX = math.min(xs, xw, xh, xo)
+    local maxX = math.max(xs, xw, xh, xo)
+    local minZ = math.min(zs, zw, zh, zo)
+    local maxZ = math.max(zs, zw, zh, zo)
+    local minIx, minIz = self:getCellCoordinates(minX, minZ)
+    local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
+
+    local out = {}
+    for ix = minIx, maxIx do
+        if #out >= maxCells then break end
+        for iz = minIz, maxIz do
+            if #out >= maxCells then break end
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local cell = self.cells[key]
+            local h = cell ~= nil and cell.history or nil
+            local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+            local lastMs = h ~= nil and tonumber(h._lastRecoveryMs) or nil
+            local eligibleByTime = lastMs == nil or nowMs <= 0
+                or nowMs - lastMs >= cooldownMs
+            local x, z = ix * self.cellSizeM, iz * self.cellSizeM
+
+            if rut >= minRutM and eligibleByTime
+                and pointInParallelogram(x, z, xs, zs, xw, zw, xh, zh) then
+                out[#out + 1] = {
+                    key = key,
+                    x = x,
+                    z = z,
+                    rutDepthM = rut
+                }
+            end
+        end
+    end
+    return out
+end
+
+function History:applyRecoveryAt(x, z, raiseM, options)
+    options = options or {}
+    local key = self:getKey(x, z)
+    local cell = self.cells[key]
+    local h = cell ~= nil and cell.history or nil
+    if h == nil then return 0 end
+
+    local rut = math.max(0, tonumber(h.rutDepthM) or 0)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local requested = math.max(0, tonumber(raiseM) or 0)
+    if rut < minRutM or requested <= 0 then return 0 end
+
+    local applied = math.min(rut, requested)
+    local remaining = math.max(0, rut - applied)
+    local ratio = rut > 0 and remaining / rut or 0
+
+    h.rutDepthM = remaining
+    h.longitudinalShearDistanceM =
+        (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+    h.lateralShearDistanceM =
+        (tonumber(h.lateralShearDistanceM) or 0) * ratio
+    h.slipExcavationDistanceM =
+        (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+    h.deformationExposure =
+        (tonumber(h.deformationExposure) or 0) * ratio
+    h._lastRecoveryMs = tonumber(options.nowMs) or 0
+
+    self.touchCounter = self.touchCounter + 1
+    cell.touch = self.touchCounter
+    touchCell(self, key, cell)
+    return applied
 end
 
 function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
