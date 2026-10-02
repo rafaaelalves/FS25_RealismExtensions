@@ -24,6 +24,7 @@
         <sourceFile filename="scripts/terrain/TerrainPersistence.lua"/>
         <sourceFile filename="scripts/terrain/SoilMassTransportModel.lua"/>
         <sourceFile filename="scripts/terrain/TerrainPerformance.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainWorkContext.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
