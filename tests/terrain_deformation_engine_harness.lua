@@ -100,8 +100,12 @@ RealismExtensionsTerrainRuntime = {
 
 RealismExtensionsTerrainRecovery = {
     protected = false,
+    active = false,
     isRecentlyCultivated = function(x,z,nowMs)
         return RealismExtensionsTerrainRecovery.protected == true
+    end,
+    isRutGenerationSuppressed = function(vehicle,nowMs)
+        return RealismExtensionsTerrainRecovery.active == true
     end
 }
 
@@ -164,6 +168,20 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
+
+-- An actively working repair implement suppresses RE rut writing for the whole
+-- combination before spatial protection is even needed.
+bodySpeedKph = 5
+RealismExtensionsTerrainRecovery.active = true
+wheelA.testX = 1.0
+wheelB.testX = 1.5
+local beforeActiveContexts = contexts
+local beforeActiveEnqueued = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeActiveContexts + 2)
+assert(enqueued == beforeActiveEnqueued)
+assert((RealismExtensionsTerrainRuntime.stats.activeCultivatorRutSkips or 0) >= 2)
+RealismExtensionsTerrainRecovery.active = false
 
 -- A freshly cultivated strip owns its final geometry. Wheel/Mud physics may
 -- continue upstream, but RE must not write a new persistent rut in that patch.
