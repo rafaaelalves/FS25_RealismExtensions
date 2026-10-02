@@ -278,6 +278,18 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     diagCount("samplesProcessed", 1)
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+
+    -- A working soil-repair implement owns the persistent terrain state for
+    -- the complete tractor/implement combination. Keep wheel context,
+    -- footprint, tracks and upstream physics alive; suppress only RE's rut
+    -- history + TerrainDeformation writes while real cultivation is occurring.
+    if RealismExtensionsTerrainRecovery ~= nil
+        and type(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed) == "function"
+        and RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(vehicle, nowMs) then
+        diagCount("activeCultivatorRutSkips", 1)
+        return false
+    end
+
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.isRecentlyCultivated) == "function"
         and RealismExtensionsTerrainRecovery.isRecentlyCultivated(x,z,nowMs) then
