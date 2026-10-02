@@ -7,6 +7,7 @@ RealismExtensionsConfig = {
     },
     modules = {
         TerrainDeformation = true,
-        TerrainRecovery = true
+        TerrainRecovery = true,
+        SoilMassTransport = false
     }
 }
