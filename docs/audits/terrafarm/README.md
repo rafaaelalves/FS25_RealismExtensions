@@ -146,6 +146,8 @@ The initial audit above remains valid. It is now supplemented by focused documen
 - `TERRAIN_PIPELINE.md` — TerrainDeformation operation classes, constraints, preview/apply lifecycle, callback ownership, material-volume accounting, density side effects and AI navigation dirtying.
 - `PERSISTENCE_AREAS_NETWORKING.md` — savegame/network model, persistent path/polygon landscaping areas, target planes, map resources and initial client synchronization.
 - `INTEGRATION_OPPORTUNITIES.md` — compatibility tiers, RC/RE ownership arbitration, event-driven adapters, SpatialHistory strategy, profile registries and proposed runtime tests.
+- `MACHINES_ADDON_EXTENSIBILITY.md` — how the official addon scales third-party equipment through declarative metadata rather than core hard-coding.
+- `RISK_DECISION_MATRIX.md` — integration risk matrix and recommended boundaries.
 
 ### New high-value conclusions
 
