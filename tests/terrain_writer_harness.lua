@@ -36,6 +36,25 @@ function TerrainDeformation.new(terrain)
         }
     end
 
+    function d:apply(preview, callbackName, target)
+        self.applyCalls = (self.applyCalls or 0) + 1
+        self.lastApplyPreview = preview
+        if preview == true then
+            target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0.125, nil)
+        else
+            for _, brush in ipairs(self.brushes) do
+                local key = tostring(brush.x) .. ":" .. tostring(brush.z)
+                if self.smoothing then
+                    heights[key] = (heights[key] or 10) + 0.002
+                else
+                    heights[key] = (heights[key] or 10) + self.depth
+                end
+            end
+            target[callbackName](target, TerrainDeformation.STATE_SUCCESS, 0.125, nil)
+        end
+        return true
+    end
+
     function d:delete()
         self.deleted = true
     end
@@ -57,6 +76,7 @@ g_asyncTaskManager = {
 g_terrainDeformationQueue = {
     queueJob = function(self, deformation, preview, callbackName, target)
         queued[#queued + 1] = deformation
+        deformation.lastQueuePreview = preview
         for _, brush in ipairs(deformation.brushes) do
             local key = tostring(brush.x) .. ":" .. tostring(brush.z)
             if deformation.smoothing then
@@ -251,4 +271,11 @@ assert(sw.stats.recoverySmoothJobs == 1)
 assert(sw.stats.recoverySmoothSamples == 1)
 assert(sw.stats.recoverySmoothRaisedSamples == 1)
 assert(sw.stats.recoverySmoothMaxDeltaM > 0.0019)
+assert(created[#created].applyCalls == 1)
+assert(created[#created].lastApplyPreview == true)
+assert(created[#created].lastQueuePreview == false)
+assert(sw.stats.recoverySmoothValidationAttempts == 1)
+assert(sw.stats.recoverySmoothValidationSuccess == 1)
+assert(sw.stats.recoverySmoothValidationFailures == 0)
+assert(created[#created].brushes[1].brush == nil)
 print("terrain_writer_smoothing_harness: OK")
