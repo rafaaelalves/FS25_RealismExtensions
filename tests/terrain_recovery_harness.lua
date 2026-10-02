@@ -96,6 +96,9 @@ assert(d.repeatWorkAreaCalls > 0)
 assert(d.areaPositiveCalls > 0)
 assert(d.physicalWorkAreaCalls > 0)
 assert(d.preSuperActiveMarks > 0)
+assert(d.processedAreaUnits >= 24)
+assert(d.changedAreaUnits == 12)
+assert(d.repeatAreaUnits >= 12)
 assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,10800)==true)
 
 -- Same immediate physical patch must still obey the stamp cooldown.
