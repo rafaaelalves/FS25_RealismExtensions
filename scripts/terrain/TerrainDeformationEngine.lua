@@ -274,27 +274,6 @@ function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
     end
 end
 
-local function getVehicleTelemetryLabel(vehicle)
-    if vehicle == nil then return "nil" end
-    local name = nil
-    if type(vehicle.getName) == "function" then
-        local ok, value = pcall(vehicle.getName, vehicle)
-        if ok and type(value) == "string" and value ~= "" then name = value end
-    end
-    if name == nil and type(vehicle.configFileName) == "string" then
-        name = vehicle.configFileName:match("([^/\\]+)%.xml$") or vehicle.configFileName
-    end
-    return tostring(name or vehicle.typeName or "vehicle"):gsub("[^%w_%-]","_")
-end
-
-local function getRootVehicleSafe(vehicle)
-    if vehicle ~= nil and type(vehicle.getRootVehicle) == "function" then
-        local ok, root = pcall(vehicle.getRootVehicle, vehicle)
-        if ok and root ~= nil then return root end
-    end
-    return vehicle
-end
-
 function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin, travelDirX, travelDirZ)
     diagCount("samplesProcessed", 1)
 
@@ -424,8 +403,15 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         )
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
-        diagCount("rutWriter_" .. getVehicleTelemetryLabel(vehicle), 1)
-        diagCount("rutWriterRoot_" .. getVehicleTelemetryLabel(getRootVehicleSafe(vehicle)), 1)
+        local workApi = RealismExtensionsTerrainWorkContext
+        local vehicleLabel = workApi ~= nil
+            and workApi.getVehicleLabel(vehicle) or "vehicle"
+        local rootVehicle = workApi ~= nil
+            and workApi.getCombinationRoot(vehicle) or vehicle
+        local rootLabel = workApi ~= nil
+            and workApi.getVehicleLabel(rootVehicle) or vehicleLabel
+        diagCount("rutWriter_" .. vehicleLabel, 1)
+        diagCount("rutWriterRoot_" .. rootLabel, 1)
         diagCount("surfaceBrushes_" .. tostring(surface.category or "UNKNOWN"), 1)
         diagCount("surfaceAppliedDepth_" .. tostring(surface.category or "UNKNOWN"), appliedDepth)
         if stationaryWheelspin == true then
