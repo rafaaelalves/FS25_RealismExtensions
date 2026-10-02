@@ -71,6 +71,7 @@ g_terrainDeformationQueue = {
 }
 
 RealismExtensionsConfig = {
+    modules = { SoilMassTransport = true },
     diagnostics = {
         verbose = true,
         expensiveGeometry = true
