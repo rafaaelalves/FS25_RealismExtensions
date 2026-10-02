@@ -343,11 +343,18 @@ function Model.compute(context, footprint, history, dtMs, options)
     local observedSinkM = validNumber(sinkDepthM) and math.max(0, sinkDepthM) or 0
     local sinkPlasticTransfer01, wetPlasticity01, sinkSlipActivation01 =
         computePlasticSinkTransfer(context, options)
-    local persistentSinkM = observedSinkM * sinkPlasticTransfer01
+    local persistentSinkRawM = observedSinkM * sinkPlasticTransfer01
 
     -- Mud owns instantaneous sink/mobility. RE owns persistent heightfield
-    -- geometry. A transient radius reduction therefore informs plastic rutting
-    -- but is not an automatic permanent lower bound.
+    -- geometry. The transferred plastic component is therefore still bounded
+    -- by RE's surface-specific slip geometry cap. Without this clamp an extreme
+    -- instantaneous Mud sink could bypass SurfaceResponse's absolute rut limit
+    -- and permanently write a much deeper heightfield rut.
+    local persistentSinkM = math.min(
+        persistentSinkRawM,
+        maxSlipCapacity
+    )
+
     local rutCapacityM = math.max(
         staticRutCapacityM,
         slipRutCapacityM,
@@ -503,6 +510,8 @@ function Model.compute(context, footprint, history, dtMs, options)
 
         observedSinkDepthM = observedSinkM,
         persistentSinkDepthM = persistentSinkM,
+        persistentSinkRawDepthM = persistentSinkRawM,
+        persistentSinkCapM = maxSlipCapacity,
         sinkPlasticTransfer01 = sinkPlasticTransfer01,
         wetPlasticity01 = wetPlasticity01,
         sinkSlipActivation01 = sinkSlipActivation01,
