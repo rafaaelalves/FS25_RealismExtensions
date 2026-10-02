@@ -120,3 +120,19 @@ For TerrainRecovery SMOOTH specifically, do not change v22 before its runtime te
 - Should future WorkFootprint sample configured/derived nodes across implement width similarly to TerraFarm rather than regenerate a generic grid per call?
 - Can target-plane recovery use preview-before-apply to enforce a maximum physically predicted displacement?
 - Which operation telemetry belongs in the generic TerrainOperation layer versus recovery policy?
+
+## Additional audit: explicit machine availability chain
+
+TerraFarm does not infer "working" from terrain output. Its `Machine:getCanActivateMachine()` and `Machine:getIsAvailable()` separate prerequisites such as:
+- global/mod enabled state;
+- per-machine enabled/active state;
+- access/permission;
+- powered/turned-on requirements when applicable;
+- fill/capacity constraints;
+- configured driving-direction policy.
+
+Only after availability is true does `Machine:onUpdate()` use physical work-area contact (`isAreaNodeActive`) and the 50 ms cadence to execute terrain input.
+
+This is a strong precedent for RE's future `WorkDetector`: represent work eligibility as explicit facts rather than infer it from a downstream result like changed field area. The detector should be able to explain *why* work is active/inactive with reason counters suitable for diagnostics.
+
+Do not retrofit the full abstraction before v22 validation. The current GIANTS Cultivator work-state path is the minimal targeted fix; extraction should follow runtime proof.
