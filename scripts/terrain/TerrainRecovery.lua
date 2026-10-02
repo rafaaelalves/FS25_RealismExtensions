@@ -1,53 +1,56 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 4
+Recovery.VERSION = 5
 Recovery.DEFAULTS = {
-    -- Recovery now uses the same physical TerrainDeformation heightfield API
-    -- as rut creation. TerraFarm's FS25 smoothing path is the precedent:
-    -- TerrainDeformation + enableSmoothingMode + soft terrain brushes.
-    shallowSmoothAmountM = 0.050,
-    deepSmoothAmountM = 0.035,
-    shallowStrength = 0.25,
-    deepStrength = 0.18,
-    shallowRadiusM = 0.50,
-    deepRadiusM = 0.40,
-    brushHardness = 0.25,
+    -- Cultivation repair is a surface-conditioning pass, not a point repair.
+    -- Cover the actual GIANTS work-area footprint uniformly and let native
+    -- TerrainDeformation smoothing reduce local relief over repeated passes.
+    shallowSmoothAmountM = 0.035,
+    deepSmoothAmountM = 0.028,
+    shallowStrength = 0.20,
+    deepStrength = 0.16,
+    shallowRadiusM = 0.55,
+    deepRadiusM = 0.50,
+    brushHardness = 0.22,
+    targetSpacingFactor = 1.15,
+    maxBrushesPerWorkArea = 24,
 
-    -- Work only on RE cells that actually remember a material rut. Candidate
-    -- selection is sparse/depth-first and spatially suppresses overlapping
-    -- brushes so recovery cost scales with damaged ground, not map size.
-    minHistoryRutM = 0.003,
-    historyCooldownMs = 1500,
-    maxCandidatesPerWorkArea = 24,
-    maxBrushesPerWorkArea = 8,
-    brushSpacingFactor = 0.70,
+    -- A moving implement reports overlapping work areas every update. World
+    -- space stamps ensure one physical patch is smoothed once per pass rather
+    -- than being recursively re-selected while the callback is in flight.
+    stampCellSizeM = 0.40,
+    passageCooldownMs = 5000,
 
-    -- One pass is intentionally not a magic reset. Logical recovery is capped
-    -- to the physical rise observed at the rut center and to a fraction of the
-    -- remembered rut, preserving progressive multi-pass field repair.
-    shallowHistoryFraction = 0.35,
+    -- Logical RE history follows verified reduction in physical roughness.
+    -- Center-height sign is deliberately irrelevant: flattening a ridge may
+    -- lower the center while still making the worked surface better.
+    minRoughnessImprovementM = 0.00015,
+    shallowHistoryFraction = 0.30,
     deepHistoryFraction = 0.20,
-    shallowMaxHistoryRecoveryM = 0.020,
-    deepMaxHistoryRecoveryM = 0.012,
-    physicalChangeEpsilonM = 0.00005
+    shallowMaxHistoryRecoveryM = 0.015,
+    deepMaxHistoryRecoveryM = 0.010,
+    minHistoryRutM = 0.003
 }
 
-Recovery.pendingCells = Recovery.pendingCells or {}
+Recovery.processedStamps = Recovery.processedStamps or {}
+Recovery.pendingStamps = Recovery.pendingStamps or {}
 Recovery.stats = Recovery.stats or {
     workAreaCalls = 0,
     workedAreaCalls = 0,
-    candidateCells = 0,
-    selectedCells = 0,
+    coveragePoints = 0,
+    stampSkips = 0,
     brushesEnqueued = 0,
     brushesRejected = 0,
     callbacks = 0,
-    physicalChanged = 0,
-    physicalNoChange = 0,
-    physicalRaisedSamples = 0,
-    physicalLoweredSamples = 0,
-    physicalAbsDeltaM = 0,
-    physicalMaxDeltaM = 0,
+    roughnessVerified = 0,
+    roughnessImproved = 0,
+    roughnessWorsened = 0,
+    roughnessNeutral = 0,
+    roughnessImprovementM = 0,
+    roughnessWorseningM = 0,
+    centerRaised = 0,
+    centerLowered = 0,
     historyRecoveredCells = 0,
     historyRecoveredDepthM = 0
 }
@@ -68,46 +71,56 @@ local function getWorkAreaGeometry(workArea)
     local okH, xh, _, zh = pcall(getWorldTranslation, workArea.height)
     if not okS or not okW or not okH then return nil end
 
+    local ux, uz = xw - xs, zw - zs
+    local vx, vz = xh - xs, zh - zs
+    local widthM = math.sqrt(ux * ux + uz * uz)
+    local depthM = math.sqrt(vx * vx + vz * vz)
+    if widthM < 0.05 or depthM < 0.05 then return nil end
+
     return {
-        xs = xs, zs = zs,
-        xw = xw, zw = zw,
-        xh = xh, zh = zh
+        xs=xs, zs=zs, ux=ux, uz=uz, vx=vx, vz=vz,
+        widthM=widthM, depthM=depthM
     }
 end
 
-local function selectCandidates(candidates, radius, maxCount)
-    table.sort(candidates, function(a, b)
-        if a.rutDepthM == b.rutDepthM then
-            return a.key < b.key
-        end
-        return a.rutDepthM > b.rutDepthM
-    end)
+local function buildCoveragePoints(g, radius)
+    local spacing = math.max(0.20, radius * Recovery.DEFAULTS.targetSpacingFactor)
+    local maxBrushes = math.max(1, Recovery.DEFAULTS.maxBrushesPerWorkArea)
 
-    local selected = {}
-    local minSpacing = math.max(
-        0.10,
-        radius * Recovery.DEFAULTS.brushSpacingFactor
-    )
-    local minSpacingSq = minSpacing * minSpacing
+    local nx = math.max(1, math.ceil(g.widthM / spacing))
+    local nz = math.max(1, math.ceil(g.depthM / spacing))
+    while nx * nz > maxBrushes do
+        spacing = spacing * 1.15
+        nx = math.max(1, math.ceil(g.widthM / spacing))
+        nz = math.max(1, math.ceil(g.depthM / spacing))
+    end
 
-    for _, candidate in ipairs(candidates) do
-        if #selected >= maxCount then break end
-        if Recovery.pendingCells[candidate.key] ~= true then
-            local separated = true
-            for _, existing in ipairs(selected) do
-                local dx = candidate.x - existing.x
-                local dz = candidate.z - existing.z
-                if dx * dx + dz * dz < minSpacingSq then
-                    separated = false
-                    break
-                end
-            end
-            if separated then
-                selected[#selected + 1] = candidate
-            end
+    local points = {}
+    for iz = 1, nz do
+        local b = (iz - 0.5) / nz
+        for ix = 1, nx do
+            local a = (ix - 0.5) / nx
+            points[#points + 1] = {
+                x = g.xs + g.ux * a + g.vx * b,
+                z = g.zs + g.uz * a + g.vz * b
+            }
         end
     end
-    return selected
+    return points
+end
+
+local function stampKey(x, z)
+    local s = math.max(0.10, Recovery.DEFAULTS.stampCellSizeM)
+    local ix = math.floor(x / s + 0.5)
+    local iz = math.floor(z / s + 0.5)
+    return tostring(ix) .. ":" .. tostring(iz)
+end
+
+local function stampAvailable(key, nowMs)
+    if Recovery.pendingStamps[key] == true then return false end
+    local last = Recovery.processedStamps[key]
+    return last == nil or nowMs <= 0
+        or nowMs - last >= Recovery.DEFAULTS.passageCooldownMs
 end
 
 local function recoverWorkedArea(vehicle, workArea, realArea)
@@ -115,8 +128,7 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil or runtime.history == nil or runtime.writer == nil
-        or runtime.history.getRecoveryCandidatesParallelogram == nil
-        or runtime.history.applyRecoveryAt == nil then
+        or runtime.history.applyRecoveryCircle == nil then
         return
     end
 
@@ -125,124 +137,112 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 
     local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
     local deep = spec ~= nil and spec.useDeepMode == true
-
     local radius = deep and Recovery.DEFAULTS.deepRadiusM
         or Recovery.DEFAULTS.shallowRadiusM
     local smoothAmount = deep and Recovery.DEFAULTS.deepSmoothAmountM
         or Recovery.DEFAULTS.shallowSmoothAmountM
     local strength = deep and Recovery.DEFAULTS.deepStrength
         or Recovery.DEFAULTS.shallowStrength
-    local fraction = deep and Recovery.DEFAULTS.deepHistoryFraction
+    local historyFraction = deep and Recovery.DEFAULTS.deepHistoryFraction
         or Recovery.DEFAULTS.shallowHistoryFraction
     local maxHistoryRecovery = deep and Recovery.DEFAULTS.deepMaxHistoryRecoveryM
         or Recovery.DEFAULTS.shallowMaxHistoryRecoveryM
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
-    local candidates = runtime.history:getRecoveryCandidatesParallelogram(
-        g.xs, g.zs, g.xw, g.zw, g.xh, g.zh,
-        {
-            minRutM = Recovery.DEFAULTS.minHistoryRutM,
-            cooldownMs = Recovery.DEFAULTS.historyCooldownMs,
-            nowMs = nowMs,
-            maxCells = Recovery.DEFAULTS.maxCandidatesPerWorkArea
-        }
-    )
+    local points = buildCoveragePoints(g, radius)
+    Recovery.stats.coveragePoints = Recovery.stats.coveragePoints + #points
 
-    Recovery.stats.candidateCells =
-        Recovery.stats.candidateCells + #candidates
-
-    local selected = selectCandidates(
-        candidates,
-        radius,
-        Recovery.DEFAULTS.maxBrushesPerWorkArea
-    )
-    Recovery.stats.selectedCells =
-        Recovery.stats.selectedCells + #selected
-
-    for _, candidate in ipairs(selected) do
-        Recovery.pendingCells[candidate.key] = true
-
-        local key = candidate.key
-        local x, z = candidate.x, candidate.z
-        local rutAtSubmission = candidate.rutDepthM
-
-        local accepted = runtime.writer:enqueue({
-            x = x,
-            z = z,
-            mode = "SMOOTH",
-            smoothAmountM = smoothAmount,
-            radiusM = radius,
-            hardness = Recovery.DEFAULTS.brushHardness,
-            strength = strength,
-            source = "RECOVERY",
-            onApplied = function(state, deltaY)
-                Recovery.pendingCells[key] = nil
-                Recovery.stats.callbacks = Recovery.stats.callbacks + 1
-
-                if type(deltaY) ~= "number" then
-                    Recovery.stats.physicalNoChange =
-                        Recovery.stats.physicalNoChange + 1
-                    return
-                end
-
-                local absDelta = math.abs(deltaY)
-                Recovery.stats.physicalAbsDeltaM =
-                    Recovery.stats.physicalAbsDeltaM + absDelta
-                Recovery.stats.physicalMaxDeltaM =
-                    math.max(Recovery.stats.physicalMaxDeltaM, absDelta)
-
-                if absDelta <= Recovery.DEFAULTS.physicalChangeEpsilonM then
-                    Recovery.stats.physicalNoChange =
-                        Recovery.stats.physicalNoChange + 1
-                    return
-                end
-
-                Recovery.stats.physicalChanged =
-                    Recovery.stats.physicalChanged + 1
-
-                if deltaY < 0 then
-                    -- Smoothing can lower a local ridge as well as raise a rut.
-                    -- This is real geometry work, but it must never be counted
-                    -- as logical rut healing for a remembered depression.
-                    Recovery.stats.physicalLoweredSamples =
-                        Recovery.stats.physicalLoweredSamples + 1
-                    return
-                end
-
-                Recovery.stats.physicalRaisedSamples =
-                    Recovery.stats.physicalRaisedSamples + 1
-
-                local logicalCap = math.min(
-                    maxHistoryRecovery,
-                    rutAtSubmission * fraction
-                )
-                local applied = runtime.history:applyRecoveryAt(
-                    x,
-                    z,
-                    math.min(deltaY, logicalCap),
-                    {
-                        minRutM = Recovery.DEFAULTS.minHistoryRutM,
-                        nowMs = g_currentMission ~= nil
-                            and g_currentMission.time or nowMs
-                    }
-                )
-
-                if applied > 0 then
-                    Recovery.stats.historyRecoveredCells =
-                        Recovery.stats.historyRecoveredCells + 1
-                    Recovery.stats.historyRecoveredDepthM =
-                        Recovery.stats.historyRecoveredDepthM + applied
-                end
-            end
-        })
-
-        if accepted then
-            Recovery.stats.brushesEnqueued =
-                Recovery.stats.brushesEnqueued + 1
+    for _, point in ipairs(points) do
+        local key = stampKey(point.x, point.z)
+        if not stampAvailable(key, nowMs) then
+            Recovery.stats.stampSkips = Recovery.stats.stampSkips + 1
         else
-            Recovery.pendingCells[key] = nil
-            Recovery.stats.brushesRejected =
-                Recovery.stats.brushesRejected + 1
+            Recovery.pendingStamps[key] = true
+            -- Claim the physical patch at enqueue time. Even a no-op smoothing
+            -- result must not be hammered again every frame of the same pass.
+            Recovery.processedStamps[key] = nowMs
+
+            local accepted = runtime.writer:enqueue({
+                x = point.x,
+                z = point.z,
+                mode = "SMOOTH",
+                smoothAmountM = smoothAmount,
+                radiusM = radius,
+                hardness = Recovery.DEFAULTS.brushHardness,
+                strength = strength,
+                source = "RECOVERY",
+                probeRadiusM = radius * 0.75,
+                onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
+                    Recovery.pendingStamps[key] = nil
+                    Recovery.stats.callbacks = Recovery.stats.callbacks + 1
+
+                    if type(deltaY) == "number" then
+                        if deltaY > 0.00005 then
+                            Recovery.stats.centerRaised = Recovery.stats.centerRaised + 1
+                        elseif deltaY < -0.00005 then
+                            Recovery.stats.centerLowered = Recovery.stats.centerLowered + 1
+                        end
+                    end
+
+                    local beforeR = geometry ~= nil
+                        and tonumber(geometry.roughnessBeforeM) or nil
+                    local afterR = geometry ~= nil
+                        and tonumber(geometry.roughnessAfterM) or nil
+                    if beforeR == nil or afterR == nil then
+                        Recovery.stats.roughnessNeutral =
+                            Recovery.stats.roughnessNeutral + 1
+                        return
+                    end
+
+                    Recovery.stats.roughnessVerified =
+                        Recovery.stats.roughnessVerified + 1
+                    local improvement = beforeR - afterR
+                    local epsilon = Recovery.DEFAULTS.minRoughnessImprovementM
+
+                    if improvement > epsilon then
+                        Recovery.stats.roughnessImproved =
+                            Recovery.stats.roughnessImproved + 1
+                        Recovery.stats.roughnessImprovementM =
+                            Recovery.stats.roughnessImprovementM + improvement
+
+                        local amount = math.min(maxHistoryRecovery, improvement)
+                        local cells, depth = runtime.history:applyRecoveryCircle(
+                            point.x,
+                            point.z,
+                            radius,
+                            amount,
+                            historyFraction,
+                            {
+                                minRutM = Recovery.DEFAULTS.minHistoryRutM,
+                                nowMs = g_currentMission ~= nil
+                                    and g_currentMission.time or nowMs
+                            }
+                        )
+                        Recovery.stats.historyRecoveredCells =
+                            Recovery.stats.historyRecoveredCells + (cells or 0)
+                        Recovery.stats.historyRecoveredDepthM =
+                            Recovery.stats.historyRecoveredDepthM + (depth or 0)
+                    elseif improvement < -epsilon then
+                        Recovery.stats.roughnessWorsened =
+                            Recovery.stats.roughnessWorsened + 1
+                        Recovery.stats.roughnessWorseningM =
+                            Recovery.stats.roughnessWorseningM - improvement
+                    else
+                        Recovery.stats.roughnessNeutral =
+                            Recovery.stats.roughnessNeutral + 1
+                    end
+                end
+            })
+
+            if accepted then
+                Recovery.stats.brushesEnqueued =
+                    Recovery.stats.brushesEnqueued + 1
+            else
+                Recovery.pendingStamps[key] = nil
+                Recovery.processedStamps[key] = nil
+                Recovery.stats.brushesRejected =
+                    Recovery.stats.brushesRejected + 1
+            end
         end
     end
 end
