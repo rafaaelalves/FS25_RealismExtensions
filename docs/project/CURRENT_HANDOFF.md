@@ -211,3 +211,33 @@ Runtime test requirement:
 - verify genuinely wet + high-slip conditions still produce deeper persistent deformation.
 
 Do not merge v10 until this separation is validated in runtime.
+
+
+## v12 runtime result and v13 verification pass
+
+Branch: `feat/terrain-recovery-v13`
+
+The 2026-10-01 v12 runtime proves that the cultivator hook and GIANTS native smoothing path execute:
+- 449 cultivator work-area calls, 348 worked calls;
+- 348 smoothing attempts and 340 native `smoothAroundLine` calls;
+- 0 smoothing call errors;
+- 1,233 history cells were logically relaxed by 2.282 m total.
+
+That is not yet proof that the heightmap changed. v12 treated a successful native call as sufficient to reconcile `SpatialHistory`, which can make RE forget a rut even if the sampled physical surface did not move.
+
+v13 closes that evidence gap:
+- samples five terrain-height points across the worked parallelogram immediately before native smoothing;
+- re-samples those same points immediately after `smoothAroundLine`;
+- reports changed/no-change/unverified native calls plus observed absolute/max height delta;
+- relaxes RE history only when at least one physical sample changes beyond the configured epsilon;
+- caps each logical history relaxation by the largest physical height delta observed for that smoothing call;
+- scopes smoothing accumulation per vehicle + work-area node rather than sharing one accumulator across every cultivator work area on a vehicle;
+- measures `TerrainPerf.recovery` only around RE post-processing. v12 incorrectly included the base cultivator `superFunc`, so its 257.751 ms maximum could not be attributed to TerrainRecovery.
+
+Next runtime acceptance:
+1. cultivate across a clearly RE-rutted patch;
+2. confirm `physicalChanged > 0` and `maxDelta > 0`;
+3. visually verify the rut is physically softened;
+4. verify `historyRelaxedCells` advances only together with physically changed calls;
+5. if `smoothCalls` rises while `physicalNoChange` rises and `physicalChanged` stays zero, the current GIANTS call geometry/contract is still ineffective and must be corrected before tuning recovery strength;
+6. inspect the corrected recovery-only performance timing; the v12 257.751 ms outlier is not a valid RE-cost measurement.
