@@ -17,6 +17,8 @@ Recovery.DEFAULTS = {
     targetSpacingFactor = 1.00,
     maxBrushesPerWorkArea = 24,
     minTargetErrorM = 0.0015,
+    maxTargetErrorM = 0.20,
+    maxPlaneSlope = 0.35,
 
     -- Prevent overlapping work-area callbacks from grading the same physical
     -- patch repeatedly during one passage while still allowing deliberate
@@ -58,6 +60,8 @@ Recovery.stats = Recovery.stats or {
     centerLowered = 0,
     targetAbsErrorM = 0,
     maxTargetErrorM = 0,
+    planeRejectSlope = 0,
+    planeRejectError = 0,
     historyRecoveredCells = 0,
     historyRecoveredDepthM = 0
 }
@@ -300,6 +304,13 @@ local function recoverWorkedArea(vehicle,workArea,realArea)
         Recovery.stats.planeFitFailures=Recovery.stats.planeFitFailures+1
         return
     end
+
+    local slope=math.sqrt((plane.bx or 0)^2+(plane.bz or 0)^2)
+    if slope>Recovery.DEFAULTS.maxPlaneSlope then
+        Recovery.stats.planeRejectSlope=Recovery.stats.planeRejectSlope+1
+        return
+    end
+
     Recovery.stats.planeFits=Recovery.stats.planeFits+1
 
     Recovery._targetCounter=Recovery._targetCounter+1
@@ -328,6 +339,8 @@ local function recoverWorkedArea(vehicle,workArea,realArea)
         if targetErrorAbs==nil
             or targetErrorAbs<Recovery.DEFAULTS.minTargetErrorM then
             Recovery.stats.targetSkips=Recovery.stats.targetSkips+1
+        elseif targetErrorAbs>Recovery.DEFAULTS.maxTargetErrorM then
+            Recovery.stats.planeRejectError=Recovery.stats.planeRejectError+1
         else
             Recovery.stats.targetEligible=Recovery.stats.targetEligible+1
             Recovery.stats.targetAbsErrorM=Recovery.stats.targetAbsErrorM+targetErrorAbs
