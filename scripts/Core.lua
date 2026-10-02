@@ -1,7 +1,8 @@
 RealismExtensionsCore = {
     providerRetryMs = 1000,
     providerElapsedMs = 1000,
-    terrainDiagElapsedMs = 0
+    terrainDiagElapsedMs = 0,
+    terrainDiagPrevious = nil
 }
 
 function RealismExtensionsCore:tryDiscoverProvider()
@@ -101,8 +102,12 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
+                    local prev = self.terrainDiagPrevious or {}
+                    local function delta(name, value)
+                        return math.max(0, (value or 0) - (prev[name] or 0))
+                    end
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v22 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d",
+                        "TerrainRecovery v22 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.coveragePoints or 0,
@@ -135,8 +140,43 @@ function RealismExtensionsCore:update(dt)
                         r.changedWorkAreaCalls or 0,
                         r.repeatWorkAreaCalls or 0,
                         r.areaPositiveCalls or 0,
-                        r.preSuperActiveMarks or 0
+                        r.preSuperActiveMarks or 0,
+                        r.changedAreaUnits or 0,
+                        r.processedAreaUnits or 0,
+                        r.repeatAreaUnits or 0
                     ))
+
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainWindow 5s | work=%d changed=%d repeat=%d processedArea=%.0f repeatArea=%.0f smooth=%d callbacks=%d improved=%d worsened=%d rutBlocked=%d protected=%d rutAccepted=%d",
+                        delta("physicalWorkAreaCalls", r.physicalWorkAreaCalls),
+                        delta("changedWorkAreaCalls", r.changedWorkAreaCalls),
+                        delta("repeatWorkAreaCalls", r.repeatWorkAreaCalls),
+                        delta("processedAreaUnits", r.processedAreaUnits),
+                        delta("repeatAreaUnits", r.repeatAreaUnits),
+                        delta("brushesEnqueued", r.brushesEnqueued),
+                        delta("callbacks", r.callbacks),
+                        delta("roughnessImproved", r.roughnessImproved),
+                        delta("roughnessWorsened", r.roughnessWorsened),
+                        math.max(0, (d.activeCultivatorRutSkips or 0) - (prev.activeCultivatorRutSkips or 0)),
+                        math.max(0, (d.cultivationProtectionSkips or 0) - (prev.cultivationProtectionSkips or 0)),
+                        math.max(0, (d.brushesAccepted or 0) - (prev.brushesAccepted or 0))
+                    ))
+
+                    local snapshot = {}
+                    for k,v in pairs(r) do
+                        if type(v) == "number" then snapshot[k] = v end
+                    end
+                    snapshot.activeCultivatorRutSkips = d.activeCultivatorRutSkips or 0
+                    snapshot.cultivationProtectionSkips = d.cultivationProtectionSkips or 0
+                    snapshot.brushesAccepted = d.brushesAccepted or 0
+                    for k,v in pairs(d) do
+                        if type(v) == "number"
+                            and (string.sub(k,1,10) == "rutWriter_"
+                                or string.sub(k,1,14) == "rutWriterRoot_") then
+                            snapshot[k] = v
+                        end
+                    end
+                    self.terrainDiagPrevious = snapshot
                 end
 
                 if RealismExtensionsTerrainPerformance ~= nil then
@@ -240,12 +280,14 @@ function RealismExtensionsCore:update(dt)
                         if string.sub(key, 1, 14) == "rutWriterRoot_" then
                             rootWriterParts[#rootWriterParts + 1] = {
                                 name = string.sub(key, 15),
-                                count = value
+                                count = value,
+                                window = math.max(0, value - (prev[key] or 0))
                             }
                         elseif string.sub(key, 1, 10) == "rutWriter_" then
                             writerParts[#writerParts + 1] = {
                                 name = string.sub(key, 11),
-                                count = value
+                                count = value,
+                                window = math.max(0, value - (prev[key] or 0))
                             }
                         end
                     end
@@ -256,7 +298,7 @@ function RealismExtensionsCore:update(dt)
                 local function formatTopWriters(items)
                     local parts = {}
                     for i=1,math.min(5,#items) do
-                        parts[#parts+1] = string.format("%s=%d",items[i].name,items[i].count)
+                        parts[#parts+1] = string.format("%s=%d(+%d)",items[i].name,items[i].count,items[i].window or 0)
                     end
                     return table.concat(parts," ")
                 end
