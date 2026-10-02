@@ -1,4 +1,4 @@
--- TerrainRecovery v15 convergence harness.
+-- TerrainRecovery v17 native-Soften convergence harness.
 RealismExtensionsConfig = { modules={TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false} }
 
 local enqueued = {}
@@ -16,6 +16,10 @@ RealismExtensionsTerrainRuntime = {
         enqueue=function(self,brush)
             enqueued[#enqueued+1]=brush
             assert(brush.mode=="SMOOTH" and brush.source=="RECOVERY")
+            assert(math.abs(brush.smoothAmountM-0.05)<0.000001)
+            assert(math.abs(brush.radiusM-2.0)<0.000001)
+            assert(math.abs(brush.hardness-0.20)<0.000001)
+            assert(math.abs(brush.strength-0.50)<0.000001)
             assert(brush.probeRadiusM>0)
             brush.onApplied(1,-0.002,1.0,0.998,0,{
                 roughnessBeforeM=0.020,
@@ -62,6 +66,9 @@ assert(d.coveragePoints >= firstCount)
 assert(d.roughnessImproved == firstCount)
 assert(d.centerLowered == firstCount)
 assert(d.historyRecoveredCells > 0 and d.historyRecoveredDepthM > 0)
+assert(d.protectedCellsMarked > 0)
+assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,10000)==true)
+assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,19001)==false)
 
 -- Same physical pass must not hammer the same world cells every frame.
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
@@ -93,4 +100,4 @@ local function rejectedSuper(self,wa,dt) return 0,12 end
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
-print("terrain_recovery_v15_harness: OK")
+print("terrain_recovery_v17_native_soften_harness: OK")
