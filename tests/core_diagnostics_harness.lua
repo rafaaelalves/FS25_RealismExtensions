@@ -39,6 +39,7 @@ RealismExtensionsBuildInfo = {
 
 dofile("scripts/Config.lua")
 dofile("scripts/Diagnostics.lua")
+dofile("scripts/terrain/TerrainTelemetry.lua")
 
 RealismExtensionsState = {
     getProviderStatus = function() return true end,
