@@ -234,6 +234,33 @@ local function buildCoveragePoints(g, radius)
     return points
 end
 
+local function samplePlaneErrorAround(point, radius, plane)
+    local r = math.max(0.10, radius * 0.70)
+    local offsets = {
+        {0,0}, {r,0}, {-r,0}, {0,r}, {0,-r},
+        {r*0.7071,r*0.7071}, {-r*0.7071,r*0.7071},
+        {r*0.7071,-r*0.7071}, {-r*0.7071,-r*0.7071}
+    }
+    local maxAbsError = 0
+    local signedAtMax = 0
+    local samples = 0
+    for _,o in ipairs(offsets) do
+        local x,z = point.x+o[1], point.z+o[2]
+        local currentY = sampleTerrainHeight(x,z)
+        if currentY ~= nil then
+            local targetY = plane.targetY(x,z)
+            local err = targetY-currentY
+            if math.abs(err) > maxAbsError then
+                maxAbsError = math.abs(err)
+                signedAtMax = err
+            end
+            samples = samples + 1
+        end
+    end
+    if samples == 0 then return nil,nil,0 end
+    return maxAbsError,signedAtMax,samples
+end
+
 local function stampKey(x,z)
     local s=math.max(0.10,Recovery.DEFAULTS.stampCellSizeM)
     return tostring(math.floor(x/s+0.5))..":"..tostring(math.floor(z/s+0.5))
@@ -297,15 +324,14 @@ local function recoverWorkedArea(vehicle,workArea,realArea)
     Recovery.stats.coveragePoints=Recovery.stats.coveragePoints+#points
 
     for _,point in ipairs(points) do
-        local currentY=sampleTerrainHeight(point.x,point.z)
-        local targetY=plane.targetY(point.x,point.z)
-        local targetError=currentY~=nil and targetY-currentY or nil
-        if targetError==nil or math.abs(targetError)<Recovery.DEFAULTS.minTargetErrorM then
+        local targetErrorAbs = samplePlaneErrorAround(point,radius,plane)
+        if targetErrorAbs==nil
+            or targetErrorAbs<Recovery.DEFAULTS.minTargetErrorM then
             Recovery.stats.targetSkips=Recovery.stats.targetSkips+1
         else
             Recovery.stats.targetEligible=Recovery.stats.targetEligible+1
-            Recovery.stats.targetAbsErrorM=Recovery.stats.targetAbsErrorM+math.abs(targetError)
-            Recovery.stats.maxTargetErrorM=math.max(Recovery.stats.maxTargetErrorM,math.abs(targetError))
+            Recovery.stats.targetAbsErrorM=Recovery.stats.targetAbsErrorM+targetErrorAbs
+            Recovery.stats.maxTargetErrorM=math.max(Recovery.stats.maxTargetErrorM,targetErrorAbs)
 
             local key=stampKey(point.x,point.z)
             if not stampAvailable(key,nowMs) then
