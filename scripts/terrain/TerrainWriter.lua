@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 5
+Writer.VERSION = 6
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -65,6 +65,12 @@ function Writer.new(options)
             recoverySmoothLoweredSamples = 0,
             recoverySmoothAbsDeltaM = 0,
             recoverySmoothMaxDeltaM = 0,
+            recoveryLevelJobs = 0,
+            recoveryLevelSamples = 0,
+            recoveryLevelRaisedSamples = 0,
+            recoveryLevelLoweredSamples = 0,
+            recoveryLevelAbsDeltaM = 0,
+            recoveryLevelMaxDeltaM = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -84,6 +90,8 @@ function Writer:enqueue(brush)
         amount = brush ~= nil and tonumber(brush.raiseHeightM or brush.depthM) or nil
     elseif mode == "SMOOTH" then
         amount = brush ~= nil and tonumber(brush.smoothAmountM or brush.depthM) or nil
+    elseif mode == "LEVEL" then
+        amount = brush ~= nil and tonumber(brush.levelAmountM or brush.depthM) or nil
     end
 
     if type(brush) ~= "table"
@@ -93,7 +101,17 @@ function Writer:enqueue(brush)
         or type(brush.radiusM) ~= "number"
         or amount < self.options.minDepthM
         or brush.radiusM <= 0
-        or (mode ~= "LOWER" and mode ~= "RAISE" and mode ~= "SMOOTH") then
+        or (mode ~= "LOWER" and mode ~= "RAISE"
+            and mode ~= "SMOOTH" and mode ~= "LEVEL")
+        or (mode == "LEVEL" and (
+            type(brush.levelTarget) ~= "table"
+            or type(brush.levelTarget.minY) ~= "number"
+            or type(brush.levelTarget.maxY) ~= "number"
+            or type(brush.levelTarget.nx) ~= "number"
+            or type(brush.levelTarget.ny) ~= "number"
+            or type(brush.levelTarget.nz) ~= "number"
+            or type(brush.levelTarget.d) ~= "number"
+        )) then
         self.stats.droppedInvalid = self.stats.droppedInvalid + 1
         return false
     end
@@ -114,6 +132,7 @@ function Writer:enqueue(brush)
         targetVolumeM3 = tonumber(brush.targetVolumeM3),
         source = brush.source,
         probeRadiusM = tonumber(brush.probeRadiusM),
+        levelTarget = brush.levelTarget,
         onApplied = brush.onApplied
     }
     self.stats.enqueued = self.stats.enqueued + 1
@@ -277,6 +296,21 @@ function Writer:_submitBatch(depthM, brushes, mode)
         end
         deformation:setAdditiveHeightChangeAmount(amount)
         deformation:enableSmoothingMode()
+    elseif mode == "LEVEL" then
+        local target = brushes ~= nil and brushes[1] ~= nil
+            and brushes[1].levelTarget or nil
+        if target == nil
+            or type(deformation.setHeightTarget) ~= "function"
+            or type(deformation.enableSetDeformationMode) ~= "function" then
+            deformation:delete()
+            return false, "terrain set-height mode unavailable"
+        end
+        deformation:setAdditiveHeightChangeAmount(amount)
+        deformation:setHeightTarget(
+            target.minY, target.maxY,
+            target.nx, target.ny, target.nz, target.d
+        )
+        deformation:enableSetDeformationMode()
     else
         deformation:enableAdditiveDeformationMode()
         local signedHeight = mode == "RAISE" and amount or -amount
@@ -286,13 +320,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     local heightSamples = nil
     local roughnessSamples = nil
-    if mode == "SMOOTH" or expensiveGeometryDiagnosticsEnabled() then
+    if mode == "SMOOTH" or mode == "LEVEL"
+        or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
             heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
         end
     end
-    if mode == "SMOOTH" and brushes ~= nil
+    if (mode == "SMOOTH" or mode == "LEVEL") and brushes ~= nil
         and brushes[1] ~= nil and brushes[1].source == "RECOVERY" then
         roughnessSamples = {}
         for i, brush in ipairs(brushes) do
@@ -347,8 +382,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     stats.callbackDisplacedVolumeM3 + callbackVolume
                 stats.callbackMaxDisplacedVolumeM3 =
                     math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
-                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                if (self.mode == "SMOOTH" or self.mode == "LEVEL")
+                    and self.source == "RECOVERY" then
                     stats.recoverySmoothJobs = stats.recoverySmoothJobs + 1
+                elseif self.mode == "LEVEL" and self.source == "RECOVERY" then
+                    stats.recoveryLevelJobs = stats.recoveryLevelJobs + 1
                 elseif self.mode == "RAISE" then
                     if self.source == "MASS_TRANSPORT" then
                         stats.massTransportRaisedVolumeM3 =
@@ -372,7 +410,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 and RealismExtensionsConfig.modules ~= nil
                 and RealismExtensionsConfig.modules.SoilMassTransport == true
             if massTransportEnabled
-                and self.mode ~= "RAISE"
+                and self.mode == "LOWER"
                 and callbackVolume ~= nil
                 and callbackVolume > 0
                 and RealismExtensionsSoilMassTransportModel ~= nil then
@@ -483,10 +521,26 @@ function Writer:_submitBatch(depthM, brushes, mode)
                         end
                     end
 
+                    if self.mode == "LEVEL" and self.source == "RECOVERY" then
+                        local absDelta = math.abs(deltaY)
+                        stats.recoveryLevelSamples = stats.recoveryLevelSamples + 1
+                        stats.recoveryLevelAbsDeltaM =
+                            stats.recoveryLevelAbsDeltaM + absDelta
+                        stats.recoveryLevelMaxDeltaM =
+                            math.max(stats.recoveryLevelMaxDeltaM, absDelta)
+                        if deltaY > 0.00005 then
+                            stats.recoveryLevelRaisedSamples =
+                                stats.recoveryLevelRaisedSamples + 1
+                        elseif deltaY < -0.00005 then
+                            stats.recoveryLevelLoweredSamples =
+                                stats.recoveryLevelLoweredSamples + 1
+                        end
+                    end
+
                     if math.abs(lowering) <= 0.00005 then
                         stats.geometryZeroChangeSamples =
                             stats.geometryZeroChangeSamples + 1
-                    elseif self.mode ~= "SMOOTH"
+                    elseif self.mode ~= "SMOOTH" and self.mode ~= "LEVEL"
                         and requested > 0 and lowering < requested * 0.25 then
                         stats.geometryShallowSamples =
                             stats.geometryShallowSamples + 1
@@ -574,10 +628,14 @@ function Writer:flush()
     while consumed < brushBudget and #self.queue > 0 do
         local brush = table.remove(self.queue, 1)
         local bucket = depthBucket(brush.depthM, bucketM)
+        local targetKey = brush.mode == "LEVEL" and brush.levelTarget ~= nil
+            and tostring(brush.levelTarget.key or brush.levelTarget) or "-"
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
             .. ":" .. tostring(bucket)
-        groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
+            .. ":" .. targetKey
+        groups[groupKey] = groups[groupKey]
+            or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
         local groupInfo = groups[groupKey]
         local group = groupInfo.brushes
         local factor = math.max(0, tonumber(self.options.coalesceDistanceFactor) or 0)
@@ -591,9 +649,12 @@ function Writer:flush()
 
     local groupKeys = {}
     for key in pairs(groups) do groupKeys[#groupKeys + 1] = key end
+    local modeOrder = { LOWER=1, LEVEL=2, SMOOTH=3, RAISE=4 }
     table.sort(groupKeys, function(a, b)
         local ga, gb = groups[a], groups[b]
-        if ga.mode ~= gb.mode then return ga.mode == "LOWER" end
+        if ga.mode ~= gb.mode then
+            return (modeOrder[ga.mode] or 9) < (modeOrder[gb.mode] or 9)
+        end
         return ga.depth > gb.depth
     end)
 
