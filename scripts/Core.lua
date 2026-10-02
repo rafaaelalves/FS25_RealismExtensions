@@ -102,13 +102,21 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v12 | calls=%d worked=%d smoothAttempts=%d smoothCalls=%d smoothErrors=%d smoothAmount=%.3f historyRelaxedCells=%d historyRelaxedDepth=%.3fm",
+                        "TerrainRecovery v13 | calls=%d worked=%d smoothAttempts=%d smoothCalls=%d smoothErrors=%d smoothAmount=%.3f probes=%d/%d physicalChanged=%d noChange=%d unverified=%d changedSamples=%d absDelta=%.4fm maxDelta=%.4fm historyRelaxedCells=%d historyRelaxedDepth=%.3fm",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.smoothingAttempts or 0,
                         r.smoothingCalls or 0,
                         r.smoothingErrors or 0,
                         r.smoothAmount or 0,
+                        r.physicalProbeCalls or 0,
+                        r.physicalProbeSamples or 0,
+                        r.physicalChangedCalls or 0,
+                        r.physicalNoChangeCalls or 0,
+                        r.physicalUnverifiedCalls or 0,
+                        r.physicalChangedSamples or 0,
+                        r.physicalAbsDeltaM or 0,
+                        r.physicalMaxDeltaM or 0,
                         r.historyRelaxedCells or 0,
                         r.historyRelaxedDepthM or 0
                     ))
