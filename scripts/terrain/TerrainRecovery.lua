@@ -1,20 +1,27 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 5
+Recovery.VERSION = 7
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
     -- TerrainDeformation smoothing reduce local relief over repeated passes.
-    shallowSmoothAmountM = 0.035,
-    deepSmoothAmountM = 0.028,
-    shallowStrength = 0.20,
-    deepStrength = 0.16,
-    shallowRadiusM = 0.55,
-    deepRadiusM = 0.50,
-    brushHardness = 0.22,
-    targetSpacingFactor = 1.15,
+    -- Match the game's native Construction "Soften/Amenizar" primitive.
+    -- ConstructionBrushSculpt uses a 2 m radius at its default 4 m cursor,
+    -- hardness 0.2, smoothing height change 0.05 and effective strength 0.5.
+    smoothAmountM = 0.050,
+    smoothStrength = 0.50,
+    smoothRadiusM = 2.00,
+    brushHardness = 0.20,
+    targetSpacingFactor = 0.85,
     maxBrushesPerWorkArea = 24,
+
+    -- Cultivation owns the final surface state for a short window, mirroring
+    -- vanilla Cultivator.processCultivatorArea() erasing tire tracks inside
+    -- the worked parallelogram. Front wheels may rut first and are then
+    -- repaired; trailing implement wheels cannot immediately undo the pass.
+    protectionCellSizeM = 0.40,
+    protectionDurationMs = 8000,
 
     -- A moving implement reports overlapping work areas every update. World
     -- space stamps ensure one physical patch is smoothed once per pass rather
@@ -26,15 +33,16 @@ Recovery.DEFAULTS = {
     -- Center-height sign is deliberately irrelevant: flattening a ridge may
     -- lower the center while still making the worked surface better.
     minRoughnessImprovementM = 0.00015,
-    shallowHistoryFraction = 0.30,
-    deepHistoryFraction = 0.20,
-    shallowMaxHistoryRecoveryM = 0.015,
-    deepMaxHistoryRecoveryM = 0.010,
+    shallowHistoryFraction = 0.40,
+    deepHistoryFraction = 0.30,
+    shallowMaxHistoryRecoveryM = 0.025,
+    deepMaxHistoryRecoveryM = 0.018,
     minHistoryRutM = 0.003
 }
 
 Recovery.processedStamps = Recovery.processedStamps or {}
 Recovery.pendingStamps = Recovery.pendingStamps or {}
+Recovery.protectedCells = Recovery.protectedCells or {}
 Recovery.stats = Recovery.stats or {
     workAreaCalls = 0,
     workedAreaCalls = 0,
@@ -52,7 +60,9 @@ Recovery.stats = Recovery.stats or {
     centerRaised = 0,
     centerLowered = 0,
     historyRecoveredCells = 0,
-    historyRecoveredDepthM = 0
+    historyRecoveredDepthM = 0,
+    protectedCellsMarked = 0,
+    protectionSkips = 0
 }
 
 local function enabled()
@@ -81,6 +91,55 @@ local function getWorkAreaGeometry(workArea)
         xs=xs, zs=zs, ux=ux, uz=uz, vx=vx, vz=vz,
         widthM=widthM, depthM=depthM
     }
+end
+
+local function pointInParallelogram(x,z,g)
+    local det = g.ux * g.vz - g.uz * g.vx
+    if math.abs(det) < 0.000001 then return false end
+    local dx,dz = x-g.xs,z-g.zs
+    local a = (dx*g.vz - dz*g.vx) / det
+    local b = (g.ux*dz - g.uz*dx) / det
+    return a >= -0.05 and a <= 1.05 and b >= -0.05 and b <= 1.05
+end
+
+local function protectionKey(x,z)
+    local s=math.max(0.10,Recovery.DEFAULTS.protectionCellSizeM)
+    return tostring(math.floor(x/s+0.5))..":"..tostring(math.floor(z/s+0.5))
+end
+
+local function protectWorkArea(g,nowMs)
+    if nowMs<=0 then return end
+    local s=math.max(0.10,Recovery.DEFAULTS.protectionCellSizeM)
+    local xo,zo=g.xs+g.ux+g.vx,g.zs+g.uz+g.vz
+    local minX=math.min(g.xs,g.xs+g.ux,g.xs+g.vx,xo)
+    local maxX=math.max(g.xs,g.xs+g.ux,g.xs+g.vx,xo)
+    local minZ=math.min(g.zs,g.zs+g.uz,g.zs+g.vz,zo)
+    local maxZ=math.max(g.zs,g.zs+g.uz,g.zs+g.vz,zo)
+    local marked=0
+    for ix=math.floor(minX/s)-1,math.ceil(maxX/s)+1 do
+        for iz=math.floor(minZ/s)-1,math.ceil(maxZ/s)+1 do
+            local x,z=ix*s,iz*s
+            if pointInParallelogram(x,z,g) then
+                Recovery.protectedCells[tostring(ix)..":"..tostring(iz)] =
+                    nowMs + Recovery.DEFAULTS.protectionDurationMs
+                marked=marked+1
+            end
+        end
+    end
+    Recovery.stats.protectedCellsMarked =
+        Recovery.stats.protectedCellsMarked + marked
+end
+
+function Recovery.isRecentlyCultivated(x,z,nowMs)
+    if type(x)~="number" or type(z)~="number" then return false end
+    nowMs=tonumber(nowMs) or (g_currentMission~=nil and g_currentMission.time or 0)
+    local expires=Recovery.protectedCells[protectionKey(x,z)]
+    if type(expires)~="number" then return false end
+    if nowMs>0 and expires<nowMs then
+        Recovery.protectedCells[protectionKey(x,z)]=nil
+        return false
+    end
+    return true
 end
 
 local function buildCoveragePoints(g, radius)
@@ -136,6 +195,11 @@ local function cleanupOldStamps(nowMs)
             Recovery.processedStamps[key] = nil
         end
     end
+    for key,expires in pairs(Recovery.protectedCells) do
+        if type(expires)~="number" or expires<nowMs then
+            Recovery.protectedCells[key]=nil
+        end
+    end
 end
 
 local function recoverWorkedArea(vehicle, workArea, realArea)
@@ -152,12 +216,9 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 
     local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
     local deep = spec ~= nil and spec.useDeepMode == true
-    local radius = deep and Recovery.DEFAULTS.deepRadiusM
-        or Recovery.DEFAULTS.shallowRadiusM
-    local smoothAmount = deep and Recovery.DEFAULTS.deepSmoothAmountM
-        or Recovery.DEFAULTS.shallowSmoothAmountM
-    local strength = deep and Recovery.DEFAULTS.deepStrength
-        or Recovery.DEFAULTS.shallowStrength
+    local radius = Recovery.DEFAULTS.smoothRadiusM
+    local smoothAmount = Recovery.DEFAULTS.smoothAmountM
+    local strength = Recovery.DEFAULTS.smoothStrength
     local historyFraction = deep and Recovery.DEFAULTS.deepHistoryFraction
         or Recovery.DEFAULTS.shallowHistoryFraction
     local maxHistoryRecovery = deep and Recovery.DEFAULTS.deepMaxHistoryRecoveryM
@@ -165,6 +226,7 @@ local function recoverWorkedArea(vehicle, workArea, realArea)
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
+    protectWorkArea(g,nowMs)
     local points = buildCoveragePoints(g, radius)
     Recovery.stats.coveragePoints = Recovery.stats.coveragePoints + #points
 
