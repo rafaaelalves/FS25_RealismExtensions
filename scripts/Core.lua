@@ -102,10 +102,14 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v15 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm",
+                        "TerrainRecovery v16 | calls=%d worked=%d planeFits=%d planeFail=%d coverage=%d eligible=%d targetSkips=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d targetAbs=%.3fm maxTargetErr=%.3fm historyRecoveredCells=%d historyRecoveredDepth=%.3fm",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
+                        r.planeFits or 0,
+                        r.planeFitFailures or 0,
                         r.coveragePoints or 0,
+                        r.targetEligible or 0,
+                        r.targetSkips or 0,
                         r.stampSkips or 0,
                         r.brushesEnqueued or 0,
                         r.brushesRejected or 0,
@@ -118,6 +122,8 @@ function RealismExtensionsCore:update(dt)
                         r.roughnessWorseningM or 0,
                         r.centerRaised or 0,
                         r.centerLowered or 0,
+                        r.targetAbsErrorM or 0,
+                        r.maxTargetErrorM or 0,
                         r.historyRecoveredCells or 0,
                         r.historyRecoveredDepthM or 0
                     ))
