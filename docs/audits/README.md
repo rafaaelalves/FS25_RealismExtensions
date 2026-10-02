@@ -15,3 +15,5 @@ Minimum audit record:
 - recommendation: KEEP, INTEGRATE, FUNCTIONALLY REPLACE, ABSORB, or DO NOT USE.
 
 Never infer an absorption decision from feature similarity alone.
+
+- [TerraFarm architecture audit](./terrafarm/README.md) — terrain operation lifecycle, work-area/contact architecture, smoothing precedent and reusable RE design lessons.
