@@ -102,20 +102,22 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v14 | calls=%d worked=%d candidates=%d selected=%d enqueued=%d rejected=%d callbacks=%d physicalChanged=%d noChange=%d raised=%d lowered=%d absDelta=%.4fm maxDelta=%.4fm historyRecoveredCells=%d historyRecoveredDepth=%.3fm",
+                        "TerrainRecovery v15 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
-                        r.candidateCells or 0,
-                        r.selectedCells or 0,
+                        r.coveragePoints or 0,
+                        r.stampSkips or 0,
                         r.brushesEnqueued or 0,
                         r.brushesRejected or 0,
                         r.callbacks or 0,
-                        r.physicalChanged or 0,
-                        r.physicalNoChange or 0,
-                        r.physicalRaisedSamples or 0,
-                        r.physicalLoweredSamples or 0,
-                        r.physicalAbsDeltaM or 0,
-                        r.physicalMaxDeltaM or 0,
+                        r.roughnessVerified or 0,
+                        r.roughnessImproved or 0,
+                        r.roughnessWorsened or 0,
+                        r.roughnessNeutral or 0,
+                        r.roughnessImprovementM or 0,
+                        r.roughnessWorseningM or 0,
+                        r.centerRaised or 0,
+                        r.centerLowered or 0,
                         r.historyRecoveredCells or 0,
                         r.historyRecoveredDepthM or 0
                     ))
