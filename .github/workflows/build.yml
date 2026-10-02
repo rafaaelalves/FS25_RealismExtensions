@@ -37,6 +37,7 @@ jobs:
           lua5.4 tests/terrain_deformation_registration_harness.lua
           lua5.4 tests/terrain_recovery_registration_harness.lua
           lua5.4 tests/terrain_recovery_harness.lua
+          lua5.4 tests/core_diagnostics_harness.lua
 
       - name: Validate modDesc XML
         run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('modDesc.xml')"
