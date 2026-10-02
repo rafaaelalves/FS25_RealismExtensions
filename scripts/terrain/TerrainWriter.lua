@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 7
+Writer.VERSION = 8
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -70,6 +70,8 @@ function Writer.new(options)
             recoverySmoothValidationFailures = 0,
             recoveryNativeConfigCalls = 0,
             recoveryNativeConfigFallbacks = 0,
+            recoveryMachineSmoothJobs = 0,
+            recoveryMachineSmoothBrushes = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -338,18 +340,17 @@ function Writer:_submitBatch(depthM, brushes, mode)
         and brushes[1].source == "RECOVERY"
 
     if nativeRecoverySmooth then
+        -- Machine smoothing follows TerraFarm's machine-work path rather than
+        -- Construction landscaping. A vehicle is physically occupying the
+        -- deformation area, so dynamic/blocking constraints must not veto the
+        -- terrain operation.
         if type(deformation.enableSmoothingMode) ~= "function" then
             deformation:delete()
             return false, "terrain smoothing mode unavailable"
         end
-        local usedRuntime = configureRuntimeNativeSmooth(deformation, brushes[1])
-        self.stats.recoveryNativeConfigCalls =
-            self.stats.recoveryNativeConfigCalls + 1
-        if not usedRuntime then
-            self.stats.recoveryNativeConfigFallbacks =
-                self.stats.recoveryNativeConfigFallbacks + 1
-        end
-        configureNativeLandscapingConstraints(deformation)
+        deformation:setAdditiveHeightChangeAmount(amount)
+        deformation:enableSmoothingMode()
+        configureDeformationConstraints(deformation)
     elseif mode == "SMOOTH" then
         if type(deformation.enableSmoothingMode) ~= "function" then
             deformation:delete()
@@ -381,17 +382,20 @@ function Writer:_submitBatch(depthM, brushes, mode)
         end
     end
 
-    if not nativeRecoverySmooth then
-        for _, brush in ipairs(brushes) do
-            deformation:addSoftCircleBrush(
-                brush.x,
-                brush.z,
-                brush.radiusM,
-                brush.hardness,
-                brush.strength or 1.0,
-                TerrainDeformation.NO_TERRAIN_BRUSH
-            )
+    for _, brush in ipairs(brushes) do
+        local terrainBrush = TerrainDeformation.NO_TERRAIN_BRUSH
+        if nativeRecoverySmooth then
+            -- TerraFarm machine input smoothing uses -1 here.
+            terrainBrush = -1
         end
+        deformation:addSoftCircleBrush(
+            brush.x,
+            brush.z,
+            brush.radiusM,
+            brush.hardness,
+            brush.strength or 1.0,
+            terrainBrush
+        )
     end
 
     local callbackTarget = {
@@ -667,25 +671,28 @@ function Writer:_submitBatch(depthM, brushes, mode)
         or (mission ~= nil and mission.terrainDeformationQueue)
 
     if nativeRecoverySmooth then
-        -- Native Construction Amenizar validates the *same* deformation first
-        -- with apply(true), then queues that object for the real apply(false).
-        -- Skipping this phase produced materially different terrain behavior.
+        -- TerraFarm machine landscaping applies directly with preview=false.
+        -- This deliberately avoids Construction's dynamic-object validation
+        -- semantics, which made nearly every under-machine smoothing job a
+        -- physical no-op in v19/v20.
         if type(deformation.apply) ~= "function" then
             deformation:delete()
-            return false, "native smoothing validation unavailable"
+            return false, "machine smoothing apply unavailable"
         end
-        self.stats.recoverySmoothValidationAttempts =
-            self.stats.recoverySmoothValidationAttempts + 1
+        self.stats.recoveryMachineSmoothJobs =
+            self.stats.recoveryMachineSmoothJobs + 1
+        self.stats.recoveryMachineSmoothBrushes =
+            self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
         local ok = pcall(
             deformation.apply,
             deformation,
-            true,
-            "validated",
+            false,
+            "done",
             callbackTarget
         )
         if not ok then
             deformation:delete()
-            return false, "native smoothing validation apply failed"
+            return false, "machine smoothing apply failed"
         end
         return true
     end
@@ -770,11 +777,6 @@ function Writer:flush()
 
             local batch = {}
             local batchLimit = perJob
-            if group[index] ~= nil
-                and group[index].mode == "SMOOTH"
-                and group[index].source == "RECOVERY" then
-                batchLimit = 1
-            end
             for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]
