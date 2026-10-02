@@ -276,6 +276,15 @@ end
 
 function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin, travelDirX, travelDirZ)
     diagCount("samplesProcessed", 1)
+
+    local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+    if RealismExtensionsTerrainRecovery ~= nil
+        and type(RealismExtensionsTerrainRecovery.isRecentlyCultivated) == "function"
+        and RealismExtensionsTerrainRecovery.isRecentlyCultivated(x,z,nowMs) then
+        diagCount("cultivationProtectionSkips",1)
+        return false
+    end
+
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
 
