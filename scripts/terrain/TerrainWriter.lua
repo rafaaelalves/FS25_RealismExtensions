@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 5
+Writer.VERSION = 6
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -65,6 +65,9 @@ function Writer.new(options)
             recoverySmoothLoweredSamples = 0,
             recoverySmoothAbsDeltaM = 0,
             recoverySmoothMaxDeltaM = 0,
+            recoverySmoothValidationAttempts = 0,
+            recoverySmoothValidationSuccess = 0,
+            recoverySmoothValidationFailures = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -301,14 +304,27 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     for _, brush in ipairs(brushes) do
-        deformation:addSoftCircleBrush(
-            brush.x,
-            brush.z,
-            brush.radiusM,
-            brush.hardness,
-            brush.strength or 1.0,
-            TerrainDeformation.NO_TERRAIN_BRUSH
-        )
+        if mode == "SMOOTH" and brush.source == "RECOVERY" then
+            -- Construction Amenizar calls addSoftCircleBrush with the native
+            -- five-argument form. Keep this path byte-for-byte equivalent in
+            -- shape semantics rather than forcing NO_TERRAIN_BRUSH explicitly.
+            deformation:addSoftCircleBrush(
+                brush.x,
+                brush.z,
+                brush.radiusM,
+                brush.hardness,
+                brush.strength or 1.0
+            )
+        else
+            deformation:addSoftCircleBrush(
+                brush.x,
+                brush.z,
+                brush.radiusM,
+                brush.hardness,
+                brush.strength or 1.0,
+                TerrainDeformation.NO_TERRAIN_BRUSH
+            )
+        end
     end
 
     local callbackTarget = {
@@ -322,6 +338,53 @@ function Writer:_submitBatch(depthM, brushes, mode)
         heightSamples = heightSamples,
         roughnessSamples = roughnessSamples
     }
+
+    function callbackTarget:validated(state, displacedVolume, blockedObjectName)
+        local stats = self.owner.stats
+        if state ~= nil
+            and TerrainDeformation.STATE_SUCCESS ~= nil
+            and state ~= TerrainDeformation.STATE_SUCCESS then
+            stats.recoverySmoothValidationFailures =
+                stats.recoverySmoothValidationFailures + 1
+            stats.failedJobs = stats.failedJobs + 1
+            for _, brush in ipairs(self.brushes or {}) do
+                if type(brush.onApplied) == "function" then
+                    pcall(brush.onApplied, state, nil, nil, nil, nil, nil)
+                end
+            end
+            local d = self.deformation
+            self.deformation = nil
+            if d ~= nil then d:delete() end
+            return
+        end
+
+        stats.recoverySmoothValidationSuccess =
+            stats.recoverySmoothValidationSuccess + 1
+
+        local missionNow = g_currentMission
+        local q = g_terrainDeformationQueue
+            or (missionNow ~= nil and missionNow.terrainDeformationQueue)
+
+        if q ~= nil and type(q.queueJob) == "function" then
+            local ok = pcall(q.queueJob, q, self.deformation, false, "done", self)
+            if ok then return end
+        elseif self.deformation ~= nil and type(self.deformation.apply) == "function" then
+            local ok = pcall(self.deformation.apply, self.deformation, false, "done", self)
+            if ok then return end
+        end
+
+        stats.recoverySmoothValidationFailures =
+            stats.recoverySmoothValidationFailures + 1
+        stats.failedJobs = stats.failedJobs + 1
+        for _, brush in ipairs(self.brushes or {}) do
+            if type(brush.onApplied) == "function" then
+                pcall(brush.onApplied, TerrainDeformation.STATE_FAILED_BLOCKED, nil, nil, nil, nil, nil)
+            end
+        end
+        local d = self.deformation
+        self.deformation = nil
+        if d ~= nil then d:delete() end
+    end
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
@@ -372,7 +435,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 and RealismExtensionsConfig.modules ~= nil
                 and RealismExtensionsConfig.modules.SoilMassTransport == true
             if massTransportEnabled
-                and self.mode ~= "RAISE"
+                and self.mode == "LOWER"
                 and callbackVolume ~= nil
                 and callbackVolume > 0
                 and RealismExtensionsSoilMassTransportModel ~= nil then
@@ -536,6 +599,33 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
+    local nativeRecoverySmooth = mode == "SMOOTH"
+        and callbackTarget.source == "RECOVERY"
+
+    if nativeRecoverySmooth then
+        -- Native Construction Amenizar validates the *same* deformation first
+        -- with apply(true), then queues that object for the real apply(false).
+        -- Skipping this phase produced materially different terrain behavior.
+        if type(deformation.apply) ~= "function" then
+            deformation:delete()
+            return false, "native smoothing validation unavailable"
+        end
+        self.stats.recoverySmoothValidationAttempts =
+            self.stats.recoverySmoothValidationAttempts + 1
+        local ok = pcall(
+            deformation.apply,
+            deformation,
+            true,
+            "validated",
+            callbackTarget
+        )
+        if not ok then
+            deformation:delete()
+            return false, "native smoothing validation apply failed"
+        end
+        return true
+    end
+
     if q ~= nil and type(q.queueJob) == "function" then
         local ok = pcall(q.queueJob, q, deformation, false, "done", callbackTarget)
         if not ok then
@@ -615,7 +705,13 @@ function Writer:flush()
             end
 
             local batch = {}
-            for _ = 1, perJob do
+            local batchLimit = perJob
+            if group[index] ~= nil
+                and group[index].mode == "SMOOTH"
+                and group[index].source == "RECOVERY" then
+                batchLimit = 1
+            end
+            for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]
                 index = index + 1
