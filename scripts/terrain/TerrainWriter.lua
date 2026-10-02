@@ -683,7 +683,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.stats.recoveryMachineSmoothJobs + 1
         self.stats.recoveryMachineSmoothBrushes =
             self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
-        local ok = pcall(
+        local ok, err = pcall(
             deformation.apply,
             deformation,
             false,
@@ -691,8 +691,9 @@ function Writer:_submitBatch(depthM, brushes, mode)
             callbackTarget
         )
         if not ok then
+            self.stats.lastSubmitError = tostring(err)
             deformation:delete()
-            return false, "machine smoothing apply failed"
+            return false, "machine smoothing apply failed: " .. tostring(err)
         end
         return true
     end
