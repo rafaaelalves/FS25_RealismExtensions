@@ -108,10 +108,10 @@ function RealismExtensionsCore:update(dt)
                 local writerStats = writer ~= nil and writer.stats or {}
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
+                local prev = self.terrainDiagPrevious or {}
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     local r = RealismExtensionsTerrainRecovery.getDiagnostics()
-                    local prev = self.terrainDiagPrevious or {}
                     local function delta(name, value)
                         return math.max(0, (value or 0) - (prev[name] or 0))
                     end
