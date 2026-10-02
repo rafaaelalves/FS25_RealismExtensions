@@ -98,6 +98,13 @@ RealismExtensionsTerrainRuntime = {
     }
 }
 
+RealismExtensionsTerrainRecovery = {
+    protected = false,
+    isRecentlyCultivated = function(x,z,nowMs)
+        return RealismExtensionsTerrainRecovery.protected == true
+    end
+}
+
 dofile("scripts/terrain/TerrainDeformationEngine.lua")
 
 
@@ -157,6 +164,20 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
+
+-- A freshly cultivated strip owns its final geometry. Wheel/Mud physics may
+-- continue upstream, but RE must not write a new persistent rut in that patch.
+bodySpeedKph = 5
+RealismExtensionsTerrainRecovery.protected = true
+wheelA.testX = 1.2
+wheelB.testX = 1.7
+local beforeProtectedContexts = contexts
+local beforeProtectedEnqueued = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeProtectedContexts + 2)
+assert(enqueued == beforeProtectedEnqueued)
+assert((RealismExtensionsTerrainRuntime.stats.cultivationProtectionSkips or 0) >= 2)
+RealismExtensionsTerrainRecovery.protected = false
 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
