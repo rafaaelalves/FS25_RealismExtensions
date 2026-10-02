@@ -5,66 +5,75 @@ Updated: 2026-10-02
 ## Release / development state
 
 - Version string remains `0.0.1.0`.
-- TerrainDeformation is an integrated baseline but remains under active completion/research.
-- Active recovery work continues on canonical branch `feat/terrain-recovery`.
-- TerrainDeformation and verbose diagnostics are intentionally enabled on the active development branch.
-- SoilMassTransport is currently disabled while TerrainRecovery is isolated.
+- TerrainDeformation is an integrated experimental gameplay capability under active development.
+- Canonical terrain/recovery branch: `feat/terrain-recovery`.
+- TerrainDeformation and development diagnostics are intentionally enabled.
+- SoilMassTransport remains disabled while the now-working recovery baseline is stabilized.
 
-## Validated foundation
+## Runtime-validated foundation
 
 - RC normalized state consumption.
-- Pressure/load/support-width wheel footprint for ordinary wheel contexts.
+- Pressure/load/support-width footprint for ordinary wheel contexts.
 - Distance/cadence-based rut progression.
 - Persistent SpatialHistory + savegame persistence.
 - Server-owned TerrainDeformation writer with bounded jobs and async callbacks.
 - Surface gating.
 - Mud instantaneous sink separated from persistent RE plastic deformation.
-- Physical TerrainDeformation smoothing path executes and changes terrain.
-- Recovery evaluates local roughness change rather than center-height sign alone.
+- Physical TerrainDeformation smoothing changes the heightfield.
+- Recovery evaluates measured local roughness/relief rather than center-height sign alone.
+- Repeated cultivator work (`realArea=0, area>0`) continues physical recovery.
+- Tractor + active soil-working combination suppresses RE persistent rut generation during stable work windows.
+- Runtime recovery convergence validated with Koralin 9-840.
+- MR Mach Till 412 also entered the same pipeline successfully, confirming recovery is not tied to one specific implement model.
 
-## Current TerrainRecovery state
+## Current state
 
-v21 runtime showed smoothing could reduce measured local roughness but RE LOWER writes from the implement/root combination could still occur.
+TerrainRecovery mechanism is runtime validated. Calibration and architecture evolution are now the active work.
 
-Root cause found in GIANTS Cultivator semantics:
-- `realArea` = changed agricultural state;
-- `area` = processed area;
-- repeated passes may have `realArea=0` while still physically working.
+Immediate planned features:
+- TerrainPassTracker;
+- RecoveryPassSummary;
+- slope-aware roughness;
+- target roughness;
+- TerrainWorkFootprint;
+- TerrainRecoveryProfile.
 
-v21 incorrectly used `realArea>0` for both recovery and rut suppression. A repeated pass could therefore become SMOOTH OFF + LOWER ON.
+## Contact-system work after recovery measurement/calibration
 
-v22:
-- marks active combinations before vanilla processing when the cultivator is enabled/moving;
-- uses GIANTS `spec.isWorking` after processing;
-- uses processed `area` for recovery;
-- keeps repeated physical passes eligible for smoothing and rut suppression;
-- has a regression harness for `realArea=0, area>0`.
+The current ordinary-wheel model must evolve into an explicit ContactFootprint layer supporting:
+- single pneumatic tires;
+- dual/twin tires;
+- wide/flotation tires;
+- implement/support wheels;
+- native GIANTS crawlers/tracks.
 
-Runtime validation is pending.
+Native crawler support must use `spec_crawlers.crawlers` as a first-class grouped contact rather than pseudo-wheel processing.
 
-## Observability upgrade
+## AI / True AI Tracks
 
-New runtime diagnostics include cumulative changed/processed/repeated cultivation area and five-second causal windows for:
-- work/change/repeat;
-- smoothing/callbacks;
-- roughness improved/worsened;
-- rut writes blocked/accepted;
-- per-writer/root window deltas.
+Terrain physics must remain driver-agnostic and be validated for:
+- PLAYER;
+- GIANTS AI;
+- COURSEPLAY.
 
-See `docs/DEVELOPMENT_PROCESS.md`.
+`FS25_aiTracks` / True AI Tracks is not assumed to be required. It requires a dedicated source/runtime ownership audit to decide whether to retire it, coexist for visual-only behavior, or coordinate overlap through RC.
 
-## Major remaining blockers
+## Major remaining blockers / research
 
-- validate v22 recovery without destructive writes;
-- refactor work detection / footprint / terrain operation boundaries after runtime proof;
-- first-class native crawler/track footprint;
-- implement-wheel ordering relative to soil-working operation;
-- adaptive SoilMassTransport realization/mass balance before re-enabling it;
+- pass-based rather than cooldown-based recovery dose;
+- target/convergence roughness;
+- tool-family recovery semantics;
+- ordinary/dual/wide/implement contact normalization;
+- first-class native crawler footprint;
+- implement-wheel ordering relative to soil-working elements;
 - player/GIANTS AI/Courseplay parity;
-- underbody/high-centering diagnostics;
-- True AI Tracks ownership/retirement decision;
-- performance/persistence regression validation.
+- external-terrain-edit history reconciliation;
+- adaptive SoilMassTransport mass balance before any re-enable;
+- underbody/high-centering diagnostics.
+
+Detailed sequencing and acceptance criteria:
+`docs/project/TERRAIN_EVOLUTION_PLAN.md`.
 
 ## External precedent work
 
-TerraFarm architecture audit is active at `docs/audits/terrafarm/README.md`. It is being used as a design precedent, not as a patch/bridge requirement.
+TerraFarm architecture audit remains active at `docs/audits/terrafarm/README.md`. It is a design precedent, not a patch/bridge requirement.
