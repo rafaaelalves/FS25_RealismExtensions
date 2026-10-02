@@ -124,3 +124,31 @@ local ccells, craised = calibrated:recoverParallelogram(
 assert(ccells == 1)
 assert(math.abs(craised - 0.009) < 0.000001)
 assert(math.abs(calibrated:get(0.20,0.20).rutDepthM - 0.091) < 0.000001)
+
+
+-- v14 asynchronous recovery discovery must be read-only until physical terrain
+-- work confirms a rise at the rut center.
+local ah = RealismExtensionsSpatialHistory.new({ cellSizeM=0.20, maxCells=100 })
+ah:commit(0.20,0.20,{rutDepthM=0.10,deformationExposure=2.0,longitudinalShearDistanceM=1.0})
+ah:commit(0.40,0.20,{rutDepthM=0.04,deformationExposure=1.0})
+local ac = ah:getRecoveryCandidatesParallelogram(
+    0,0, 1,0, 0,1,
+    {minRutM=0.003,nowMs=1000,cooldownMs=1500,maxCells=10}
+)
+assert(#ac == 2)
+assert(math.abs(ah:get(0.20,0.20).rutDepthM - 0.10) < 0.000001)
+
+local appliedAsync = ah:applyRecoveryAt(
+    0.20,0.20,0.012,
+    {minRutM=0.003,nowMs=1200}
+)
+assert(math.abs(appliedAsync - 0.012) < 0.000001)
+assert(math.abs(ah:get(0.20,0.20).rutDepthM - 0.088) < 0.000001)
+assert(ah:get(0.20,0.20).deformationExposure < 2.0)
+
+local cooled = ah:getRecoveryCandidatesParallelogram(
+    0,0, 1,0, 0,1,
+    {minRutM=0.003,nowMs=2000,cooldownMs=1500,maxCells=10}
+)
+assert(#cooled == 1)
+print("spatial_history_async_recovery_harness: OK")
