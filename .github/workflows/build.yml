@@ -60,6 +60,17 @@ jobs:
               raise SystemExit("Missing declared files: " + ", ".join(missing))
           PY
 
+      - name: Stamp build identity
+        run: |
+          cat > scripts/BuildInfo.lua <<EOF
+          RealismExtensionsBuildInfo = {
+              branch = "${GITHUB_REF_NAME}",
+              commit = "${GITHUB_SHA}",
+              runId = "${GITHUB_RUN_ID}",
+              builtAtUtc = "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
       - name: Build FS25 ZIP
         run: |
           rm -rf build
