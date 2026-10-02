@@ -136,4 +136,12 @@ end
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
+
+-- Runtime reset must clear temporary map/session state without removing API.
+RealismExtensionsTerrainRecovery.resetRuntimeState()
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.workAreaCalls==0)
+assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,16000)==false)
+assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,16000)==false)
+
 print("terrain_recovery_v22_physical_work_state_harness: OK")
