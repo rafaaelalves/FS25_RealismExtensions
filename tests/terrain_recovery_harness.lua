@@ -1,4 +1,4 @@
--- TerrainRecovery v20 cultivation-isolation/native-Soften harness.
+-- TerrainRecovery v22 physical-work-state harness.
 RealismExtensionsConfig = { modules={TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false} }
 
 local enqueued = {}
@@ -56,11 +56,19 @@ SpecializationUtil={
 dofile("scripts/terrain/TerrainRecovery.lua")
 local rootVehicle={}
 local vehicle={
-    spec_cultivator={useDeepMode=false},
-    getRootVehicle=function(self) return rootVehicle end
+    spec_cultivator={useDeepMode=false,isEnabled=true,isWorking=false},
+    getRootVehicle=function(self) return rootVehicle end,
+    getLastSpeed=function(self) return 8 end
 }
 local workArea={start=101,width=102,height=103}
-local function workedSuper(self,wa,dt) return 12,12 end
+local function workedSuper(self,wa,dt)
+    self.spec_cultivator.isWorking=true
+    return 12,12
+end
+local function repeatSuper(self,wa,dt)
+    self.spec_cultivator.isWorking=true
+    return 0,12
+end
 
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
 assert(#enqueued > 0)
@@ -77,9 +85,23 @@ assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,11
 assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,10000)==true)
 assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,19001)==false)
 
--- Same physical pass must not hammer the same world cells every frame.
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#enqueued == firstCount)
+-- Repeated pass over already-cultivated ground reports realArea=0 but
+-- area>0. It must still mark the combination active and keep recovery alive.
+g_currentMission.time=10800
+local beforeRepeat=#enqueued
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+assert(#enqueued > beforeRepeat)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.repeatWorkAreaCalls > 0)
+assert(d.areaPositiveCalls > 0)
+assert(d.physicalWorkAreaCalls > 0)
+assert(d.preSuperActiveMarks > 0)
+assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,10800)==true)
+
+-- Same immediate physical patch must still obey the stamp cooldown.
+local repeatCount=#enqueued
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+assert(#enqueued == repeatCount)
 d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.stampSkips > 0)
 
@@ -103,8 +125,11 @@ d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.roughnessWorsened > 0)
 
 local beforeEnqueued=#enqueued
-local function rejectedSuper(self,wa,dt) return 0,12 end
+local function rejectedSuper(self,wa,dt)
+    self.spec_cultivator.isWorking=false
+    return 0,0
+end
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
-print("terrain_recovery_v20_cultivation_isolation_harness: OK")
+print("terrain_recovery_v22_physical_work_state_harness: OK")
