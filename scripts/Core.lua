@@ -29,6 +29,14 @@ end
 
 function RealismExtensionsCore:loadMap()
     self.providerElapsedMs = self.providerRetryMs
+    self.terrainDiagElapsedMs = 0
+    self.terrainDiagPrevious = nil
+
+    if RealismExtensionsTerrainRecovery ~= nil
+        and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
+        RealismExtensionsTerrainRecovery.resetRuntimeState()
+    end
+
     self:tryDiscoverProvider()
 
     if RealismExtensionsTerrainRuntime ~= nil then
@@ -369,6 +377,11 @@ function RealismExtensionsCore:deleteMap()
     self.terrainDiagElapsedMs = 0
     self.terrainDiagPrevious = nil
     self._terrainDiagNextSnapshot = nil
+
+    if RealismExtensionsTerrainRecovery ~= nil
+        and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
+        RealismExtensionsTerrainRecovery.resetRuntimeState()
+    end
 
     if RealismExtensionsTerrainRuntime ~= nil then
         RealismExtensionsTerrainRuntime.clear()
