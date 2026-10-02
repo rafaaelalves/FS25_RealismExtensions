@@ -64,6 +64,15 @@ function RealismExtensionsCore:loadMap()
         .. " loaded; TerrainDeformation="
         .. tostring(tdEnabled and "ENABLED" or "disabled")
     )
+
+    local build = RealismExtensionsBuildInfo or {}
+    RealismExtensionsDiagnostics.info(string.format(
+        "BuildIdentity | branch=%s commit=%s run=%s builtAt=%s",
+        tostring(build.branch or "unknown"),
+        tostring(build.commit or "unknown"),
+        tostring(build.runId or "unknown"),
+        tostring(build.builtAtUtc or "unknown")
+    ))
 end
 
 function RealismExtensionsCore:update(dt)
