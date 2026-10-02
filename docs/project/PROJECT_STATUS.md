@@ -1,50 +1,70 @@
 # Project status
 
-Updated: 2026-09-30
+Updated: 2026-10-02
 
-## Current release line
+## Release / development state
 
-- Version: `0.0.1.0`
-- Phase: TerrainDeformation baseline integrated; completion work reopened
-- Production defaults: gameplay modules disabled; verbose diagnostics disabled
-- TerrainDeformation: integrated into `main` via PR #24, runtime-validated as a baseline, **not yet complete**
+- Version string remains `0.0.1.0`.
+- TerrainDeformation is an integrated baseline but remains under active completion/research.
+- Active recovery work continues on canonical branch `feat/terrain-recovery`.
+- TerrainDeformation and verbose diagnostics are intentionally enabled on the active development branch.
+- SoilMassTransport is currently disabled while TerrainRecovery is isolated.
 
-## Baseline validated
+## Validated foundation
 
-- StateContract v2 / RC normalized state path.
-- Pressure-driven pneumatic FootprintModel for ordinary wheel contexts.
-- TerrainResponseModel with bounded pressure/wetness/slip/sink response and authoritative sink anchoring.
-- Event-driven TerrainDeformation engine with stationary wheelspin, spatial history, coalesced native jobs and server-only writes.
-- Savegame response-history persistence with geometry-consistency guard.
-- SurfaceResponse v6 field/dirt/gravel/hard classification.
-- Captured runtime session:
-  - FIELD_SOFT / FIELD / FIELD_FIRM deformation;
-  - DIRT_COMPACTED and HARD blocked under ordinary conditions;
-  - DIRT_WET gated by wetness/slip;
-  - 37,986 accepted brushes, 36,798 submitted, 5,056 GIANTS jobs, 0 failed jobs;
-  - 244.519 m3 callback-confirmed displaced volume;
-  - stationary wheelspin active;
-  - 12,483 history cells restored after reload;
-  - RC speed/slip state reuse validated.
+- RC normalized state consumption.
+- Pressure/load/support-width wheel footprint for ordinary wheel contexts.
+- Distance/cadence-based rut progression.
+- Persistent SpatialHistory + savegame persistence.
+- Server-owned TerrainDeformation writer with bounded jobs and async callbacks.
+- Surface gating.
+- Mud instantaneous sink separated from persistent RE plastic deformation.
+- Physical TerrainDeformation smoothing path executes and changes terrain.
+- Recovery evaluates local roughness change rather than center-height sign alone.
 
-## TerrainDeformation completion blockers
+## Current TerrainRecovery state
 
-- Remove the current low-speed/update-cadence rutting bias.
-- Validate single vs dual/twin footprint/load/pressure behavior.
-- Implement grouped crawler/track support; current FootprintModel intentionally rejects crawlers.
-- Validate player, GIANTS AI, Courseplay and wheeled implements with True AI Tracks disabled.
-- Resolve True AI Tracks native visual-track permission vs physical-deformation ownership before retirement.
-- Re-run the terrain capability against audited FarmKit / True AI Tracks / MudSystemPhysics / SoilCompaction / Reifen / RC precedents before closure.
-- Keep performance/persistence stability after these changes.
+v21 runtime showed smoothing could reduce measured local roughness but RE LOWER writes from the implement/root combination could still occur.
 
-## Project rule reinforced
+Root cause found in GIANTS Cultivator semantics:
+- `realArea` = changed agricultural state;
+- `area` = processed area;
+- repeated passes may have `realArea=0` while still physically working.
 
-RE is capability-driven and audit-driven. External-source audits must be actively cross-checked against implementation before a module is declared complete. The project goal is not merely to add missing effects, but to recover selected FarmKit functionality and selectively absorb/improve external-mod capabilities with clearer ownership, richer behavior and less redundant computation.
+v21 incorrectly used `realArea>0` for both recovery and rut suppression. A repeated pass could therefore become SMOOTH OFF + LOWER ON.
 
-## Not current ownership goals
+v22:
+- marks active combinations before vanilla processing when the cultivator is enabled/moving;
+- uses GIANTS `spec.isWorking` after processing;
+- uses processed `area` for recovery;
+- keeps repeated physical passes eligible for smoothing and rut suppression;
+- has a regression harness for `realArea=0, area>0`.
 
-- replacing MR drivetrain/traction;
-- replacing Mud sink/stuck/resistance;
-- replacing RMS mechanical ownership;
-- replacing SoilCompaction agronomic compaction;
-- reproducing MoistureSystem.
+Runtime validation is pending.
+
+## Observability upgrade
+
+New runtime diagnostics include cumulative changed/processed/repeated cultivation area and five-second causal windows for:
+- work/change/repeat;
+- smoothing/callbacks;
+- roughness improved/worsened;
+- rut writes blocked/accepted;
+- per-writer/root window deltas.
+
+See `docs/DEVELOPMENT_PROCESS.md`.
+
+## Major remaining blockers
+
+- validate v22 recovery without destructive writes;
+- refactor work detection / footprint / terrain operation boundaries after runtime proof;
+- first-class native crawler/track footprint;
+- implement-wheel ordering relative to soil-working operation;
+- adaptive SoilMassTransport realization/mass balance before re-enabling it;
+- player/GIANTS AI/Courseplay parity;
+- underbody/high-centering diagnostics;
+- True AI Tracks ownership/retirement decision;
+- performance/persistence regression validation.
+
+## External precedent work
+
+TerraFarm architecture audit is active at `docs/audits/terrafarm/README.md`. It is being used as a design precedent, not as a patch/bridge requirement.
