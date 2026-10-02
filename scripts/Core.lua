@@ -111,9 +111,12 @@ function RealismExtensionsCore:update(dt)
                 local r = RealismExtensionsTerrainRecovery ~= nil
                     and RealismExtensionsTerrainRecovery.getDiagnostics() or {}
                 local telemetry = RealismExtensionsTerrainTelemetry
-                local window, nextSnapshot = telemetry ~= nil
-                    and telemetry.buildWindow(self.terrainDiagPrevious, r, d)
-                    or {}, nil
+                local window, nextSnapshot = {}, nil
+                if telemetry ~= nil then
+                    window, nextSnapshot = telemetry.buildWindow(
+                        self.terrainDiagPrevious, r, d
+                    )
+                end
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
