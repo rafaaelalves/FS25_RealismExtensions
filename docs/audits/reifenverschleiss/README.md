@@ -124,7 +124,12 @@ The most consequential current findings are:
 - FORCE-WEAR derives/caches driven-wheel torque shares from GIANTS differential topology and does not consume RC/MR dynamic `mrIsDriven` state;
 - public behavior says tracked-vehicle roller speed malus covers rubber and metal tracks, while source deliberately applies it only to `RUBBER_TRACK`;
 - physical width/radius factors are computed for diagnostics but do not directly feed DIST/SLIP wear; width/radius matter mainly in FORCE-WEAR torque capacity;
-- source packaging redundantly loads several modules twice.
+- source packaging redundantly loads several modules twice;
+- Raptor visual wear collapses per-track asymmetry to the most worn crawler;
+- special crawler full-reset paths do not immediately clear renderer-specific wear parameters;
+- multiple visual "weak" node caches are numeric-keyed and therefore do not expire with vehicle/node lifetime;
+- the Volvo immediate-load safety flag is never assigned;
+- EWFS's mission-specific VehicleSystem enter hook is not reinstalled after loading a second save in the same process.
 
 ## Relationship to existing RC integration
 
@@ -148,7 +153,7 @@ A focused runtime/harness audit is now justified to determine whether Reifen all
 
 ## Audit status
 
-Static/source audit: **deep pass complete for 1.2.2.67**.
+Static/source audit: **CLOSED for 1.2.2.67 after a focused second pass over Visual/crawler shaders and EWFS low-level wrappers**. Further source work should be triggered by a runtime finding or a concrete cross-mod question.
 
 Runtime validation: **deferred**. Tests are listed in `RUNTIME_TEST_PLAN.md`.
 
