@@ -187,3 +187,48 @@ These should remain complementary, not fight one another.
 4. Preserve the distinction between transient wheel/suspension response and persistent terrain deformation.
 5. Avoid writing persistent ruts through a work area another owner is actively flattening.
 6. Future ContactFootprint should be able to explain provenance: base tire, dual/triple support, crawler group, implement wheel.
+
+
+## Second-pass finding: rolling-resistance base state can become stale
+
+Status: **CONFIRMED_STATIC**.
+
+`WheelPhysics.mrUpdateFriction` recomputes `mrTireGroundRollingResistanceCoeff` only inside the branch where the newly computed friction coefficient differs numerically from `tireGroundFrictionCoeff`.
+
+The shipped table contains a concrete counterexample:
+- tire type: `CHAINS`;
+- surface: `GROUND_SOFT_TERRAIN`;
+- dry friction: `0.76`;
+- wet friction: `0.76`;
+- dry RR: `0.030`;
+- wet RR: `0.060`.
+
+A dry->wet transition can therefore require a 2x RR change while friction remains 0.76, so the RR refresh guard is false and the previous base RR can survive.
+
+The clean architectural fix is to invalidate/update RR from the state inputs that actually own RR (surface/subtype/wetness/tire type), not use friction-coefficient change as its proxy.
+
+## Second-pass findings: center-of-mass invalidation
+
+### Same-mass spatial redistribution
+
+Status: **CONFIRMED_STATIC limitation**.
+
+`Vehicle.mrUpdateMass` recalculates the target center of mass only inside the same >~20 kg mass-delta block used to decide whether to call `setMass`.
+
+However contributors such as FillUnit can change their weighted spatial CoM without materially changing total component mass. A multi-compartment vehicle can therefore redistribute approximately the same mass from one location to another while the target CoM remains stale.
+
+The physical-mass update threshold is reasonable; target-CoM invalidation should be a separate condition.
+
+### Additional mass without explicit CoM
+
+Status: **STRONG_CANDIDATE / model limitation**.
+
+The target-CoM denominator uses `mrDefaultMass + totalAddMassWithCOM`, not total physical component mass.
+
+At least two contributor paths can add physical mass without necessarily adding the same mass to the positioned-CoM table:
+- TensionBelts separately adds `objectData.objectMass - 0.01`;
+- DynamicMountAttacher adds object mass even when no coordinate node can be resolved.
+
+If positioned and unpositioned additional masses coexist, the target can be biased toward the explicitly located contributors because unpositioned mass affects physical mass but not the weighted CoM denominator.
+
+Runtime/harness evidence should determine how often GIANTS actually produces this mixed state.
