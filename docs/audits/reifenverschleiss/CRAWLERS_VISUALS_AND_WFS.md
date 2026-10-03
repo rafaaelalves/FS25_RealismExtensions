@@ -178,3 +178,158 @@ From a compatibility architecture standpoint, EWFS would be safer as:
 - or an optional capability activated only when the affected controller paths are present.
 
 That would substantially reduce Reifen's collision surface while preserving its wear model.
+
+
+## 12. Raptor visual asymmetry is lost
+
+Status: **CONFIRMED_STATIC**.
+
+The core persists one wear value per crawler/track, but the Raptor visual path:
+1. collects render refs for all Raptor crawlers into one vehicle-level list;
+2. computes one scalar wear equal to the **maximum** wear across all Raptor crawlers;
+3. applies that same scalar to every Raptor render ref.
+
+Therefore left/right track wear can be physically/persistently different while both visible tracks render at the more worn side.
+
+The generic crawler and T9 paths keep per-crawler wear separately; this loss is specific to the Raptor renderer.
+
+Recommended fix:
+store refs grouped by crawler and apply each crawler's own wear.
+
+## 13. Special crawler workshop/native reset is incomplete
+
+Status: **CONFIRMED_STATIC**.
+
+The generic full reset path (`resetVehicleWearState -> resetVehicleWearVisuals`) and the explicit `resetVehicleWearVisualsImmediate` crawler reset primarily write `trackProfileWear` on `crawler.scrollerNodes[].node`.
+
+But special crawler renderers use different parameters:
+- Raptor: `crawlerProfileWear`;
+- A8800/Hover: `a8800ProfileTestWear`;
+- Hannibal: `hannibalProfileWear`;
+- Volvo: `volvoProfileWear`.
+
+`resetVehicleWearVisualsImmediate` then invokes only the T9 worker, not the generic/Raptor/special-steel worker.
+
+Consequences:
+- custom `ALL` replacement can clear state while a special crawler remains visually worn;
+- native repair/repaint uses the same incomplete generic reset;
+- the correct renderer may only catch up later if the vehicle becomes/currently is processed by the mission visual worker.
+
+Ironically, component-specific `TRACKS` replacement is better because `resetRunningGearWorkshop` calls `refreshVehicleWearVisualsImmediate`, which routes to the appropriate crawler worker.
+
+Recommended fix:
+all reset paths should finish through the same dispatcher used by `refreshVehicleWearVisualsImmediate`.
+
+## 14. Numeric weak-key misuse also exists in Visual
+
+Status: **CONFIRMED_STATIC lifecycle defect**.
+
+Several tables are documented/used as weak per-node caches but are keyed by numeric entity IDs:
+- `trackWearNodes`;
+- `trackWearMaterialSlots`;
+- `raptorTrackWearMaterialSlots`;
+- `a8800TrackWearMaterialSlots`;
+- `specialSteelTrackWearMaterialSlots`;
+- `trackProfileClaasSpecial`.
+
+Numeric keys are not collectable object references, so weak-key semantics do not remove these entries when a vehicle/node is destroyed.
+
+Additional `trackProfileBodyY` is a normal strong table keyed by numeric node ID.
+
+This is especially important because comments explicitly say the slot tables guarantee one fresh material per *live node lifetime*. With numeric keys and no delete cleanup, a reused engine node ID can inherit stale slot state from an old vehicle.
+
+Potential effects:
+- material installation skipped on a newly spawned/re-rented vehicle;
+- stale original/replaced material bookkeeping;
+- incorrect CLAAS special classification/body data;
+- retained numeric cache growth.
+
+This is the same underlying Lua-lifecycle mistake as EWFS's `nodeVehicles/shapeVehicles`.
+
+## 15. Volvo immediate-load safety flag is dead
+
+Status: **CONFIRMED_STATIC dead guard / safety risk**.
+
+The Volvo steel-track path contains an explicit safety check:
+
+`if RVV._inImmediateLoadRefresh == true then return false end`
+
+The comments say this guard exists because material replacement during `onFinishedLoading` previously caused a native engine crash.
+
+But `_inImmediateLoadRefresh` is never assigned anywhere in the package.
+
+Immediate refresh code sets `_forceCrawlerVisualRefresh`, not `_inImmediateLoadRefresh`.
+
+A second guard requiring the Volvo to be the controlled vehicle usually prevents early material replacement, so a crash is **not** proven. However the safety mechanism described in the source is objectively nonfunctional and should be repaired.
+
+## 16. Early negative crawler classification can become permanent
+
+Status: **STRONG_CANDIDATE**.
+
+`rvDetectCrawlerMotionPathKind` caches `false` when `crawler.loadedCrawler` is not yet available.
+
+`rvGetCrawlerVehicleType` then caches a vehicle-level classification.
+
+Those caches have no retry/invalidation path.
+
+If classification occurs before crawler render geometry is ready, a steel crawler can be cached as the fallback generic-rubber class for the rest of that vehicle lifetime.
+
+The onFinishedLoading/settling queue likely makes this uncommon, so runtime timing evidence is required before calling it an observed bug.
+
+## 17. Generic/Raptor material caches retain the dead-entity pattern
+
+Status: **STRONG_CANDIDATE**.
+
+The A8800/special-steel code explicitly says an earlier global material cache could hand a dead GIANTS material entity to a newly spawned/returned vehicle, and therefore intentionally builds a fresh material per live node/slot.
+
+However:
+- `trackMaterialCache[originalMaterialId]` remains global for generic/T9 rubber paths;
+- `raptorTrackMaterialCache[originalMaterialId]` remains global for Raptor.
+
+Both keys are numeric material IDs and there is no mission/vehicle deletion invalidation.
+
+Given the source's own documented dead-material failure mode, generic/Raptor return/rent/reload scenarios deserve a targeted lifecycle test.
+
+## 18. Generic crawler renderer mutates GIANTS scroller data
+
+Status: **DESIGN_RISK**.
+
+When `crawler.scrollerNodes[].nodes` is absent, Reifen synthesizes a table from `entry.node` and writes it back into:
+
+`entry.nodes = targets`.
+
+This is convenient for its own traversal, but changes a GIANTS-owned crawler structure rather than keeping an internal normalized view.
+
+A later mod/engine routine can no longer distinguish "GIANTS supplied nodes" from "Reifen synthesized nodes".
+
+Prefer a Reifen-local normalized target list.
+
+## 19. Passive-object visual gate tests pcall success, not attachment result
+
+Status: **CONFIRMED_STATIC low-severity logic issue**.
+
+`initializeWheelVisuals` defines `isPassiveObject` using:
+
+`... and pcall(vehicle.getAttacherVehicle, vehicle)`
+
+In boolean context this uses only pcall's first return value (the call succeeded), not the returned attacher vehicle.
+
+An unattached object with a working `getAttacherVehicle` method is therefore classified as passive.
+
+The practical consequence is limited: it only broadens the alternative shader-parameter entry path, but the code/comment do not match the actual predicate.
+
+## 20. EWFS per-mission VehicleSystem hook is not reinstalled
+
+Status: **CONFIRMED_STATIC lifecycle defect**.
+
+`WFS.install()` wraps the current mission's `vehicleSystem.setEnteredVehicle` and sets:
+- `WFS.installed=true`;
+- `WFS.vehicleSystemEnterHooked=true`.
+
+Neither flag is reset by mission unload.
+
+On the next save loaded in the same process, `WFS.install()` returns immediately, so the new mission's new VehicleSystem instance never receives the enter-vehicle refresh hook.
+
+Global class/engine wrappers remain installed, so EWFS still largely works. What is lost is the intended immediate state/HUD refresh at the mission-specific vehicle-entry boundary.
+
+This parallels the repair/repaint message-subscription reload bug and supports adding one explicit Reifen mission-lifecycle reset.
