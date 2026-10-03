@@ -44,16 +44,25 @@ These changes can affect vehicles that are not explicitly MR converted:
 - several light/dashboard/AI/base-game behavior changes;
 - filename/store/PF remapping needed for converted assets.
 
-### MR-converted scope
+### Global drivetrain/control scope
 
-The `vehicle.MR` marker is especially important for:
-- creation of MR `VehicleMotor`;
-- MR transmission metadata;
-- hydrostatic/CVT logic;
+Second-pass correction: MR's drivetrain/control ownership is broader than converted vehicles.
+
+The package globally overwrites many `VehicleMotor` methods, including direction changes, gear shifting, min/max ratio, motor update, speed limit, start-in-gear behavior, target-gear application, gear groups, clutch/torque helpers and motor-run checks. `WheelsUtil.updateWheelsPhysics` is also globally overwritten.
+
+`VehicleMotor.new` only uses `mrIsMrVehicle` for some calibration differences; the MR motor/control path itself still participates on non-converted vehicles.
+
+### MR-converted metadata/calibration scope
+
+The `vehicle.MR` marker remains important for:
+- richer MR transmission/hydrostatic/CVT metadata;
+- converted engine/transmission calibration;
 - custom implement work-area stationary gating;
 - MR-specific combine/baler/mower/etc process models;
 - converted-vehicle XML tuning;
 - selected suspension and implement parameters.
+
+Therefore `mrIsMrVehicle` should be interpreted as **converted/calibrated by MR**, not as **MR physics present**.
 
 ### Capability-gated scope
 
@@ -133,7 +142,7 @@ RC should classify MR participation by **owned surface**, not merely by `mrIsMrV
 
 Examples:
 - friction composition: MR participates globally;
-- custom gear logic: MR participation requires the MR motor path;
+- drivetrain/control composition: MR's VehicleMotor/WheelsUtil overrides are global; richer branch behavior can additionally depend on converted-vehicle metadata;
 - mass/CoM: MR participates globally;
 - combine throughput: only when MR combine metadata/model is active;
 - PF overridden-filename mapping: only converted assets.
@@ -142,6 +151,8 @@ A future shared provider should expose facts such as:
 - `mrEnginePresent`;
 - `mrVehicleConverted`;
 - `mrMotorActive`;
+- `mrGlobalMotorControlActive`;
+- `mrConvertedCalibrationActive`;
 - `mrWheelPhysicsActive`;
 - `mrProcessModel`;
 rather than one ambiguous boolean.
