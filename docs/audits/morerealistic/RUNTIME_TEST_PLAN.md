@@ -225,3 +225,129 @@ Exact 0.26.08.03:
 Also verify:
 - saved vehicle filenames remain genuine;
 - MR can be disabled/re-enabled without orphaning converted base vehicles.
+
+
+## T16 — RR stale when friction is unchanged
+
+Use `CHAINS` on `GROUND_SOFT_TERRAIN`.
+
+Hold all geometry/load constant and transition wetness:
+- 0;
+- 0.5;
+- 1.
+
+Record:
+- tire friction coefficient;
+- base `mrTireGroundRollingResistanceCoeff`;
+- final `mrLastRrFx`;
+- RR force.
+
+Critical case:
+friction remains 0.76 while expected base RR changes from 0.030 to 0.060.
+
+Acceptance after a fix:
+RR follows wetness even when friction coefficient does not change.
+
+## T17 — PowerConsumer maxGroundDistance control flow
+
+Use a converted header with `mrPowerConsumer#maxGroundDistance`, PTO rpm and nonzero maxForce.
+
+Exercise:
+- header at normal ground distance;
+- header raised beyond threshold while still active/turned on.
+
+Record:
+- function branch;
+- turnOnPeakPowerTimer;
+- mrLastNeededPtoPower;
+- mrPtoCurrentRpmRatio;
+- engine/PTO load.
+
+Question:
+does raising the header intentionally suppress only draft force, or incorrectly freeze the entire PTO update for that frame?
+
+## T18 — same-mass center-of-mass redistribution
+
+Use a multi-compartment vehicle where positioned fill-unit CoMs differ.
+
+Scenario:
+- start with mass M in compartment A;
+- transfer approximately the same mass to B while keeping total component mass within the ~20 kg setMass threshold.
+
+Record:
+- contributor CoM from FillUnit helper;
+- component.mass / lastMass;
+- mrWwantedCOM;
+- physical getCenterOfMass.
+
+Expected current-source failure:
+helper position changes while target/physical CoM remains stale.
+
+## T19 — positioned + unpositioned mass mix
+
+Construct or find a vehicle/component combining:
+- at least one positioned MR contributor;
+- additional mass without explicit resolved CoM.
+
+Compare:
+- physical total mass;
+- positioned mass sum;
+- target CoM denominator/result.
+
+Purpose:
+measure whether target CoM is materially biased by mass omitted from the positioned denominator.
+
+## T20 — WoodCrusher material conservation
+
+Create a capacity-constrained woodchip destination.
+
+Record per update:
+- mrWaitingFillLevel before;
+- requested volumeToDeliver;
+- FillUnit applied delta;
+- mrWaitingFillLevel after;
+- fill unit free capacity.
+
+Invariant:
+`queue_before - queue_after == applied_delta`.
+
+Current source is expected to violate the invariant when applied delta < requested delta.
+
+## T21 — CNH wheel ballast mapping
+
+Load the exact CNH shared wheel weight asset if reachable from a current configuration.
+
+Record:
+- filename;
+- input mass;
+- expected 0.6 t special-case mass;
+- final WheelVisualPart mass.
+
+This determines whether F-22 is only dead data or a visible current-stack defect.
+
+## T22 — process-model first-sample warm-up
+
+For Mower/Tedder/Windrower/ForageWagon:
+1. turn on and collect a stable sample;
+2. turn off for a long interval;
+3. reactivate and immediately process material.
+
+Record:
+- previous timestamp;
+- sampleTime;
+- liters/area buffer;
+- computed throughput/power.
+
+If first sample is diluted by inactive time, classify severity and decide whether timestamps should reset on activation.
+
+## T23 — unconverted vehicle global drivetrain reach
+
+Choose a mod vehicle with no MR conversion/override.
+
+Record whether it still executes:
+- MR VehicleMotor wrappers;
+- MR `WheelsUtil.mrUpdateWheelsPhysics`;
+- MR direction/gear logic;
+- MR friction/RR.
+
+This is not expected to fail; it validates the corrected ownership model and provider semantics.
