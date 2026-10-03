@@ -208,3 +208,121 @@ If RC ever carries an owner-mod fix:
 4. fail closed if the shape differs;
 5. detect an upstream-corrected shape and report `NOT REQUIRED`;
 6. never hide the fix inside an unrelated MR integration module.
+
+
+## F-17 Rolling resistance refresh coupled to friction change
+
+Status: **CONFIRMED_STATIC**
+
+`WheelPhysics.mrUpdateFriction` updates `mrTireGroundRollingResistanceCoeff` only when the numeric friction coefficient changed.
+
+The bundled tire table proves those two states are not equivalent. For `CHAINS` on `GROUND_SOFT_TERRAIN`:
+- dry friction = 0.76;
+- wet friction = 0.76;
+- dry rolling resistance = 0.030;
+- wet rolling resistance = 0.060.
+
+Therefore a wetness transition can require a 2x RR change while the friction equality guard suppresses the RR refresh.
+
+Classification: owner-mod physics bug / optional hotfix candidate.
+
+## F-18 PowerConsumer draft guard aborts unrelated PTO bookkeeping
+
+Status: **CONFIRMED_STATIC**
+
+`PowerConsumer.mrOnUpdate` returns from the whole function if:
+- force-node velocity is unavailable; or
+- a configured `maxGroundDistance` is exceeded.
+
+Those returns happen before the shared tail that decrements `turnOnPeakPowerTimer` and updates PTO power.
+
+Several converted headers configure `maxGroundDistance` together with PTO/maxForce data, so the affected shape is used by shipped assets.
+
+Classification: owner-mod control-flow bug / optional hotfix candidate.
+
+## F-19 Variable CoM invalidation is tied to mass delta
+
+Status: **CONFIRMED_STATIC LIMITATION**
+
+`Vehicle.mrUpdateMass` recalculates the target CoM only while processing a component whose total mass changed by more than ~20 kg.
+
+But positioned mass contributors can change their weighted location without changing total mass. Same-mass transfer between compartments can therefore leave physical CoM stale.
+
+Classification: model/lifecycle limitation; fix should separate mass invalidation from CoM invalidation.
+
+## F-20 Positioned and unpositioned additional mass can diverge
+
+Status: **STRONG_CANDIDATE**
+
+The target CoM denominator uses `mrDefaultMass + totalAddMassWithCOM`, not the final physical component mass.
+
+Some contributor paths can add mass without guaranteeing a corresponding positioned-CoM entry:
+- TensionBelts `objectData.objectMass`;
+- DynamicMountAttacher when an object's CoM node cannot be resolved.
+
+If these coexist with positioned contributors, target CoM can be biased.
+
+Classification: model edge case; harness/runtime incidence pending.
+
+## F-21 WoodCrusher queue can lose accepted-vs-requested delta
+
+Status: **CONFIRMED_STATIC**
+
+MR subtracts `volumeToDeliver` from `mrWaitingFillLevel` before calling `addFillUnitFillLevel`, and discards the returned applied delta.
+
+If the destination fill unit accepts less than requested, the unaccepted difference has already been removed from MR's queue.
+
+Classification: owner-mod material-conservation bug. Correct pattern is to reduce the queue by the actual applied delta.
+
+## F-22 CNH ballast path comparison typo
+
+Status: **CONFIRMED_STATIC**
+
+`commonKey` already ends with `/`, but the CNH comparison appends `/cnh/weight001.i3d`, producing a double slash.
+
+The intended special-case 0.6 t ballast mapping therefore does not match the normal path form.
+
+Classification: owner-mod data/path bug; trivial exact-shape hotfix if runtime relevance is confirmed.
+
+## F-23 Duplicate EVO 290 override catalog entry
+
+Status: **CONFIRMED_STATIC, benign data duplication**
+
+The exact override database lists `data/vehicles/grimme/evo290/evo290.xml` twice, both mapping to the same MR target.
+
+Because the loader indexes by source filename, the later entry overwrites the same value.
+
+No behavioral defect is established, but it is catalogue noise worth cleaning.
+
+## F-24 Tire-table loader fails partially
+
+Status: **DESIGN_RISK / version-drift robustness**
+
+Unknown tire/surface names or missing values cause local `break` behavior during table loading after earlier global tire entries may already have been overwritten.
+
+A future engine/table drift can therefore leave MR with partially replaced global tire tables instead of atomically retaining the old state.
+
+Classification: robustness improvement; not a current-data failure.
+
+## F-25 Duplicate wrapper helper names hide earlier implementation identity
+
+Status: **DESIGN_RISK**, not a behavior bug by itself.
+
+Some MR files intentionally install multiple wrappers using the same helper symbol before redefining that symbol:
+- `WheelPhysics.mrUpdateBase`;
+- `FillUnit.mrLoadFillUnitFromXML`;
+- `Baler.mrSetIsUnloadingBale`.
+
+The installed wrapper chain retains the earlier function object, so behavior is not automatically lost. But the Lua global symbol points only to the newest helper afterward, making introspection, pointer-integrity diagnostics and compatibility tooling harder.
+
+This can explain pointer drift without implying a broken chain.
+
+## F-26 Drivetrain/control ownership is broader than converted-vehicle identity
+
+Status: **CONFIRMED_STATIC architectural correction**
+
+Many `VehicleMotor` methods and `WheelsUtil.updateWheelsPhysics` are globally overwritten.
+
+`mrIsMrVehicle` mainly changes calibration/metadata branches; it does not delimit MR drivetrain participation.
+
+Compatibility code must not use `mrIsMrVehicle` as a generic "MR motor absent/present" switch.
