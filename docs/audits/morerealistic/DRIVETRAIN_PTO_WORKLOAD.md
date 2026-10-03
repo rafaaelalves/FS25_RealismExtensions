@@ -2,7 +2,7 @@
 
 ## VehicleMotor ownership
 
-For MR-converted motorized vehicles, MR creates/uses its own VehicleMotor path and replaces substantial vanilla logic:
+MR globally overwrites the VehicleMotor path and replaces substantial vanilla logic. Converted MR vehicles add richer transmission metadata/calibration, but many of the methods below are installed for all VehicleMotor instances:
 - gear shifting;
 - direction changes;
 - min/max gear ratio;
@@ -182,3 +182,36 @@ Examples include:
 Some process models update their smoothed state only on coarser windows, reducing the concern. Wheel/control paths need runtime cadence testing.
 
 Status: **RUNTIME_PENDING**, not declared a gameplay bug yet.
+
+
+## Second-pass finding: draft-force early returns abort PTO bookkeeping
+
+Status: **CONFIRMED_STATIC**.
+
+Inside `PowerConsumer.mrOnUpdate`, the draft-force block can return from the entire function when:
+- `getLinearVelocity(forceNode)` yields no usable X/Z velocity; or
+- the configured force node is farther from terrain than `mrPowerConsumerMaxGroundDistanceToApplyDraftForce`.
+
+Those returns occur before:
+- decrementing `turnOnPeakPowerTimer`;
+- calling `PowerConsumer.mrUpdatePtoPower(self, dt)`.
+
+The intent appears to be "do not apply ground draft force in this state", but the implementation also suppresses unrelated PTO/update bookkeeping for the frame.
+
+This is not purely theoretical: multiple converted headers configure both a nonzero PTO demand/maxForce and `maxGroundDistance`.
+
+Preferred fix shape:
+- skip only the draft-force calculation;
+- always continue to the common timer/PTO update tail.
+
+## Process-model warm-up state
+
+Status: **CONFIRMED_STATIC, low severity**.
+
+Several throughput models initialize their sampling timestamp to zero and clear the material/area buffer when work stops without necessarily resetting the timestamp at the same transition.
+
+Examples include Mower, Tedder, Windrower and ForageWagon; Combine/Baler use related buffer-start-time schemes.
+
+After a long idle, the first fresh sample can therefore be divided by an elapsed interval that includes inactive time, temporarily under-reporting throughput/power until the next sample window.
+
+This is a lifecycle/warm-up artifact rather than persistent material loss. Any telemetry/calibration test should discard the first sample after activation unless/until the model is changed.
