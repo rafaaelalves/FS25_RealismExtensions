@@ -286,3 +286,92 @@ Profile separately:
 - EWFS.
 
 Expected hotspot candidate: EWFS fleet polling.
+
+
+## T26 — Raptor left/right visual asymmetry
+Force clearly different wear on left and right Raptor crawlers.
+
+Capture:
+- core wear per crawler;
+- shader `crawlerProfileWear` per render node.
+
+Expected current source:
+both sides receive the maximum crawler wear.
+
+Acceptance after fix:
+each render side tracks its own crawler state.
+
+## T27 — special crawler workshop reset matrix
+For Raptor, A8800/Hover, Hannibal and Volvo:
+1. create visible track wear;
+2. use native repair;
+3. use native repaint;
+4. use custom ALL;
+5. use custom TRACKS.
+
+Immediately after each action, before entering/driving the vehicle, read:
+- persistent wear;
+- renderer-specific shader parameter;
+- visible state.
+
+Goal:
+prove the current ALL/native reset lag and verify a unified refresh dispatcher.
+
+## T28 — visual numeric-node cache reuse
+Sell/return and respawn the same crawler family repeatedly in one session.
+
+Instrument:
+- old/new node IDs;
+- slot-cache entries;
+- original/current material IDs;
+- whether material installation runs;
+- shader parameter availability.
+
+Critical case:
+engine reuses a numeric node ID while stale Reifen cache entry remains.
+
+## T29 — generic/Raptor material cache lifecycle
+Return/sell a generic rubber crawler and a Raptor, then spawn another instance.
+
+Record cached original->wear material IDs and verify every cached material entity is still valid before setMaterial/use.
+
+Compare with A8800/special-steel fresh-per-node strategy.
+
+## T30 — early crawler classification timing
+Probe:
+- onLoad;
+- onLoadFinished;
+- immediate visual refresh;
+- first controlled frame.
+
+Record:
+- loadedCrawler availability;
+- motionPath kind;
+- vehicle type cache.
+
+Goal:
+determine whether a premature false/nil classification can occur before render geometry settles.
+
+## T31 — Volvo safety path
+Instrument the exact Volvo immediate-load path.
+
+Verify:
+- `_inImmediateLoadRefresh` state;
+- controlledVehicle state;
+- attempted material replacements;
+- frame spacing before parameter write.
+
+Do not deliberately remove the remaining controlled-vehicle safety gate in production runtime.
+
+## T32 — second-save EWFS entry hook
+Without restarting FS25:
+1. load save A and verify VehicleSystem.setEnteredVehicle refresh;
+2. return to menu;
+3. load save B;
+4. enter/tab a vehicle.
+
+Record:
+- WFS.installed;
+- vehicleSystemEnterHooked;
+- whether save B's VehicleSystem method is wrapped;
+- latency until HUD/lock state refreshes through fallback paths.
