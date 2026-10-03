@@ -24,7 +24,7 @@ MoreRealistic is not a small vehicle addon and should not be functionally absorb
 - wheel friction and rolling resistance;
 - wheel load/support-width semantics;
 - wheel-shape inertia and force-point behavior;
-- drivetrain and transmission behavior for MR vehicles;
+- global drivetrain/control behavior, with additional MR-specific transmission calibration/metadata on converted vehicles;
 - engine braking and PTO load;
 - implement draft force;
 - material-throughput power demand;
@@ -55,12 +55,13 @@ MR has at least three scopes:
    - several UI/light/AI/base-game fixes.
 
 2. **MR-CONVERTED VEHICLE/IMPLEMENT**
-   - custom VehicleMotor instance;
-   - MR transmission/hydrostatic/CVT metadata;
+   - richer transmission/hydrostatic/CVT metadata and calibration consumed by the globally installed MR motor/control code;
    - implement-specific draft/PTO calibration;
    - combine/baler/mower/etc throughput model;
    - work-area stationary semantics;
    - curated suspension/geometry/mass values.
+
+A critical second-pass correction is that the VehicleMotor/WheelsUtil control path itself is not limited to converted vehicles. MR globally overwrites many VehicleMotor methods and WheelsUtil.updateWheelsPhysics; converted assets mainly provide the richer MR metadata/calibration those global algorithms can consume.
 
 3. **CAPABILITY-GATED**
    - behavior that activates when a specialization/state exists regardless of conversion identity, such as mass contributors, dashboards, dynamic mounts, or wheel capabilities.
@@ -98,7 +99,12 @@ The detailed list is in `STATIC_FINDINGS.md`. Highest-value items:
 - direct global replacement of `Vehicle.getName` instead of a composable wrapper;
 - exact-version console-command teardown name mismatch;
 - direct Precision Farming method replacement with no explicit version/shape contract;
-- external-map surface classification partly depends on a small exact material-name set.
+- external-map surface classification partly depends on a small exact material-name set;
+- base rolling resistance can remain stale when surface/wetness changes without changing the numeric friction coefficient;
+- PowerConsumer draft-force guard returns can skip the rest of PTO/update bookkeeping;
+- variable-CoM recomputation is gated by mass delta, so same-mass spatial redistribution can leave stale physical CoM;
+- WoodCrusher can remove queued woodchips before knowing how much the fill unit actually accepted;
+- exact-package CNH ballast path contains a double-slash comparison typo.
 
 ## Relationship to existing RC work
 
@@ -120,9 +126,11 @@ This audit adds the broader explanation of *why* those bridges are necessary and
 - `INTEGRATION_OPPORTUNITIES.md` — RC/RE boundaries, AI/controllers, moisture, terrain and patch policy.
 - `STATIC_FINDINGS.md` — evidence-ranked defects, risks and cleanup opportunities.
 - `RUNTIME_TEST_PLAN.md` — focused tests to execute later in FS25.
+- `AI_CONTROL_AND_FALLBACKS.md` — global motor/control reach, AI behavior and AutoDrive/CVTaddon hybrid fallbacks.
+- `SPECIAL_SYSTEMS_AND_DATA.md` — WoodCrusher, conveyor adapters, override catalog, crop/fill rebalance and lifecycle/data edge cases.
 
 ## Audit status
 
-Static/source phase: **substantially complete** for 0.26.08.03.
+Static/source phase: **complete enough to close the source-reading phase** for 0.26.08.03. Further source work should now be hypothesis-driven rather than another undirected pass.
 
 Runtime phase: **pending**. Runtime tests are intentionally deferred until the user is back at the game machine. Static findings must not be promoted beyond their evidence tier.
