@@ -201,3 +201,56 @@ Crawler is one track wear object; hidden reference wheels are not individual tir
 Core differs only by version string. Visual, WFS, Workshop, Settings and purchase-event files are identical. .67 changes target Mud compatibility/version guard only.
 
 This means old RC validation remains relevant to core behavior, and old core lifecycle defects cannot be assumed fixed by the .67 update.
+
+
+## R-39 Raptor visual uses maximum wear for both tracks
+**CONFIRMED_STATIC**
+
+Raptor render refs are pooled at vehicle level; one `wear=max(left,right,...)` scalar is applied to every ref. Per-track persistent asymmetry is lost visually.
+
+## R-40 Special crawler full-reset path misses renderer-specific wear parameters
+**CONFIRMED_STATIC**
+
+ALL/native repair/repaint reset paths mainly clear `trackProfileWear` and the immediate reset explicitly invokes only the T9 worker. Raptor/A8800/Hannibal/Volvo use other shader parameters and can remain visually worn until their proper worker runs later.
+
+## R-41 Visual weak-node caches use numeric keys
+**CONFIRMED_STATIC lifecycle defect**
+
+Multiple supposedly weak per-node material/classification tables are keyed by numeric node IDs. Entries do not disappear through weak-key GC, so reused node IDs can inherit stale state. This directly undermines the source's stated "one fresh material per live node lifetime" protection.
+
+## R-42 Volvo immediate-load crash guard flag is never assigned
+**CONFIRMED_STATIC dead guard**
+
+`_inImmediateLoadRefresh` is read by the Volvo safety path but never set anywhere. A second controlled-vehicle gate may still prevent the dangerous timing, so a crash is not asserted.
+
+## R-43 Crawler kind can cache a premature negative forever
+**STRONG_CANDIDATE**
+
+If `loadedCrawler` is absent during first classification, `rvDetectCrawlerMotionPathKind` caches false; vehicle type is then cached with no retry. Late-ready steel geometry can remain classified as fallback rubber.
+
+## R-44 Generic/Raptor global material caches retain known dead-material lifecycle pattern
+**STRONG_CANDIDATE**
+
+A8800/special steel explicitly stopped globally reusing material entities because returned/rented vehicle material IDs became invalid. Generic `trackMaterialCache` and Raptor `raptorTrackMaterialCache` still use global numeric material-ID caches without deletion/mission invalidation.
+
+## R-45 Generic crawler renderer mutates GIANTS `scrollerNodes[].nodes`
+**DESIGN_RISK**
+
+When GIANTS does not supply `entry.nodes`, Reifen synthesizes and writes the field into the engine-owned crawler structure rather than storing a private normalized target list.
+
+## R-46 Passive visual predicate uses pcall success instead of returned attacher
+**CONFIRMED_STATIC low severity**
+
+`isPassiveObject = ... and pcall(getAttacherVehicle,...)` is true whenever the method executes successfully, even when it returns nil.
+
+## R-47 EWFS mission-specific VehicleSystem hook is one-mission-only
+**CONFIRMED_STATIC lifecycle bug**
+
+`WFS.install` wraps the current mission's VehicleSystem instance and latches `installed/vehicleSystemEnterHooked`. Mission unload never clears those flags, so a second mission in the same process does not wrap its new VehicleSystem instance.
+
+## R-48 IGNITION omission is not a confirmed vanilla bypass
+**CONFIRMED_STATIC audit correction**
+
+EWFS does not explicitly branch on `MotorState.IGNITION`, but GIANTS' normal ignition flow enters IGNITION from OFF while EWFS is already locked, and STARTING then creates the timer. When the ignition key returns from START to IGNITION while the engine runs, GIANTS keeps MotorState ON.
+
+Therefore the omission is only a robustness concern for nonstandard external state manipulation, not a demonstrated vanilla five-second bypass.
