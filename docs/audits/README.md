@@ -18,3 +18,4 @@ Never infer an absorption decision from feature similarity alone.
 
 - [TerraFarm deep architecture/compatibility audit](./terrafarm/README.md) — machine lifecycle, TerrainDeformation pipeline, multiplayer/persistence, landscaping areas, official machine-addon extensibility, integration tiers and risk matrix.
 - [MoreRealistic deep architecture/compatibility audit](./morerealistic/README.md) — global-vs-converted ownership, wheel/traction/mass model, drivetrain/PTO/workload architecture, static findings, integration opportunities and runtime test plan.
+- [Reifenverschleiss deep architecture/compatibility audit](./reifenverschleiss/README.md) — persistent tire/track/roller wear, friction/radius ownership, crawler visuals, EWFS, multiplayer/workshop lifecycle, integration opportunities and runtime test plan.
