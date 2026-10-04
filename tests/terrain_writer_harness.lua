@@ -351,3 +351,35 @@ assert(tw.stats.recoveryTargetRaisedSamples==1)
 assert(tw.stats.recoveryTargetLoweredSamples==0)
 assert(tw.stats.recoveryTargetMaxDeltaM>0.039)
 print("terrain_writer_target_recovery_harness: OK")
+
+
+-- R2 recovery fill uses one-way additive RAISE and exposes local geometry.
+local fw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,maxJobsPerFrame=2,maxBrushesPerJob=4,
+    depthBucketM=0.0005,minDepthM=0.0004
+})
+heights["70:70"]=9.96
+local fillDelta,fillGeometry=nil,nil
+assert(fw:enqueue({
+    x=70,z=70,mode="RAISE",raiseHeightM=0.02,
+    radiusM=0.35,hardness=0.55,strength=1.0,
+    source="RECOVERY",probeRadiusM=1.2,
+    onApplied=function(state,deltaY,beforeY,afterY,volume,geometry)
+        assert(state==TerrainDeformation.STATE_SUCCESS)
+        fillDelta=deltaY
+        fillGeometry=geometry
+    end
+}))
+local fb,fj=fw:flush()
+assert(fb==1 and fj==1)
+assert(fillDelta~=nil and fillDelta>0.019)
+assert(fillGeometry~=nil)
+assert(fillGeometry.centerDeficitBeforeM>0.039)
+assert(fillGeometry.centerDeficitAfterM<0.021)
+assert(fw.stats.recoveryRaiseJobs==1)
+assert(fw.stats.recoveryRaiseBrushes==1)
+assert(fw.stats.recoveryRaiseSamples==1)
+assert(fw.stats.recoveryRaiseRaisedSamples==1)
+assert(fw.stats.recoveryRaiseLoweredSamples==0)
+assert(fw.stats.recoveryRaiseMaxDeltaM>0.019)
+print("terrain_writer_r2_recovery_raise_harness: OK")

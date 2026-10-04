@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 9
+Writer.VERSION = 10
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -59,6 +59,12 @@ function Writer.new(options)
             massTransportRaiseJobs = 0,
             recoveryRaisedVolumeM3 = 0,
             recoveryRaiseJobs = 0,
+            recoveryRaiseBrushes = 0,
+            recoveryRaiseSamples = 0,
+            recoveryRaiseRaisedSamples = 0,
+            recoveryRaiseLoweredSamples = 0,
+            recoveryRaiseAbsDeltaM = 0,
+            recoveryRaiseMaxDeltaM = 0,
             recoverySmoothJobs = 0,
             recoverySmoothSamples = 0,
             recoverySmoothRaisedSamples = 0,
@@ -283,6 +289,26 @@ local function sampleRoughnessProbe(terrain, brush)
     }
 end
 
+function Writer:measureRecoveryAt(x, z, probeRadiusM)
+    local mission = g_currentMission
+    local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
+    if terrain == nil or terrain == 0
+        or type(x) ~= "number" or type(z) ~= "number" then
+        return nil
+    end
+
+    local r = math.max(
+        self.options.minRadiusM,
+        tonumber(probeRadiusM) or 1.0
+    )
+    return sampleRoughnessProbe(terrain, {
+        x = x,
+        z = z,
+        radiusM = r,
+        probeRadiusM = r
+    })
+end
+
 local function expensiveGeometryDiagnosticsEnabled()
     return RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.diagnostics ~= nil
@@ -323,6 +349,9 @@ function Writer:_submitBatch(depthM, brushes, mode)
         and brushes[1].source == "RECOVERY"
     local machineRecoveryTarget = mode == "TARGET"
         and brushes ~= nil and #brushes == 1
+        and brushes[1].source == "RECOVERY"
+    local recoveryRaiseMode = mode == "RAISE"
+        and brushes ~= nil and brushes[1] ~= nil
         and brushes[1].source == "RECOVERY"
 
     if machineRecoveryTarget then
@@ -386,15 +415,16 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     local heightSamples = nil
     local roughnessSamples = nil
-    if mode == "SMOOTH" or mode == "TARGET"
+    if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
             heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
         end
     end
-    if (mode == "SMOOTH" or mode == "TARGET") and brushes ~= nil
-        and brushes[1] ~= nil and brushes[1].source == "RECOVERY" then
+    if (mode == "SMOOTH" or mode == "TARGET" or mode == "RAISE")
+        and brushes ~= nil and brushes[1] ~= nil
+        and brushes[1].source == "RECOVERY" then
         roughnessSamples = {}
         for i, brush in ipairs(brushes) do
             roughnessSamples[i] = sampleRoughnessProbe(terrain, brush)
@@ -469,6 +499,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
                         stats.recoveryRaisedVolumeM3 =
                             stats.recoveryRaisedVolumeM3 + callbackVolume
                         stats.recoveryRaiseJobs = stats.recoveryRaiseJobs + 1
+                        stats.recoveryRaiseBrushes =
+                            stats.recoveryRaiseBrushes + #(self.brushes or {})
                     else
                         stats.unclassifiedRaisedVolumeM3 =
                             stats.unclassifiedRaisedVolumeM3 + callbackVolume
@@ -607,6 +639,22 @@ function Writer:_submitBatch(depthM, brushes, mode)
                                 stats.recoveryTargetLoweredSamples + 1
                         end
                     end
+                    if self.mode == "RAISE" and self.source == "RECOVERY" then
+                        local absDelta = math.abs(deltaY)
+                        stats.recoveryRaiseSamples =
+                            stats.recoveryRaiseSamples + 1
+                        stats.recoveryRaiseAbsDeltaM =
+                            stats.recoveryRaiseAbsDeltaM + absDelta
+                        stats.recoveryRaiseMaxDeltaM =
+                            math.max(stats.recoveryRaiseMaxDeltaM, absDelta)
+                        if deltaY > 0.00005 then
+                            stats.recoveryRaiseRaisedSamples =
+                                stats.recoveryRaiseRaisedSamples + 1
+                        elseif deltaY < -0.00005 then
+                            stats.recoveryRaiseLoweredSamples =
+                                stats.recoveryRaiseLoweredSamples + 1
+                        end
+                    end
 
                     if math.abs(lowering) <= 0.00005 then
                         stats.geometryZeroChangeSamples =
@@ -619,7 +667,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 end
 
                 local recoveryGeometry = nil
-                if (self.mode == "SMOOTH" or self.mode == "TARGET")
+                if (self.mode == "SMOOTH" or self.mode == "TARGET"
+                    or self.mode == "RAISE")
                     and self.source == "RECOVERY" then
                     local beforeProbe = self.roughnessSamples ~= nil
                         and self.roughnessSamples[i] or nil

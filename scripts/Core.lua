@@ -220,7 +220,7 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v26R1 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
+                        "TerrainRecovery v27R2 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.intentCandidateCells or 0,
@@ -300,22 +300,26 @@ function RealismExtensionsCore:update(dt)
                     ))
 
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecoveryStructural | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d deficitReduce=%.4fm centerRaised=%.4fm maxBefore=%.4fm maxAfter=%.4fm targetJobs=%d targetBrushes=%d targetRaised=%d targetLowered=%d targetAbsDelta=%.4fm targetMaxDelta=%.4fm",
+                        "TerrainRecoveryFill | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d loweringViolations=%d noOp=%d noDeficit=%d deficitReduce=%.4fm centerRaised=%.4fm maxBefore=%.4fm maxAfter=%.4fm raiseJobs=%d raiseBrushes=%d raiseSamples=%d raised=%d lowered=%d raiseAbsDelta=%.4fm raiseMaxDelta=%.4fm",
                         r.structuralScheduled or 0,
                         r.structuralApplied or 0,
                         r.structuralCompleted or 0,
                         r.structuralStalled or 0,
                         r.structuralOwnershipExhausted or 0,
+                        r.structuralLoweringViolations or 0,
+                        r.structuralNoopPulses or 0,
+                        r.structuralPreflightNoDeficit or 0,
                         r.structuralDeficitReductionM or 0,
                         r.structuralCenterRaisedM or 0,
                         r.structuralMaxDeficitBeforeM or 0,
                         r.structuralMaxDeficitAfterM or 0,
-                        writerStats.recoveryTargetJobs or 0,
-                        writerStats.recoveryTargetBrushes or 0,
-                        writerStats.recoveryTargetRaisedSamples or 0,
-                        writerStats.recoveryTargetLoweredSamples or 0,
-                        writerStats.recoveryTargetAbsDeltaM or 0,
-                        writerStats.recoveryTargetMaxDeltaM or 0
+                        writerStats.recoveryRaiseJobs or 0,
+                        writerStats.recoveryRaiseBrushes or 0,
+                        writerStats.recoveryRaiseSamples or 0,
+                        writerStats.recoveryRaiseRaisedSamples or 0,
+                        writerStats.recoveryRaiseLoweredSamples or 0,
+                        writerStats.recoveryRaiseAbsDeltaM or 0,
+                        writerStats.recoveryRaiseMaxDeltaM or 0
                     ))
 
                     if diagConfig.causalWindows ~= false then
