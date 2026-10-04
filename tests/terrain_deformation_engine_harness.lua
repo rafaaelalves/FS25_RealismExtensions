@@ -82,6 +82,7 @@ RealismExtensionsTerrainResponseModel = {
     end
 }
 
+dofile("scripts/terrain/LoadedContactRegistry.lua")
 dofile("scripts/terrain/SurfaceResponse.lua")
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
@@ -150,6 +151,9 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == 2)
 assert(enqueued == 2)
 assert(RealismExtensionsTerrainRuntime.history.count == 2)
+local contactStats=RealismExtensionsLoadedContactRegistry.getStats(0)
+assert(contactStats.activeContacts==2)
+assert(contactStats.maxLoadN>=20000)
 
 -- Move each wheel forward: only this vehicle's two wheels are processed.
 wheelA.testX = 0.4
@@ -207,5 +211,8 @@ RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeProtectedContexts + 2)
+
+RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
+assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
 print("terrain_deformation_engine_harness: OK")
