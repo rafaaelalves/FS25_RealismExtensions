@@ -2,7 +2,7 @@
 
 Baseline: RMS `0.10.0.0`, ZIP SHA-256 `6741f193f22a5f85f5543c73d7f566b6686ab90bf7b705fd66d6d3421cb0d021`.
 
-Pass 1 scope: architecture, scheduling, networking, persistence and authority. This ledger is intentionally incomplete until subsystem passes finish.
+Static/source scope: architecture, scheduling, networking, persistence, drivetrain, wear/breakdowns, thermal/electrical, service/fluids, AI/leasing and UI. Runtime proof remains separate.
 
 Evidence labels:
 - **CONFIRMED_STATIC** — source proves the condition/path.
@@ -158,3 +158,156 @@ This avoids peer-local random divergence for the core mechanical model.
 Eleven dirty groups plus per-domain epsilon/change detection prevent the large RMS state model from becoming one monolithic every-frame stream.
 
 Possible refinement is lifecycle cleanup of the per-connection masks, not replacement of the architecture.
+
+## RMS-18 Differential-lock automatic release clears the retained request
+**CONFIRMED_STATIC**
+
+The drivetrain deliberately stores `diffLockRequested` separately from `diffLockEngaged`, and the settings tooltip states that locks should disengage above the speed threshold and re-engage below it while still requested.
+
+When speed exceeds the release threshold, however, `updateDiffLockState()` calls `setDrivetrainState(..., false, ...)`, clearing the requested flag itself.
+
+The lock therefore cannot automatically re-engage on deceleration without another player request.
+
+Upstream patch: preserve `diffLockRequested=true`; only drop the effective engaged state while over speed.
+
+## RMS-19 Enhanced Vehicle settings cache can survive a backwards mission clock
+**STRONG_CANDIDATE lifecycle defect**
+
+The module-global Enhanced Vehicle cache stores a `nextReadTime` based on `g_time` and is not reset by RMS map lifecycle code.
+
+If a second mission in the same process starts with a lower clock, the previous mission's deadline can remain far in the future and suppress the intended ten-second settings reread.
+
+Patch: reset the cache at map load/delete or explicitly detect backwards time.
+
+## RMS-20 Native differential-lock path may preserve an open axle speed ratio
+**DESIGN_RISK / RUNTIME_PENDING**
+
+When the full center graph is installed RMS classifies the lock as `nativeLock`. In that case wheel-to-wheel axle differentials retain their original `maxSpeedRatio` instead of using the configured locked ratio.
+
+If a vehicle's original axle ratio is materially permissive, the resulting lock may be softer than the UI/tutorial description that the inside and outside wheels are forced toward the same speed.
+
+Do not patch until a controlled vehicle with an open original ratio proves the behavior.
+
+## RMS-21 Locked wind-up ignores the sampled surface-compliance factor
+**DESIGN_RISK / RUNTIME_PENDING**
+
+Ordinary 4WD wind-up consumes `avgGroundSurfaceFactor`, allowing soft terrain to release driveline strain.
+
+When the differential lock is engaged RMS forces `surfaceFactor=1`. Tire friction still gates wind-up, but the direct surface-compliance input is ignored.
+
+This may overstate locked wind-up on deformable soil. Validate asphalt/gravel/dry field/wet field before changing the model.
+
+## RMS-22 Reifen FORCE-WEAR differential shares become stale after RMS topology changes
+**CONFIRMED_STATIC cross-mod mismatch**
+
+Exact-source cross-read closes Reifen finding R-29/R-28 as a real topology mismatch.
+
+Reifen 1.2.2.67:
+- traverses `spec_motorized.differentials`;
+- computes wheel torque shares;
+- stores them in a per-vehicle `rvDifferentialWheelShareCache`;
+- reuses those cached shares for FORCE-WEAR.
+
+RMS later removes/rebuilds the live GIANTS differential graph when switching 2WD/4WD/AUTO.
+
+Therefore the cached Reifen shares no longer necessarily represent the effective graph. A disconnected axle can stop being reported as live-driven while the remaining active axle still carries only its old full-graph share, under-allocating FORCE-WEAR; crawler/reference paths can be affected more directly.
+
+Existing RC `MRRMS` fixes the analogous MoreRealistic metadata problem, not Reifen's cache.
+
+Preferred fix: Reifen invalidates/recomputes on topology change or topology signature. Cleaner future contract: RMS exposes effective driven-wheel/topology state.
+
+## RMS-23 Restoring the captured differential graph can overwrite a later owner
+**DESIGN_RISK**
+
+RMS captures its original differential graph when it builds the layout and later uses that snapshot to restore drivetrain ownership.
+
+If another mod intentionally changes the graph after that capture, an RMS restore can reinstate the older snapshot.
+
+No failure is demonstrated in the target stack. This is an ownership-contract reason to prefer a public topology/provider boundary over independent graph writers.
+
+## RMS-24 SpeedMeterDisplay draw override is not exception-safe
+**CONFIRMED_STATIC robustness defect**
+
+RMS directly assigns `SpeedMeterDisplay.draw`.
+
+For selected-tool display it temporarily replaces `getDamageAmount` on child vehicles and hides the native speed background, calls the previously captured draw function, then restores those mutations.
+
+There is no protected/finally-style restoration. If the delegated draw errors, temporary methods and visibility state can remain modified after the exception.
+
+Patch candidate:
+- use a protected call with guaranteed restoration;
+- where practical, prefer a composable GIANTS wrapper installation.
+
+## RMS-25 Leasing hooks stack when Mission00.load is invoked again in the same Lua process
+**CONFIRMED_STATIC conditional lifecycle defect**
+
+`RMS_Leasing.init()` prepends `RMS_Leasing.preLoad` to `Mission00.load`.
+
+Every execution of `preLoad` then wraps the current:
+- `SellVehicleEvent.run`;
+- `ShopController.sell`.
+
+There is no installed-function guard and no teardown. A second mission load in the same process therefore wraps the already wrapped RMS functions again.
+
+Runtime consequence can be duplicated/nested leasing UI or return-charge logic depending on call path.
+
+Patch: install these global wrappers once, or store/check the installed wrapper identity.
+
+## RMS-26 Deleted external-power partner can remain referenced
+**CONFIRMED_STATIC lifecycle cleanup gap**
+
+Jumper cables store reciprocal `spec.externalPowerConnection` vehicle references.
+
+The normal explicit disconnect path clears both sides, but RMS vehicle `onDelete()` does not call `clearExternalPowerConnection()`.
+
+If one connected vehicle is deleted without the cable workflow explicitly disconnecting first, the survivor can retain the deleted vehicle object. `updateBatteryChargingModel()` stops treating a non-existing entity as an active pair, but it does not clear the stale relation in that invalid-partner branch.
+
+Patch: clear the reciprocal external-power relation during vehicle deletion and when an invalid/deleted partner is observed.
+
+## RMS-27 Used-vehicle condition randomization is server-owned
+**POSITIVE_PATTERN**
+
+Used-vehicle system-condition variance and initial breakdown presence are rolled only from the server registration path, then synchronized.
+
+This preserves the desirable variation without peer-local divergence.
+
+## RMS-28 Breakdown registry is capability-complete at source level
+**POSITIVE_PATTERN**
+
+The exact registry contains 45 breakdown definitions, 35 of them selectable. Source cross-check confirms every selectable breakdown has both repair-price and progression-multiplier metadata.
+
+Applicability functions separate transmission types, electrical/fuel/PTO/hydraulic/chassis capabilities rather than relying on vehicle filename allowlists.
+
+## RMS-29 Physical fluid transfer has continuous authority validation and conservation rollback
+**POSITIVE_PATTERN**
+
+Manual transfer validates requester identity/farm ownership, player/container/vehicle distance, stationary/motor-off state, circuit capacity and source product compatibility.
+
+The transfer is revalidated continuously while active. The source fluid is removed transactionally; any liters the target cannot accept are restored.
+
+This is a strong reference implementation for interactive persistent-resource movement.
+
+## RMS-30 Weather state is initialized lazily
+**CONFIRMED_STATIC low-severity initialization/lifecycle issue**
+
+`RMS_Main.currentWeather` is initialized once to SUN and updated only inside the 30-second per-vehicle meta path. Individual vehicle meta timers are randomized across that window.
+
+On a fresh rainy/snowy mission, and especially after loading a second mission in the same process, electrical weather-exposure wear can temporarily use the previous/default weather until the first meta refresh occurs.
+
+Patch: initialize current weather explicitly in `loadMap()`; reset it in `deleteMap()`.
+
+## RMS-31 CVT-addon transmission branch contains dead locals
+**CONFIRMED_STATIC cleanup only**
+
+`prevStress` and `normalizedCVTdamage` are calculated in the CVT-addon wear path but never consumed.
+
+No behavioral defect follows from this alone; remove or use them to reduce misleading audit/debug surface.
+
+## RMS-32 AI cruise protection is server-side and time-normalized
+**POSITIVE_PATTERN**
+
+RMS's AI worker controller builds a stress signal from dynamic load plus engine/transmission temperature, filters it with dt-normalized dynamics, uses PID-like reduction/recovery rates and respects lowered-implement speed limits.
+
+It also has emergency temperature reduction and Precision Farming soil-sampling exceptions.
+
+Cross-mod behavior with Courseplay/AutoDrive still needs runtime smoke, but the control model itself is substantially more deliberate than a fixed arbitrary speed cap.
