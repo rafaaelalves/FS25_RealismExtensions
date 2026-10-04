@@ -375,6 +375,15 @@ function Engine.processSample(
         absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
         absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
     }
+
+    -- SurfaceResponse owns persistent-geometry severity bands. Merge those
+    -- before actor-specific anti-pathology overrides so ordinary wet fields can
+    -- remain hard to drive through Mud/MR without automatically baking most of
+    -- the transient sink into RE's heightfield.
+    for key, value in pairs(surface.modelOptions or {}) do
+        modelOptions[key] = value
+    end
+
     local actorPolicy = RealismExtensionsTerrainActorPolicy
     local actorOverrides = actorPolicy ~= nil
         and type(actorPolicy.getModelOverrides) == "function"

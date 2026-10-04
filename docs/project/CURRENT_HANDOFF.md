@@ -870,3 +870,62 @@ semantic flag sufficient for a general classifier. Keep fail-closed; do not use
 name/radius heuristics.
 
 Detailed study: `docs/research/wheel-support-topology-study.md`.
+
+
+## Wet-field playability calibration — 2026-10-04
+
+Runtime trigger:
+- build `ec49d653dd2bbc0da98634096cc82a62a4d698ec` showed ordinary field work becoming persistently destructive well before an explicit MUD scenario;
+- final sample: wetness 0.89, longitudinal slip 0.266, instantaneous Mud sink 0.080 m, plastic transfer 0.76, persistent sink 0.061 m, modeled rut 0.146 m;
+- session totals were dominated by FIELD / FIELD_SOFT / FIELD_FIRM, not MUD;
+- AI_FIELD accepted 38,070 persistent brushes / 72.838 m cumulative applied depth, making unattended worker use excessively destructive.
+
+Interpretation:
+Mud owns transient mobility difficulty (grip, resistance, sink). RE should not automatically make most of that temporary sink a permanent heightfield scar. The old global plasticity band (start 0.45 wetness, full at 0.90, up to 0.90 transfer with slip) made ordinary wet fieldwork behave too much like saturated mud.
+
+Branch: `tune/wet-field-playability`.
+
+SurfaceResponse v3 introduces persistent-geometry severity bands while leaving upstream MR/Mud mobility unchanged:
+- FIELD_FIRM: plastic start 0.68, full 0.98, base max transfer 0.28, slip max 0.45; caps 35/75 mm static/slip;
+- FIELD: start 0.62, full 0.98, base max 0.38, slip max 0.58; caps 50/100 mm;
+- FIELD_SOFT: start 0.56, full 0.98, base max 0.48, slip max 0.68; caps 65/130 mm;
+- explicit MUD keeps the previous severe response.
+
+Design intent:
+- wet conditions may still be difficult to traverse because Mud/MR remain physical mobility owners;
+- ordinary wet field passes should create modest persistent damage rather than repeatedly undoing tillage;
+- freshly cultivated/ploughed soil remains more vulnerable;
+- true MUD/saturated conditions remain the exceptional rescue/adventure scenario.
+
+Approximate transfer at wetness 0.75 / slip 0.266:
+- FIELD_FIRM ~4%;
+- FIELD ~11%;
+- FIELD_SOFT ~21%;
+- MUD ~56%.
+
+Approximate transfer at the reported wetness 0.89:
+- FIELD_FIRM ~22%;
+- FIELD ~33%;
+- FIELD_SOFT ~43%;
+- MUD ~76%.
+
+Validation split:
+1. If the new build remains hard to drive but no longer destroys repaired terrain every pass, RE calibration is working; any remaining excessive traction/sink difficulty belongs to Mud/MR tuning.
+2. If persistent ruts are still too frequent/deep, tune SurfaceResponse bands further before touching recovery strength.
+3. Do not make recovery stronger to compensate for overproduction of new rut debt.
+
+### Performance observations from the same session
+
+RE terrain internal timing remains modest on average; callbacks are nested in flush and must not be double-counted. However VisualTrackCapture accumulated >223k points and >114k cuts, so tracks need a dedicated perf/memory audit.
+
+Current stack hot-path observations:
+- RC MRDynamicPTO wraps Motorized and WheelsUtil hot paths and reported tens of thousands of calls/scopes;
+- FarmKitCompatibility reported >54k suppressed wheel-dust calls and >143k plowing-suspension scopes: ownership is correct, but suppression-after-dispatch still has runtime cost;
+- FarmKit implement dust remains intentionally enabled; source defaults/tool multipliers and multi-second fade tails can create substantially more particles than the UI's top-level multiplier suggests;
+- the uploaded ModMixer report does not serialize the live Performance-tab ms/frame ranking, so the user's observed Reifen > DynamicPTO ranking must be verified with ModMixer hook probe before making an optimization/absorption decision.
+
+Next performance pass should:
+- run ModMixer hook probe / peak capture during the same representative fieldwork;
+- profile Reifen hot hooks, Dynamic PTO + RC composition, FarmKit implement dust, RE VisualTrackCapture separately;
+- optimize ownership at registration/dispatch level where possible instead of paying thousands of suppressed calls;
+- keep gameplay calibration and performance refactors on separate branches.

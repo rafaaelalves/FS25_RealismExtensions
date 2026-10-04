@@ -1,7 +1,7 @@
 RealismExtensionsTerrainSurfaceResponse = RealismExtensionsTerrainSurfaceResponse or {}
 local Surface = RealismExtensionsTerrainSurfaceResponse
 
-Surface.VERSION = 2
+Surface.VERSION = 3
 
 local HARD_KEYS = { "ASPHALT", "CONCRETE", "PAVE", "COBBLE", "CEMENT" }
 local GRAVEL_KEYS = { "GRAVEL", "STONE", "ROCK" }
@@ -97,7 +97,16 @@ local function terrainCategoryAt(x, z)
     return nil, nil, 0
 end
 
-local function profile(category, source, deformability, staticCap, slipCap, minWetness, minSlip)
+local function profile(
+    category,
+    source,
+    deformability,
+    staticCap,
+    slipCap,
+    minWetness,
+    minSlip,
+    modelOptions
+)
     return {
         available = true,
         category = category,
@@ -106,9 +115,42 @@ local function profile(category, source, deformability, staticCap, slipCap, minW
         maxStaticRutDepthM = staticCap,
         maxSlipRutDepthM = slipCap,
         minWetness = minWetness or 0,
-        minLongitudinalSlip = minSlip or 0
+        minLongitudinalSlip = minSlip or 0,
+        modelOptions = modelOptions
     }
 end
+
+-- Permanent heightfield damage must be rarer than transient mobility sink.
+-- Mud owns the "how hard is it to drive here right now?" consequence. These
+-- profiles only govern how much of that instantaneous sink RE is allowed to
+-- bake into persistent terrain geometry.
+--
+-- Ordinary wet fieldwork should remain consequential without behaving like a
+-- saturated bog every pass. Freshly worked soil is more vulnerable; explicit
+-- MUD keeps the previous severe response.
+local FIELD_PLASTICITY = {
+    FIELD_FIRM = {
+        plasticSinkStartWetness = 0.68,
+        plasticSinkFullWetness = 0.98,
+        plasticSinkMaxTransfer = 0.28,
+        plasticSinkSlipBoost = 0.08,
+        plasticSinkMaxWithSlip = 0.45
+    },
+    FIELD = {
+        plasticSinkStartWetness = 0.62,
+        plasticSinkFullWetness = 0.98,
+        plasticSinkMaxTransfer = 0.38,
+        plasticSinkSlipBoost = 0.12,
+        plasticSinkMaxWithSlip = 0.58
+    },
+    FIELD_SOFT = {
+        plasticSinkStartWetness = 0.56,
+        plasticSinkFullWetness = 0.98,
+        plasticSinkMaxTransfer = 0.48,
+        plasticSinkSlipBoost = 0.14,
+        plasticSinkMaxWithSlip = 0.68
+    }
+}
 
 function Surface.classifyTerrainAt(x, z)
     local category, name, weight = terrainCategoryAt(x, z)
@@ -134,12 +176,39 @@ function Surface.resolve(context, x, z)
     if context.soilContact == true then
         local name = tostring(context.groundProfileName or "")
         if containsAny(name, FIELD_SOFT_KEYS) then
-            return profile("FIELD_SOFT", "groundProfile:" .. name, 1.00, 0.08, 0.18)
+            return profile(
+                "FIELD_SOFT",
+                "groundProfile:" .. name,
+                1.00,
+                0.065,
+                0.130,
+                nil,
+                nil,
+                FIELD_PLASTICITY.FIELD_SOFT
+            )
         end
         if containsAny(name, FIELD_FIRM_KEYS) then
-            return profile("FIELD_FIRM", "groundProfile:" .. name, 0.55, 0.04, 0.10)
+            return profile(
+                "FIELD_FIRM",
+                "groundProfile:" .. name,
+                0.55,
+                0.035,
+                0.075,
+                nil,
+                nil,
+                FIELD_PLASTICITY.FIELD_FIRM
+            )
         end
-        return profile("FIELD", "soilContact", 0.80, 0.06, 0.15)
+        return profile(
+            "FIELD",
+            "soilContact",
+            0.80,
+            0.050,
+            0.100,
+            nil,
+            nil,
+            FIELD_PLASTICITY.FIELD
+        )
     end
 
     local category, name, weight = terrainCategoryAt(x, z)
