@@ -107,3 +107,5 @@ assert(rm.sinkPlasticTransfer01 > 0.70)
 assert(rm.persistentSinkDepthM > rf.persistentSinkDepthM * 2)
 
 print("wet_field_playability_harness: OK")
+
+-- Branch CI sentinel: wet-field calibration must remain covered by full harness suite.
