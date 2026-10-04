@@ -130,6 +130,7 @@ RealismExtensionsConfig = {
     }
 }
 dofile("scripts/terrain/SoilMassTransportModel.lua")
+dofile("scripts/terrain/RecoverySurfaceEstimator.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
 
 local w = RealismExtensionsTerrainWriter.new({
