@@ -404,3 +404,77 @@ Next runtime should compare:
 - queue expiry/drop rate.
 
 Only then decide whether Strategy S is sufficient or H/R are needed.
+
+
+## Runtime checkpoint — deferred recovery succeeds
+
+Build:
+- `ef47be75f31205e831647e39b984e991bae46b4d`
+- 2026-10-04 combined tracks/recovery session.
+
+### Deferred safety: PASS
+
+End of active recovery session:
+- deferred created: 3,284;
+- deferred applied: 3,176;
+- deferred expired: 51;
+- deferred superseded: 57;
+- deferred rejected: 0;
+- deferred dropped by capacity: 0;
+- queued at rest: 0;
+- peak queue: 56.
+
+Therefore:
+- ~96.7% of created deferred patches eventually executed;
+- ~1.6% expired;
+- ~1.7% became unnecessary because another path already handled the patch;
+- no queue-capacity failure occurred.
+
+This closes the previous over-blocking lifecycle defect. Loaded-contact safety can remain without losing almost every worked patch.
+
+### Native smoothing: positive but not yet sufficient evidence for closure
+
+At 3,338 verified recovery brushes:
+- roughness improved: 2,856 (~85.6%);
+- worsened: 117;
+- neutral: 365;
+- local relief improved: 2,871 (~86.0%);
+- worsened: 222;
+- neutral: 245;
+- gross relief reduction: 7.9875 m across all probes;
+- gross relief worsening: 1.2402 m;
+- net sampled relief reduction: ~6.7473 m, ~2.0 mm per brush on average.
+
+Important:
+- center moved down in 2,858 callbacks and up in only 77;
+- native smoothing is therefore mostly reducing high material/shoulders, consistent with the earlier user observation that a smoothed field can end lower while becoming flatter;
+- worst observed local relief remained very large (`1.6866 -> 1.6833 m`), so maxima/outliers are not a useful success metric by themselves.
+
+### Diagnostic cost
+
+When thousands of recovery geometry probes ran:
+- TerrainWriter flush averaged roughly 1.07 ms;
+- callback averaged roughly 0.27 ms.
+
+In the later no-recovery part of the same process:
+- flush averaged ~0.18 ms;
+- callback ~0.003 ms.
+
+The cost is associated with before/after height probing at recovery scale, not with deferred queue management alone.
+
+Do not leave full 9-point before/after probing on every production brush.
+
+### Design consequence
+
+Strategy S (blind/full-width native smooth) has now taught us enough to advance research toward Strategy H:
+
+**history-guided native smoothing**.
+
+Preferred intent:
+1. SpatialHistory identifies patches with RE-attributable rut debt;
+2. current local surface estimator measures whether high-frequency relief/valley remains;
+3. native GIANTS SMOOTH remains the physical actuator;
+4. repeated pulses are bounded and converge on local relief, not an original absolute height;
+5. broad slopes/player landscaping remain baseline unless RE history marks recoverable deformation.
+
+Do not implement absolute original-height restoration.
