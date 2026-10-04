@@ -32,6 +32,14 @@ Recovery.DEFAULTS = {
     -- cadence instead of giving it only one tiny native smoothing pulse.
     passageCooldownMs = 750,
 
+    -- Recovery requested while a loaded wheel overlaps the smoothing footprint
+    -- is not discarded. Keep a bounded, short-lived patch request and retry it
+    -- after the vehicle/implement contact clears the area.
+    deferredRetryMs = 200,
+    deferredTtlMs = 5000,
+    maxDeferredPatches = 2048,
+    maxDeferredChecksPerUpdate = 16,
+
     -- While a cultivator is genuinely processing ground, suspend only RE's
     -- persistent rut-writing for the complete tractor/implement combination.
     -- Contact, MR/Mud physics, footprint and visual tyre tracks remain active.
@@ -72,6 +80,16 @@ local function newStats()
         loadedContactQueries = 0,
         loadedContactSkips = 0,
         loadedContactMaxLoadN = 0,
+        deferredCreated = 0,
+        deferredCoalesced = 0,
+        deferredChecks = 0,
+        deferredStillBlocked = 0,
+        deferredApplied = 0,
+        deferredExpired = 0,
+        deferredSuperseded = 0,
+        deferredRejected = 0,
+        deferredDroppedCapacity = 0,
+        deferredQueuePeak = 0,
         workAreaGeometrySamples = 0,
         minWorkAreaWidthM = nil,
         maxWorkAreaWidthM = 0,
@@ -95,6 +113,10 @@ function Recovery.resetRuntimeState()
     Recovery.processedStamps = {}
     Recovery.pendingStamps = {}
     Recovery.protectedCells = {}
+    Recovery.deferredByKey = {}
+    Recovery.deferredQueue = {}
+    Recovery.deferredQueueHead = 1
+    Recovery.deferredCount = 0
     Recovery.activeCombinationUntil = setmetatable({}, { __mode = "k" })
     Recovery._lastStampCleanupMs = 0
     Recovery.stats = newStats()
@@ -256,6 +278,292 @@ local function cleanupOldStamps(nowMs)
     end
 end
 
+local function queryLoadedContact(x, z, radius, nowMs)
+    local registry = RealismExtensionsLoadedContactRegistry
+    if registry == nil or type(registry.overlapsCircle) ~= "function" then
+        return false, nil
+    end
+
+    Recovery.stats.loadedContactQueries =
+        Recovery.stats.loadedContactQueries + 1
+
+    local blocked, contact = registry.overlapsCircle(
+        x, z, radius, nowMs
+    )
+
+    if blocked then
+        Recovery.stats.loadedContactSkips =
+            Recovery.stats.loadedContactSkips + 1
+        if contact ~= nil then
+            Recovery.stats.loadedContactMaxLoadN = math.max(
+                Recovery.stats.loadedContactMaxLoadN,
+                tonumber(contact.loadN) or 0
+            )
+        end
+    end
+
+    return blocked, contact
+end
+
+local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred)
+    Recovery.pendingStamps[key] = true
+    -- Claim the physical patch at enqueue time. Even a no-op smoothing result
+    -- must not be hammered every frame of the same pass.
+    Recovery.processedStamps[key] = nowMs
+
+    local accepted = runtime.writer:enqueue({
+        x = point.x,
+        z = point.z,
+        mode = "SMOOTH",
+        smoothAmountM = params.smoothAmount,
+        radiusM = params.radius,
+        hardness = Recovery.DEFAULTS.brushHardness,
+        strength = params.strength,
+        source = "RECOVERY",
+        probeRadiusM = params.radius * 0.75,
+        onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
+            Recovery.pendingStamps[key] = nil
+            Recovery.stats.callbacks = Recovery.stats.callbacks + 1
+
+            if type(deltaY) == "number" then
+                if deltaY > 0.00005 then
+                    Recovery.stats.centerRaised =
+                        Recovery.stats.centerRaised + 1
+                elseif deltaY < -0.00005 then
+                    Recovery.stats.centerLowered =
+                        Recovery.stats.centerLowered + 1
+                end
+            end
+
+            local beforeR = geometry ~= nil
+                and tonumber(geometry.roughnessBeforeM) or nil
+            local afterR = geometry ~= nil
+                and tonumber(geometry.roughnessAfterM) or nil
+            if beforeR == nil or afterR == nil then
+                Recovery.stats.roughnessNeutral =
+                    Recovery.stats.roughnessNeutral + 1
+                return
+            end
+
+            Recovery.stats.roughnessVerified =
+                Recovery.stats.roughnessVerified + 1
+            local improvement = beforeR - afterR
+            local epsilon = Recovery.DEFAULTS.minRoughnessImprovementM
+
+            if improvement > epsilon then
+                Recovery.stats.roughnessImproved =
+                    Recovery.stats.roughnessImproved + 1
+                Recovery.stats.roughnessImprovementM =
+                    Recovery.stats.roughnessImprovementM + improvement
+
+                -- This reconciliation rule remains intentionally unchanged
+                -- during the deferred-safety experiment. A later geometry
+                -- probe will decide whether roughness is sufficient to reduce
+                -- logical rut history.
+                local amount = math.min(
+                    params.maxHistoryRecovery,
+                    improvement
+                )
+                local cells, depth = runtime.history:applyRecoveryCircle(
+                    point.x,
+                    point.z,
+                    params.radius,
+                    amount,
+                    params.historyFraction,
+                    {
+                        minRutM = Recovery.DEFAULTS.minHistoryRutM,
+                        nowMs = g_currentMission ~= nil
+                            and g_currentMission.time or nowMs
+                    }
+                )
+                Recovery.stats.historyRecoveredCells =
+                    Recovery.stats.historyRecoveredCells + (cells or 0)
+                Recovery.stats.historyRecoveredDepthM =
+                    Recovery.stats.historyRecoveredDepthM + (depth or 0)
+            elseif improvement < -epsilon then
+                Recovery.stats.roughnessWorsened =
+                    Recovery.stats.roughnessWorsened + 1
+                Recovery.stats.roughnessWorseningM =
+                    Recovery.stats.roughnessWorseningM - improvement
+            else
+                Recovery.stats.roughnessNeutral =
+                    Recovery.stats.roughnessNeutral + 1
+            end
+        end
+    })
+
+    if accepted then
+        Recovery.stats.brushesEnqueued =
+            Recovery.stats.brushesEnqueued + 1
+        if deferred then
+            Recovery.stats.deferredApplied =
+                Recovery.stats.deferredApplied + 1
+        end
+        return true
+    end
+
+    Recovery.pendingStamps[key] = nil
+    Recovery.processedStamps[key] = nil
+    Recovery.stats.brushesRejected =
+        Recovery.stats.brushesRejected + 1
+    if deferred then
+        Recovery.stats.deferredRejected =
+            Recovery.stats.deferredRejected + 1
+    end
+    return false
+end
+
+local function compactDeferredQueue()
+    local head = Recovery.deferredQueueHead or 1
+    local queue = Recovery.deferredQueue
+    if head <= 512 or head <= #queue * 0.5 then return end
+
+    local compact = {}
+    for i = head, #queue do
+        local entry = queue[i]
+        if entry ~= nil and entry ~= false then
+            compact[#compact + 1] = entry
+        end
+    end
+    Recovery.deferredQueue = compact
+    Recovery.deferredQueueHead = 1
+end
+
+local function removeDeferred(entry)
+    if entry == nil then return end
+    if Recovery.deferredByKey[entry.key] == entry then
+        Recovery.deferredByKey[entry.key] = nil
+        Recovery.deferredCount = math.max(
+            0, (Recovery.deferredCount or 0) - 1
+        )
+    end
+end
+
+local function scheduleDeferred(point, key, params, nowMs)
+    local existing = Recovery.deferredByKey[key]
+    if existing ~= nil then
+        existing.x = point.x
+        existing.z = point.z
+        existing.params = params
+        existing.expiresAtMs =
+            nowMs + Recovery.DEFAULTS.deferredTtlMs
+        existing.lastRequestedMs = nowMs
+        Recovery.stats.deferredCoalesced =
+            Recovery.stats.deferredCoalesced + 1
+        return true
+    end
+
+    if (Recovery.deferredCount or 0)
+        >= Recovery.DEFAULTS.maxDeferredPatches then
+        Recovery.stats.deferredDroppedCapacity =
+            Recovery.stats.deferredDroppedCapacity + 1
+        return false
+    end
+
+    local entry = {
+        key = key,
+        x = point.x,
+        z = point.z,
+        params = params,
+        createdAtMs = nowMs,
+        lastRequestedMs = nowMs,
+        nextAttemptMs = nowMs + Recovery.DEFAULTS.deferredRetryMs,
+        expiresAtMs = nowMs + Recovery.DEFAULTS.deferredTtlMs
+    }
+
+    Recovery.deferredByKey[key] = entry
+    Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
+    Recovery.deferredCount = (Recovery.deferredCount or 0) + 1
+    Recovery.stats.deferredCreated =
+        Recovery.stats.deferredCreated + 1
+    Recovery.stats.deferredQueuePeak = math.max(
+        Recovery.stats.deferredQueuePeak,
+        Recovery.deferredCount
+    )
+    return true
+end
+
+function Recovery.update(dt)
+    if not enabled() or (Recovery.deferredCount or 0) <= 0 then
+        return
+    end
+
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil or runtime.history == nil or runtime.writer == nil then
+        return
+    end
+
+    local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+    if nowMs <= 0 then return end
+
+    local checks = 0
+    local maxChecks = math.max(
+        1,
+        math.floor(Recovery.DEFAULTS.maxDeferredChecksPerUpdate)
+    )
+
+    while checks < maxChecks
+        and Recovery.deferredQueueHead <= #Recovery.deferredQueue do
+        local index = Recovery.deferredQueueHead
+        local entry = Recovery.deferredQueue[index]
+        Recovery.deferredQueue[index] = false
+        Recovery.deferredQueueHead = index + 1
+
+        if entry ~= nil and entry ~= false
+            and Recovery.deferredByKey[entry.key] == entry then
+            checks = checks + 1
+            Recovery.stats.deferredChecks =
+                Recovery.stats.deferredChecks + 1
+
+            if nowMs > entry.expiresAtMs then
+                removeDeferred(entry)
+                Recovery.stats.deferredExpired =
+                    Recovery.stats.deferredExpired + 1
+            elseif not stampAvailable(entry.key, nowMs) then
+                -- Another direct/deferred brush already handled this patch.
+                removeDeferred(entry)
+                Recovery.stats.deferredSuperseded =
+                    Recovery.stats.deferredSuperseded + 1
+            elseif nowMs < entry.nextAttemptMs then
+                Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
+            else
+                local blocked = queryLoadedContact(
+                    entry.x,
+                    entry.z,
+                    entry.params.radius,
+                    nowMs
+                )
+                if blocked then
+                    entry.nextAttemptMs =
+                        nowMs + Recovery.DEFAULTS.deferredRetryMs
+                    Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
+                    Recovery.stats.deferredStillBlocked =
+                        Recovery.stats.deferredStillBlocked + 1
+                else
+                    local accepted = enqueueRecoveryPoint(
+                        runtime,
+                        {x=entry.x,z=entry.z},
+                        entry.key,
+                        entry.params,
+                        nowMs,
+                        true
+                    )
+                    if accepted then
+                        removeDeferred(entry)
+                    else
+                        entry.nextAttemptMs =
+                            nowMs + Recovery.DEFAULTS.deferredRetryMs
+                        Recovery.deferredQueue[#Recovery.deferredQueue + 1] =
+                            entry
+                    end
+                end
+            end
+        end
+    end
+
+    compactDeferredQueue()
+end
+
 local function recoverWorkedArea(vehicle, workArea, processedArea)
     if not enabled() or (tonumber(processedArea) or 0) <= 0 then return end
 
@@ -284,137 +592,40 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
     local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
     local deep = spec ~= nil and spec.useDeepMode == true
     local radius = Recovery.DEFAULTS.smoothRadiusM
-    local smoothAmount = Recovery.DEFAULTS.smoothAmountM
-    local strength = Recovery.DEFAULTS.smoothStrength
-    local historyFraction = deep and Recovery.DEFAULTS.deepHistoryFraction
-        or Recovery.DEFAULTS.shallowHistoryFraction
-    local maxHistoryRecovery = deep and Recovery.DEFAULTS.deepMaxHistoryRecoveryM
-        or Recovery.DEFAULTS.shallowMaxHistoryRecoveryM
+    local params = {
+        radius = radius,
+        smoothAmount = Recovery.DEFAULTS.smoothAmountM,
+        strength = Recovery.DEFAULTS.smoothStrength,
+        historyFraction = deep
+            and Recovery.DEFAULTS.deepHistoryFraction
+            or Recovery.DEFAULTS.shallowHistoryFraction,
+        maxHistoryRecovery = deep
+            and Recovery.DEFAULTS.deepMaxHistoryRecoveryM
+            or Recovery.DEFAULTS.shallowMaxHistoryRecoveryM
+    }
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
-    protectWorkArea(g,nowMs)
+    protectWorkArea(g, nowMs)
     local points = buildCoveragePoints(g, radius)
-    Recovery.stats.coveragePoints = Recovery.stats.coveragePoints + #points
+    Recovery.stats.coveragePoints =
+        Recovery.stats.coveragePoints + #points
 
     for _, point in ipairs(points) do
         local key = stampKey(point.x, point.z)
         if not stampAvailable(key, nowMs) then
-            Recovery.stats.stampSkips = Recovery.stats.stampSkips + 1
+            Recovery.stats.stampSkips =
+                Recovery.stats.stampSkips + 1
         else
-            local blockedByLoadedContact = false
-            local blockingContact = nil
-            if RealismExtensionsLoadedContactRegistry ~= nil
-                and type(RealismExtensionsLoadedContactRegistry.overlapsCircle) == "function" then
-                Recovery.stats.loadedContactQueries =
-                    Recovery.stats.loadedContactQueries + 1
-                blockedByLoadedContact, blockingContact =
-                    RealismExtensionsLoadedContactRegistry.overlapsCircle(
-                        point.x,
-                        point.z,
-                        radius,
-                        nowMs
-                    )
-            end
-
-            if blockedByLoadedContact then
-                -- Do not claim the recovery stamp. The same physical work area
-                -- may retry after the loaded wheel moves away.
-                Recovery.stats.loadedContactSkips =
-                    Recovery.stats.loadedContactSkips + 1
-                if blockingContact ~= nil then
-                    Recovery.stats.loadedContactMaxLoadN = math.max(
-                        Recovery.stats.loadedContactMaxLoadN,
-                        tonumber(blockingContact.loadN) or 0
-                    )
-                end
+            local blocked = queryLoadedContact(
+                point.x, point.z, radius, nowMs
+            )
+            if blocked then
+                scheduleDeferred(point, key, params, nowMs)
             else
-                Recovery.pendingStamps[key] = true
-                -- Claim the physical patch at enqueue time. Even a no-op smoothing
-                -- result must not be hammered again every frame of the same pass.
-                Recovery.processedStamps[key] = nowMs
-
-                local accepted = runtime.writer:enqueue({
-                x = point.x,
-                z = point.z,
-                mode = "SMOOTH",
-                smoothAmountM = smoothAmount,
-                radiusM = radius,
-                hardness = Recovery.DEFAULTS.brushHardness,
-                strength = strength,
-                source = "RECOVERY",
-                probeRadiusM = radius * 0.75,
-                onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
-                    Recovery.pendingStamps[key] = nil
-                    Recovery.stats.callbacks = Recovery.stats.callbacks + 1
-
-                    if type(deltaY) == "number" then
-                        if deltaY > 0.00005 then
-                            Recovery.stats.centerRaised = Recovery.stats.centerRaised + 1
-                        elseif deltaY < -0.00005 then
-                            Recovery.stats.centerLowered = Recovery.stats.centerLowered + 1
-                        end
-                    end
-
-                    local beforeR = geometry ~= nil
-                        and tonumber(geometry.roughnessBeforeM) or nil
-                    local afterR = geometry ~= nil
-                        and tonumber(geometry.roughnessAfterM) or nil
-                    if beforeR == nil or afterR == nil then
-                        Recovery.stats.roughnessNeutral =
-                            Recovery.stats.roughnessNeutral + 1
-                        return
-                    end
-
-                    Recovery.stats.roughnessVerified =
-                        Recovery.stats.roughnessVerified + 1
-                    local improvement = beforeR - afterR
-                    local epsilon = Recovery.DEFAULTS.minRoughnessImprovementM
-
-                    if improvement > epsilon then
-                        Recovery.stats.roughnessImproved =
-                            Recovery.stats.roughnessImproved + 1
-                        Recovery.stats.roughnessImprovementM =
-                            Recovery.stats.roughnessImprovementM + improvement
-
-                        local amount = math.min(maxHistoryRecovery, improvement)
-                        local cells, depth = runtime.history:applyRecoveryCircle(
-                            point.x,
-                            point.z,
-                            radius,
-                            amount,
-                            historyFraction,
-                            {
-                                minRutM = Recovery.DEFAULTS.minHistoryRutM,
-                                nowMs = g_currentMission ~= nil
-                                    and g_currentMission.time or nowMs
-                            }
-                        )
-                        Recovery.stats.historyRecoveredCells =
-                            Recovery.stats.historyRecoveredCells + (cells or 0)
-                        Recovery.stats.historyRecoveredDepthM =
-                            Recovery.stats.historyRecoveredDepthM + (depth or 0)
-                    elseif improvement < -epsilon then
-                        Recovery.stats.roughnessWorsened =
-                            Recovery.stats.roughnessWorsened + 1
-                        Recovery.stats.roughnessWorseningM =
-                            Recovery.stats.roughnessWorseningM - improvement
-                    else
-                        Recovery.stats.roughnessNeutral =
-                            Recovery.stats.roughnessNeutral + 1
-                    end
-                end
-            })
-
-                if accepted then
-                    Recovery.stats.brushesEnqueued =
-                        Recovery.stats.brushesEnqueued + 1
-                else
-                    Recovery.pendingStamps[key] = nil
-                    Recovery.processedStamps[key] = nil
-                    Recovery.stats.brushesRejected =
-                        Recovery.stats.brushesRejected + 1
-                end
+                enqueueRecoveryPoint(
+                    runtime, point, key, params, nowMs, false
+                )
             end
         end
     end
