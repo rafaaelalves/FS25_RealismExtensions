@@ -309,3 +309,61 @@ This test validates only:
 ### Shutdown error
 
 One shutdown script error originates from `FS25_manualAttach` DetectionHandler delete path, not from RE tracks/recovery.
+
+
+---
+
+## Runtime result — 2026-10-04 early-bootstrap validation
+
+Tested artifact:
+- branch: `feat/terrain-recovery`;
+- commit: `22f016365a053033e40fc6512656eb53549c8712`;
+- run: `37201970938`.
+
+Stack evidence:
+- RC reported `AITracks=-`; True AI Tracks was not active in the tested save.
+- user visually observed that the GIANTS NPC/helper did **not** leave native visual tire marks.
+
+### Session A — PASS
+
+Early `TireTracks:onPreLoad` bootstrap succeeded.
+
+Observed:
+- bootstrap installation log appeared during vehicle loading;
+- `createTrack=30`;
+- `addTrackPoint` exceeded 66k calls;
+- `cutTrack` exceeded 14k calls during the main observed period;
+- `maxArgs=2/15/1`;
+- `observerErrors=0`;
+- `drift=0`;
+- `bootstrapPreLoad=7`;
+- `bootstrapInstalls=1`.
+
+Conclusion:
+- the early mission-instance bootstrap solves the missing-create lifecycle gap;
+- official runtime contract is now confirmed at 2/15/1 in the target stack;
+- VisualTrackCapture gate is satisfied.
+
+### Session C — physical helper ownership appears healthy
+
+With True AI Tracks inactive, RE TerrainDeformation continued to produce wheel contexts and rut-writer activity while the tested combination was operating.
+
+This supports the existing conclusion that physical terrain deformation is controller-neutral and does not require True AI Tracks.
+
+This is not yet the complete helper/Courseplay/AutoDrive parity matrix.
+
+### AI visual gap — CONFIRMED
+
+The user's NPC/helper produced no native visual tire marks with True AI Tracks inactive.
+
+This is the expected vanilla gap and closes the prerequisite for implementing the RE AI visual policy.
+
+The pre-runtime plan intentionally had **not** implemented that policy before the native contract was proven.
+
+Post-test action:
+- implement `AIVisualTrackPolicy`;
+- remove only the GIANTS AI-active suppression;
+- preserve lower/native `getAllowTireTracks` restrictions such as distance and segment quality;
+- enable VisualTrackCapture for the next combined runtime session.
+
+The missing NPC marks in this build are therefore **not** evidence that an already-implemented RE AI policy failed; that phase had remained gated on purpose.
