@@ -324,7 +324,7 @@ assert(enqueued > beforeAIStraight)
 assert(lastModelOptions ~= nil)
 assert(lastModelOptions.longitudinalPassWeight==nil)
 assert(lastModelOptions.lateralPassWeight==nil)
-assert(lastModelOptions.plasticSinkSlipBoost==nil)
+assert(math.abs((lastModelOptions.plasticSinkSlipBoost or 0)-0.12)<0.000001)
 assert((RealismExtensionsTerrainRuntime.stats.actorBrushes_AI_FIELD or 0)>=2)
 
 -- A GIANTS field-worker turn is navigation geometry, not player-authored
