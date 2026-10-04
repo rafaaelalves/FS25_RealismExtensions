@@ -1,7 +1,7 @@
 RealismExtensionsVisualTrackJournal = RealismExtensionsVisualTrackJournal or {}
 local Journal = RealismExtensionsVisualTrackJournal
 
-Journal.VERSION = 1
+Journal.VERSION = 2
 Journal.EXPECTED_CREATE_ARGS = 2
 Journal.EXPECTED_POINT_ARGS = 15
 Journal.EXPECTED_CUT_ARGS = 1
@@ -9,10 +9,22 @@ Journal.EXPECTED_CUT_ARGS = 1
 Journal.DEFAULTS = {
     minSpacingM = 0.30,
     maxSpacingM = 1.00,
+    maxGapM = 6.0,
     maxChordErrorM = 0.04,
     maxDirectionDeltaRad = math.rad(6),
-    attributeEpsilon = 0.04,
-    maxRetainedPoints = 75000
+    maxRetainedPoints = 75000,
+    terrainOnly = true,
+    retainClosedFragments = true
+}
+
+Journal.ATTRIBUTE_EPS = {
+    r = 0.03,
+    g = 0.03,
+    b = 0.03,
+    dirtAmount = 0.05,
+    groundDepth = 0.005,
+    tireDirection = 0.01,
+    colorBlendWithTerrain = 0.05
 }
 
 local function validNumber(v)
@@ -63,13 +75,9 @@ local function directionDelta(a,b)
     ))
 end
 
-local ATTRS = {
-    "r","g","b","dirtAmount","groundDepth","tireDirection","colorBlendWithTerrain"
-}
-
-local function attributesChanged(a,b,eps)
+local function attributesChanged(a,b)
     if a.onTerrain ~= b.onTerrain then return true end
-    for _,k in ipairs(ATTRS) do
+    for k,eps in pairs(Journal.ATTRIBUTE_EPS) do
         local av,bv=tonumber(a[k]),tonumber(b[k])
         if av == nil or bv == nil then
             if av ~= bv then return true end
@@ -105,16 +113,18 @@ local function parsePoint(args, timestampMs)
         tireDirection=args[13],
         onTerrain=args[14],
         colorBlendWithTerrain=args[15],
-        timestampMs=tonumber(timestampMs) or 0
+        sessionTimeMs=tonumber(timestampMs) or 0
     }
 end
 
 local function newFragment(track, sequence)
     local f={
+        logicalTrackId=track.logicalTrackId,
         sequence=sequence,
         points={},
         pending=nil,
-        closed=false
+        closed=false,
+        pruned=false
     }
     track.fragments[#track.fragments+1]=f
     return f
@@ -125,15 +135,30 @@ function Journal.new(options)
     local settings={}
     for k,v in pairs(Journal.DEFAULTS) do settings[k]=v end
     for k,v in pairs(options) do settings[k]=v end
+
     local self={
         settings=settings,
         tracksByNativeId={},
         tracks={},
+        sinks={},
         sequence=0,
+        logicalTrackSequence=0,
         retainedPoints=0,
+        closedQueue={},
+        closedQueueHead=1,
         stats={
-            creates=0,pointsSeen=0,pointsAccepted=0,pointsSimplified=0,
-            cuts=0,rejectedCalls=0,prunedPoints=0
+            creates=0,
+            nativeIdReuses=0,
+            pointsSeen=0,
+            pointsAccepted=0,
+            pointsDeferred=0,
+            cuts=0,
+            gapCuts=0,
+            nonTerrainSkipped=0,
+            rejectedCalls=0,
+            prunedPoints=0,
+            sinkErrors=0,
+            fragmentsFinalized=0
         }
     }
     return setmetatable(self,{__index=Journal})
@@ -144,15 +169,50 @@ function Journal:_nextSequence()
     return self.sequence
 end
 
+function Journal:_nextLogicalTrackId()
+    self.logicalTrackSequence=self.logicalTrackSequence+1
+    return self.logicalTrackSequence
+end
+
+function Journal:addFragmentSink(sink)
+    if type(sink)~="table" then return false end
+    for _,existing in ipairs(self.sinks) do
+        if existing==sink then return true end
+    end
+    self.sinks[#self.sinks+1]=sink
+    return true
+end
+
+function Journal:removeFragmentSink(sink)
+    for i=#self.sinks,1,-1 do
+        if self.sinks[i]==sink then
+            table.remove(self.sinks,i)
+            return true
+        end
+    end
+    return false
+end
+
 function Journal:_accept(fragment,point)
     fragment.points[#fragment.points+1]=copyPoint(point)
     self.retainedPoints=self.retainedPoints+1
     self.stats.pointsAccepted=self.stats.pointsAccepted+1
 end
 
+function Journal:_acceptEndpointIfDistinct(fragment,point)
+    if point==nil then return end
+    local last=fragment.points[#fragment.points]
+    if last==nil
+        or distance2D(last,point)>=math.max(0.001,self.settings.minSpacingM*0.25)
+        or attributesChanged(last,point)
+        or directionDelta(last,point)>=self.settings.maxDirectionDeltaRad*0.5 then
+        self:_accept(fragment,point)
+    end
+end
+
 function Journal:_flushPending(fragment)
     if fragment~=nil and fragment.pending~=nil then
-        self:_accept(fragment,fragment.pending)
+        self:_acceptEndpointIfDistinct(fragment,fragment.pending)
         fragment.pending=nil
     end
 end
@@ -165,25 +225,71 @@ function Journal:_currentFragment(track)
     return f
 end
 
-function Journal:_pruneClosed()
-    local limit=math.max(100,math.floor(tonumber(self.settings.maxRetainedPoints) or 75000))
-    if self.retainedPoints<=limit then return end
-
-    for _,track in ipairs(self.tracks) do
-        local i=1
-        while self.retainedPoints>limit and i<=#track.fragments do
-            local f=track.fragments[i]
-            if f.closed==true then
-                local n=#(f.points or {})
-                self.retainedPoints=math.max(0,self.retainedPoints-n)
-                self.stats.prunedPoints=self.stats.prunedPoints+n
-                table.remove(track.fragments,i)
-            else
-                i=i+1
+function Journal:_emitFinalized(track,fragment,reason)
+    for _,sink in ipairs(self.sinks) do
+        local fn=sink~=nil and sink.onFragmentClosed or nil
+        if type(fn)=="function" then
+            local ok=pcall(fn,sink,track,fragment,reason)
+            if not ok then
+                self.stats.sinkErrors=self.stats.sinkErrors+1
             end
         end
-        if self.retainedPoints<=limit then break end
     end
+end
+
+function Journal:_pruneClosed()
+    local limit=math.max(
+        100,
+        math.floor(tonumber(self.settings.maxRetainedPoints) or 75000)
+    )
+
+    while self.retainedPoints>limit
+        and self.closedQueueHead<=#self.closedQueue do
+        local fragment=self.closedQueue[self.closedQueueHead]
+        self.closedQueue[self.closedQueueHead]=false
+        self.closedQueueHead=self.closedQueueHead+1
+
+        if fragment~=nil and fragment~=false and fragment.pruned~=true then
+            local n=#(fragment.points or {})
+            fragment.points={}
+            fragment.pruned=true
+            self.retainedPoints=math.max(0,self.retainedPoints-n)
+            self.stats.prunedPoints=self.stats.prunedPoints+n
+        end
+    end
+
+    if self.closedQueueHead>256
+        and self.closedQueueHead>#self.closedQueue*0.5 then
+        local compact={}
+        for i=self.closedQueueHead,#self.closedQueue do
+            local f=self.closedQueue[i]
+            if f~=nil and f~=false then compact[#compact+1]=f end
+        end
+        self.closedQueue=compact
+        self.closedQueueHead=1
+    end
+end
+
+function Journal:_finalizeFragment(track,fragment,reason)
+    if fragment==nil or fragment.closed==true then return false end
+    self:_flushPending(fragment)
+    fragment.closed=true
+    fragment.closedSequence=self:_nextSequence()
+    fragment.closeReason=reason or "CUT"
+    self.stats.fragmentsFinalized=self.stats.fragmentsFinalized+1
+
+    self:_emitFinalized(track,fragment,fragment.closeReason)
+
+    if self.settings.retainClosedFragments==true then
+        self.closedQueue[#self.closedQueue+1]=fragment
+        self:_pruneClosed()
+    else
+        local n=#(fragment.points or {})
+        fragment.points={}
+        fragment.pruned=true
+        self.retainedPoints=math.max(0,self.retainedPoints-n)
+    end
+    return true
 end
 
 function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
@@ -192,11 +298,23 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
         return false
     end
 
+    local existing=self.tracksByNativeId[nativeTrackId]
+    if existing~=nil then
+        self:_finalizeFragment(
+            existing,
+            existing.fragments[#existing.fragments],
+            "NATIVE_ID_REUSED"
+        )
+        existing.retired=true
+        self.stats.nativeIdReuses=self.stats.nativeIdReuses+1
+    end
+
     local track={
+        logicalTrackId=self:_nextLogicalTrackId(),
         nativeTrackId=nativeTrackId,
         widthM=width,
         atlasIndex=tonumber(atlasIndex),
-        createdAtMs=tonumber(timestampMs) or 0,
+        createdSessionTimeMs=tonumber(timestampMs) or 0,
         fragments={}
     }
     self.tracksByNativeId[nativeTrackId]=track
@@ -213,6 +331,16 @@ function Journal:onPoint(nativeTrackId,point)
         return false
     end
 
+    if self.settings.terrainOnly==true and point.onTerrain~=true then
+        self:_finalizeFragment(
+            track,
+            track.fragments[#track.fragments],
+            "LEFT_TERRAIN"
+        )
+        self.stats.nonTerrainSkipped=self.stats.nonTerrainSkipped+1
+        return true
+    end
+
     local f=self:_currentFragment(track)
     local accepted=f.points
     if #accepted==0 then
@@ -221,21 +349,33 @@ function Journal:onPoint(nativeTrackId,point)
     end
 
     local anchor=accepted[#accepted]
+    local previousObserved=f.pending or anchor
+    local gap=distance2D(previousObserved,point)
+    if gap>math.max(self.settings.maxSpacingM,self.settings.maxGapM) then
+        self:_finalizeFragment(track,f,"GAP")
+        f=self:_currentFragment(track)
+        self:_accept(f,point)
+        self.stats.gapCuts=self.stats.gapCuts+1
+        return true
+    end
+
     local pending=f.pending
     local minSpacing=math.max(0.01,tonumber(self.settings.minSpacingM) or 0.30)
     local maxSpacing=math.max(minSpacing,tonumber(self.settings.maxSpacingM) or 1.00)
-    local eps=math.max(0,tonumber(self.settings.attributeEpsilon) or 0.04)
-    local dirThreshold=math.max(0,tonumber(self.settings.maxDirectionDeltaRad) or math.rad(6))
-    local errorThreshold=math.max(0,tonumber(self.settings.maxChordErrorM) or 0.04)
+    local dirThreshold=math.max(
+        0,
+        tonumber(self.settings.maxDirectionDeltaRad) or math.rad(6)
+    )
+    local errorThreshold=math.max(
+        0,
+        tonumber(self.settings.maxChordErrorM) or 0.04
+    )
 
-    if attributesChanged(anchor,point,eps)
+    if attributesChanged(anchor,point)
         or directionDelta(anchor,point)>=dirThreshold
         or distance2D(anchor,point)>=maxSpacing then
         self:_flushPending(f)
-        if distance2D(f.points[#f.points],point)>=minSpacing*0.25
-            or attributesChanged(f.points[#f.points],point,eps) then
-            self:_accept(f,point)
-        end
+        self:_acceptEndpointIfDistinct(f,point)
         return true
     end
 
@@ -245,12 +385,13 @@ function Journal:onPoint(nativeTrackId,point)
             or directionDelta(pending,point)>=dirThreshold then
             self:_accept(f,pending)
             f.pending=copyPoint(point)
+            self.stats.pointsDeferred=self.stats.pointsDeferred+1
             return true
         end
     end
 
     f.pending=copyPoint(point)
-    self.stats.pointsSimplified=self.stats.pointsSimplified+1
+    self.stats.pointsDeferred=self.stats.pointsDeferred+1
     return true
 end
 
@@ -260,14 +401,8 @@ function Journal:onCut(nativeTrackId)
         self.stats.rejectedCalls=self.stats.rejectedCalls+1
         return false
     end
-    local f=track.fragments[#track.fragments]
-    if f~=nil and f.closed~=true then
-        self:_flushPending(f)
-        f.closed=true
-        f.closedSequence=self:_nextSequence()
-    end
+    self:_finalizeFragment(track,track.fragments[#track.fragments],"CUT")
     self.stats.cuts=self.stats.cuts+1
-    self:_pruneClosed()
     return true
 end
 
@@ -318,18 +453,30 @@ function Journal:getSnapshot()
         tracks={}
     }
     for k,v in pairs(self.stats or {}) do out.stats[k]=v end
+
     for _,track in ipairs(self.tracks) do
         local t={
+            logicalTrackId=track.logicalTrackId,
             widthM=track.widthM,
             atlasIndex=track.atlasIndex,
-            createdAtMs=track.createdAtMs,
+            createdSessionTimeMs=track.createdSessionTimeMs,
+            retired=track.retired==true,
             fragments={}
         }
         for _,f in ipairs(track.fragments) do
-            local ff={closed=f.closed==true,points={}}
-            for _,p in ipairs(f.points or {}) do ff.points[#ff.points+1]=copyPoint(p) end
-            if f.pending~=nil then ff.pending=copyPoint(f.pending) end
-            t.fragments[#t.fragments+1]=ff
+            if f.pruned~=true then
+                local ff={
+                    sequence=f.sequence,
+                    closed=f.closed==true,
+                    closeReason=f.closeReason,
+                    points={}
+                }
+                for _,p in ipairs(f.points or {}) do
+                    ff.points[#ff.points+1]=copyPoint(p)
+                end
+                if f.pending~=nil then ff.pending=copyPoint(f.pending) end
+                t.fragments[#t.fragments+1]=ff
+            end
         end
         out.tracks[#out.tracks+1]=t
     end
