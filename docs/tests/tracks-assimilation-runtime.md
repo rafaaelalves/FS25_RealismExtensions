@@ -234,3 +234,78 @@ For each session keep:
 
 ### Do not add VMT to target stack
 Its selected lessons are being integrated independently; its overlapping simulation domains remain rejected.
+
+
+---
+
+## Runtime result — 2026-10-04 session
+
+Build:
+- branch: `feat/assimilation-tracks-vmt`
+- commit: `54c00c10b3232c569275139d63afa71a7ef86013`
+
+### Session A — PARTIAL PASS / CAPTURE REMAINS GATED
+
+Observed across the session:
+- adapter installed;
+- integrity remained true;
+- `addTrackPoint`: 65,622 calls by shutdown;
+- `cutTrack`: 3,972 calls;
+- observed max args: `0/15/1`;
+- observer errors: 0;
+- pointer drift: 0.
+
+Important failure/gap:
+- `createTrack=0` for the entire observed session.
+
+Interpretation:
+- the 15-argument point boundary and 1-argument cut boundary are strongly runtime-confirmed;
+- the 2-argument create boundary was **not** observed;
+- likely lifecycle issue: native tracks may be created before the mission-instance adapter is installed.
+
+Do not enable VisualTrackCapture yet.
+
+Before capture:
+1. prove/observe createTrack at an earlier lifecycle point, **or**
+2. design a trustworthy bootstrap for already-existing native tracks with width/atlas metadata.
+
+Do not lazily invent width/atlas from point events.
+
+### Session F — FAILED: guard is over-broad
+
+Final relevant counters:
+- coverage: 14,552;
+- stamp skips: 874;
+- loaded-contact queries: 13,678;
+- loaded-contact blocked: 13,409;
+- recovery brushes enqueued: 269.
+
+Therefore ~98% of post-stamp recovery candidates were vetoed by the loaded-contact guard.
+
+The current rule blocks an entire 2 m smooth brush whenever any recent loaded contact overlaps its circle.
+
+This is too conservative for a working tractor/cultivator combination.
+
+Also, "do not consume the stamp and retry next callback" is insufficient because the implement can move beyond the patch before the loaded wheel clears it.
+
+Required redesign:
+- preserve safety;
+- introduce deferred recovery or equivalent eventual-completion semantics;
+- distinguish current-combination vs foreign contacts where useful;
+- do not simply disable the safety invariant.
+
+### VisualTrackCapture was not tested
+
+The current Config intentionally keeps:
+`VisualTrackCapture=false`.
+
+No VisualTrackCapture runtime diagnostics were emitted in this session.
+
+This test validates only:
+- adapter integrity/performance boundary;
+- point/cut signatures;
+- contact-registry/recovery-guard runtime behavior.
+
+### Shutdown error
+
+One shutdown script error originates from `FS25_manualAttach` DetectionHandler delete path, not from RE tracks/recovery.
