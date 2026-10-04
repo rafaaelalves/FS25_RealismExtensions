@@ -477,7 +477,7 @@ function RealismExtensionsCore:update(dt)
                     and RealismExtensionsConfig.modules.NativeTireTrackProbe == true then
                     local t = RealismExtensionsNativeTireTrackAdapter.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TireTrackProbe | installed=%s integrity=%s create=%d point=%d cut=%d maxArgs=%d/%d/%d observerErrors=%d drift=%d",
+                        "TireTrackProbe | installed=%s integrity=%s create=%d point=%d cut=%d maxArgs=%d/%d/%d observerErrors=%d drift=%d bootstrapPreLoad=%d bootstrapInstalls=%d",
                         tostring(t.installed),
                         tostring(t.integrity),
                         t.createTrackCalls or 0,
@@ -487,7 +487,11 @@ function RealismExtensionsCore:update(dt)
                         t.maxPointArgs or 0,
                         t.maxCutArgs or 0,
                         t.observerErrors or 0,
-                        t.pointerDrift or 0
+                        t.pointerDrift or 0,
+                        RealismExtensionsNativeTireTrackBootstrap ~= nil
+                            and (RealismExtensionsNativeTireTrackBootstrap.stats.preLoadCalls or 0) or 0,
+                        RealismExtensionsNativeTireTrackBootstrap ~= nil
+                            and (RealismExtensionsNativeTireTrackBootstrap.stats.adapterInstalls or 0) or 0
                     ))
                 end
 
