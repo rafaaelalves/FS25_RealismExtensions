@@ -28,7 +28,8 @@ Status vocabulary:
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
 | player geometric wheel ruts | RE TerrainDeformation; FarmKit capability suppressed | PLANNED | keep RE physical owner; integrate VMT lessons for monotonic rut writes, sink handoff, stable contact anchoring and loaded-wheel recovery guards |
 | persistent visual tire tracks | Persistent Tracks demonstrates feasibility; RE has no owner yet | CANDIDATE_ABSORB | reimplement as native-track journal + spatial streamer, integrated with TerrainDeformation/recovery; do not copy unlicensed source |
-| AI/implement terrain tracks/deformation | True AI Tracks | CANDIDATE_ABSORB | exact-source audit confirms strong full functional-absorption target for TerrainDeformation |
+| AI native visual tire tracks | True AI Tracks currently exposes GIANTS AI tire-track gating | CANDIDATE_ABSORB | absorb into the future NativeTireTrackAdapter/Persistent Visual Tracks layer; keep separate from physical terrain deformation |
+| AI/implement physical terrain deformation | RE TerrainDeformation supersedes True AI Tracks architecture | PLANNED | same physical law for player/GIANTS AI/Courseplay/AutoDrive; close with runtime AI/implement matrix before removing dependency |
 | lateral tire scrub deformation | no active owner | PLANNED | TerrainDeformation |
 | freeze/thaw deformation response | no active owner in target profile | PLANNED | consume Mud/environment state |
 | furrow wheel/collider interaction | FarmKit | CANDIDATE_ABSORB | later clean-room FurrowInteraction |
