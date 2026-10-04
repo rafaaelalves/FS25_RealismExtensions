@@ -71,6 +71,14 @@ local function newStats()
         roughnessNeutral = 0,
         roughnessImprovementM = 0,
         roughnessWorseningM = 0,
+        reliefVerified = 0,
+        reliefImproved = 0,
+        reliefWorsened = 0,
+        reliefNeutral = 0,
+        reliefImprovementM = 0,
+        reliefWorseningM = 0,
+        maxReliefBeforeM = 0,
+        maxReliefAfterM = 0,
         centerRaised = 0,
         centerLowered = 0,
         historyRecoveredCells = 0,
@@ -332,6 +340,43 @@ local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred
                 elseif deltaY < -0.00005 then
                     Recovery.stats.centerLowered =
                         Recovery.stats.centerLowered + 1
+                end
+            end
+
+            local beforeRelief = geometry ~= nil
+                and tonumber(geometry.reliefBeforeM) or nil
+            local afterRelief = geometry ~= nil
+                and tonumber(geometry.reliefAfterM) or nil
+            if beforeRelief ~= nil and afterRelief ~= nil then
+                Recovery.stats.reliefVerified =
+                    Recovery.stats.reliefVerified + 1
+                Recovery.stats.maxReliefBeforeM = math.max(
+                    Recovery.stats.maxReliefBeforeM,
+                    beforeRelief
+                )
+                Recovery.stats.maxReliefAfterM = math.max(
+                    Recovery.stats.maxReliefAfterM,
+                    afterRelief
+                )
+
+                local reliefImprovement = beforeRelief - afterRelief
+                local reliefEpsilon =
+                    Recovery.DEFAULTS.minRoughnessImprovementM
+                if reliefImprovement > reliefEpsilon then
+                    Recovery.stats.reliefImproved =
+                        Recovery.stats.reliefImproved + 1
+                    Recovery.stats.reliefImprovementM =
+                        Recovery.stats.reliefImprovementM
+                        + reliefImprovement
+                elseif reliefImprovement < -reliefEpsilon then
+                    Recovery.stats.reliefWorsened =
+                        Recovery.stats.reliefWorsened + 1
+                    Recovery.stats.reliefWorseningM =
+                        Recovery.stats.reliefWorseningM
+                        - reliefImprovement
+                else
+                    Recovery.stats.reliefNeutral =
+                        Recovery.stats.reliefNeutral + 1
                 end
             end
 
@@ -715,6 +760,7 @@ end
 function Recovery.getDiagnostics()
     local out = {}
     for k, v in pairs(Recovery.stats) do out[k] = v end
+    out.deferredCount = Recovery.deferredCount or 0
     return out
 end
 
