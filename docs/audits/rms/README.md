@@ -20,19 +20,22 @@ Purpose: complement, not repeat, the RealismCompatibility RMS work. RC already o
 
 ## Audit status
 
-**PASS 1 COMPLETE — architecture / scheduling / networking / persistence / authority.**
+Static/source phase: **CLOSED for 0.10.0.0**.
 
-The RMS audit is intentionally not closed. The source is large enough that focused passes are more useful than one undirected read.
+The audit was completed in focused passes over:
+1. architecture / scheduling / networking / persistence / authority;
+2. drivetrain / differential topology / AUTO / differential locks / parking brake / wind-up / Enhanced Vehicle coexistence;
+3. condition / stress / wear / breakdown selection and progression;
+4. engine/transmission thermal / electrical / battery / preheat / external power;
+5. service / physical fluids / field care / hand tools / workshop economy;
+6. AI worker / used-vehicle initialization / leasing / UI / lifecycle/performance edges;
+7. cross-mod implications against current RC and exact Reifen source.
 
-Planned focused passes:
-1. drivetrain / differential topology / AUTO / diff locks / parking brake / wind-up / Enhanced Vehicle coexistence;
-2. wear / stress / breakdown selection / progression / general wear;
-3. thermal / electrical / battery / preheat / exhaust;
-4. service / physical fluids / field care / hand tools / economy;
-5. AI / used vehicles / leasing / UI / performance edges;
-6. cross-mod provider and runtime test plan.
+Further source reading should now be hypothesis-driven by a runtime result, upstream change, or a concrete new integration question.
 
-## Provisional recommendation
+Runtime phase: **pending/deferred**. The focused matrix is in `RUNTIME_TEST_PLAN.md`.
+
+## Recommendation
 
 **KEEP + INTEGRATE. Do not absorb RMS wholesale into RealismExtensions.**
 
@@ -115,9 +118,9 @@ Current boundaries remain:
 
 This audit may identify upstream RMS fixes or new provider boundaries. A source defect is not automatically an RC responsibility.
 
-## Pass-1 high-value findings
+## Highest-value findings
 
-See `STATIC_FINDINGS.md` for evidence tiers and details. Highest-value items so far:
+See `STATIC_FINDINGS.md` for the full evidence-ranked ledger. Highest-value items include:
 - client reinitialize request lacks a server-side master-user check;
 - start-button and client-originated start-effect events lack vehicle-controller validation;
 - per-connection dirty-mask table has no visible disconnect cleanup;
@@ -127,7 +130,13 @@ See `STATIC_FINDINGS.md` for evidence tiers and details. Highest-value items so 
 - the fleet is scanned every server frame solely to keep unattended running vehicles active;
 - transient-effect MTBF helper uses linear `dt / T`, while the main breakdown probability correctly uses the exponential hazard formula;
 - RMS deliberately zeroes vanilla damage, making a normalized mechanical-condition provider preferable to downstream mods reading vanilla damage;
-- the release ZIP references GPL `LICENSE` headers but does not itself contain the repository `LICENSE`/`NOTICE` files.
+- the release ZIP references GPL `LICENSE` headers but does not itself contain the repository `LICENSE`/`NOTICE` files;
+- diff-lock auto-release clears the retained lock request even though the settings promise automatic re-engagement;
+- RMS runtime topology changes make Reifen 1.2.2.67's cached FORCE-WEAR differential shares stale;
+- the Enhanced Vehicle settings cache and leasing wrappers have second-save lifecycle hazards;
+- deleting a jumper-connected vehicle can leave a stale reciprocal external-power reference;
+- the direct `SpeedMeterDisplay.draw` override is not exception-safe;
+- maintenance history and pending-connection state deserve long-session/dedicated-server validation.
 
 ## Positive patterns worth learning from
 
@@ -140,6 +149,17 @@ See `STATIC_FINDINGS.md` for evidence tiers and details. Highest-value items so 
 - contextual breakdown selection based on accumulated causal factors rather than pure random failure type;
 - per-system simulation with shared normalized lifecycle.
 
-## Next pass
+## Companion documents
 
-Drivetrain is the next high-value subsystem because it already intersects RC `MRRMS`, Reifen FORCE-WEAR and the earlier Realistic 4x4 audit. The goal is not to rediscover the existing RC bridge, but to understand RMS differential discovery, AUTO decisions, lock semantics, wind-up model, parking-brake ownership and public/provider opportunities.
+- `ARCHITECTURE_AND_SCHEDULING.md` — lifecycle, cadence and fleet scheduler.
+- `NETWORK_PERSISTENCE_AUTHORITY.md` — dirty groups, initial stream, persistence and request authority.
+- `DRIVETRAIN_AND_CROSSMOD.md` — 2WD/4WD/AUTO topology, diff lock, wind-up, Enhanced Vehicle, MR and Reifen implications.
+- `STATIC_FINDINGS.md` — evidence-ranked defect/risk/positive-pattern ledger.
+- `INTEGRATION_OPPORTUNITIES.md` — upstream patch candidates, RC/provider opportunities and RE design lessons.
+- `RUNTIME_TEST_PLAN.md` — focused validation matrix.
+
+## Closure statement
+
+RMS is not a functional-absorption target. It is a mature-enough specialist to remain the mechanical owner, while selected source defects should preferably be fixed upstream and cross-mod topology/state should be normalized through RC where a real consumer exists.
+
+The most important new compatibility result from this audit is the confirmed **RMS drivetrain ↔ Reifen FORCE-WEAR cache mismatch**. The most important architectural lessons are the separation of condition/stress/service, causal failure selection, semantic dirty groups and atomic fluid/service transactions.
