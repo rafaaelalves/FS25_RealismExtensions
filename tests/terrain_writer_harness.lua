@@ -22,6 +22,16 @@ function TerrainDeformation.new(terrain)
         self.smoothing = true
     end
 
+    function d:enableSetDeformationMode()
+        self.targetMode = true
+    end
+
+    function d:setHeightTarget(minY,maxY,nx,ny,nz,distance)
+        self.target = {
+            minY=minY,maxY=maxY,nx=nx,ny=ny,nz=nz,d=distance
+        }
+    end
+
     function d:setAdditiveHeightChangeAmount(value)
         self.depth = value
     end
@@ -47,6 +57,17 @@ function TerrainDeformation.new(terrain)
                 local key = tostring(brush.x) .. ":" .. tostring(brush.z)
                 if self.smoothing then
                     heights[key] = (heights[key] or 10) + 0.002
+                elseif self.targetMode then
+                    local current = heights[key] or 10
+                    local t = self.target
+                    local targetY = -(
+                        t.nx * brush.x + t.nz * brush.z + t.d
+                    ) / t.ny
+                    if current < targetY then
+                        heights[key] = math.min(targetY, current + self.depth)
+                    elseif current > targetY then
+                        heights[key] = math.max(targetY, current - self.depth)
+                    end
                 else
                     heights[key] = (heights[key] or 10) + self.depth
                 end
@@ -81,6 +102,17 @@ g_terrainDeformationQueue = {
             local key = tostring(brush.x) .. ":" .. tostring(brush.z)
             if deformation.smoothing then
                 heights[key] = (heights[key] or 10) + 0.002
+            elseif deformation.targetMode then
+                local current = heights[key] or 10
+                local t = deformation.target
+                local targetY = -(
+                    t.nx * brush.x + t.nz * brush.z + t.d
+                ) / t.ny
+                if current < targetY then
+                    heights[key] = math.min(targetY, current + deformation.depth)
+                elseif current > targetY then
+                    heights[key] = math.max(targetY, current - deformation.depth)
+                end
             else
                 heights[key] = (heights[key] or 10) + deformation.depth
             end
@@ -277,3 +309,44 @@ assert(sw.stats.recoveryMachineSmoothJobs == 1)
 assert(sw.stats.recoveryMachineSmoothBrushes == 1)
 assert(created[#created].brushes[1].brush == -1)
 print("terrain_writer_smoothing_harness: OK")
+
+-- R1 target-plane recovery must raise a deep causal center toward the current
+-- fitted local plane without flattening the surrounding boundary samples.
+local tw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,
+    maxJobsPerFrame=2,
+    maxBrushesPerJob=4,
+    depthBucketM=0.0005,
+    minDepthM=0.0004
+})
+heights["60:60"] = 9.88
+local targetDelta,targetGeometry=nil,nil
+assert(tw:enqueue({
+    x=60,z=60,mode="TARGET",targetY=10.0,
+    targetPlaneAx=0,targetPlaneAz=0,maxStepM=0.04,
+    radiusM=0.45,hardness=0.45,strength=0.90,
+    source="RECOVERY",probeRadiusM=1.5,
+    onApplied=function(state,deltaY,beforeY,afterY,volume,geometry)
+        assert(state == TerrainDeformation.STATE_SUCCESS)
+        targetDelta=deltaY
+        targetGeometry=geometry
+    end
+}))
+local tb,tj=tw:flush()
+assert(tb==1 and tj==1)
+local td=created[#created]
+assert(td.targetMode==true and td.smoothing~=true and td.additive~=true)
+assert(td.target~=nil)
+assert(math.abs(td.depth-0.04)<0.000001)
+assert(td.brushes[1].brush==-1)
+assert(math.abs((heights["60:60"] or 0)-9.92)<0.000001)
+assert(targetDelta~=nil and targetDelta>0.039)
+assert(targetGeometry~=nil)
+assert(targetGeometry.centerDeficitBeforeM>0.119)
+assert(targetGeometry.centerDeficitAfterM<0.081)
+assert(tw.stats.recoveryTargetJobs==1)
+assert(tw.stats.recoveryTargetBrushes==1)
+assert(tw.stats.recoveryTargetRaisedSamples==1)
+assert(tw.stats.recoveryTargetLoweredSamples==0)
+assert(tw.stats.recoveryTargetMaxDeltaM>0.039)
+print("terrain_writer_target_recovery_harness: OK")
