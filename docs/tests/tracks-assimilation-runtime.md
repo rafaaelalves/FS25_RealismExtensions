@@ -1,7 +1,7 @@
 # Runtime protocol — tracks / VMT assimilation checkpoint
 
 Updated: 2026-10-04
-Branch: `feat/assimilation-tracks-vmt`
+Branch: `feat/terrain-recovery`
 
 Purpose: validate the first assimilation implementation without allowing external test mods to contaminate RE physical calibration.
 
@@ -241,7 +241,7 @@ Its selected lessons are being integrated independently; its overlapping simulat
 ## Runtime result — 2026-10-04 session
 
 Build:
-- branch: `feat/assimilation-tracks-vmt`
+- branch at test time: `feat/assimilation-tracks-vmt`
 - commit: `54c00c10b3232c569275139d63afa71a7ef86013`
 
 ### Session A — PARTIAL PASS / CAPTURE REMAINS GATED
