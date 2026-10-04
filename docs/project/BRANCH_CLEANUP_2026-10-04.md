@@ -1,6 +1,6 @@
 # Branch consolidation and cleanup — 2026-10-04
 
-Status: **CONSOLIDATION IN PROGRESS**
+Status: **CANONICAL CONSOLIDATION COMPLETE — REMOTE REF DELETION PENDING**
 
 Goal: return the repository to a simple operating model.
 
@@ -21,7 +21,10 @@ Main merge commit:
 Purpose:
 - **single canonical active development branch**.
 
-After this cleanup it should contain:
+Canonical fast-forward completed at:
+- `7bbdaf62c330da7f4de96f92a7c1e92551cb4c48`
+
+It now contains:
 - current recovery implementation/research;
 - tracks/VMT assimilation checkpoint;
 - Hydraulic + 4x4 audit documentation;
@@ -94,7 +97,7 @@ Build workflow:
 
 The available GitHub connector can merge/close PRs and move refs but does not expose ref deletion.
 
-Therefore actual remote branch deletion must be performed outside this connector after verifying the canonical branch fast-forward.
+Canonical branch fast-forward has been verified. Actual remote branch deletion must still be performed outside this connector.
 
 Target visible branch set after deletion:
 - `main`
