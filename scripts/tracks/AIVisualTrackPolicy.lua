@@ -8,8 +8,7 @@ Policy.stats = Policy.stats or {
     classesPatched = 0,
     calls = 0,
     baseAllowed = 0,
-    baseDenied = 0,
-    aiActiveCalls = 0
+    baseDenied = 0
 }
 Policy.patched = Policy.patched or {}
 
@@ -33,14 +32,6 @@ function Policy.getAllowTireTracks(self, superFunc)
         Policy.stats.baseAllowed = Policy.stats.baseAllowed + 1
     else
         Policy.stats.baseDenied = Policy.stats.baseDenied + 1
-    end
-
-    if self ~= nil and type(self.getIsAIActive) == "function" then
-        local ok, active = pcall(self.getIsAIActive, self)
-        if ok and active == true then
-            Policy.stats.aiActiveCalls =
-                Policy.stats.aiActiveCalls + 1
-        end
     end
 
     return allowed
