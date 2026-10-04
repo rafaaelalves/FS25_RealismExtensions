@@ -27,5 +27,6 @@ Use documents by purpose instead of reading everything.
 ## Runtime protocols
 - `tests/`: versioned/manual runtime test protocols (not Lua harnesses).
 - Current recovery test: `tests/terrain-recovery-v22-runtime.md`.
+- Tracks/VMT assimilation checkpoint: `tests/tracks-assimilation-runtime.md`.
 
 Do not duplicate current status into audit/research notes. Link back to `CURRENT_HANDOFF.md` for the live state.
