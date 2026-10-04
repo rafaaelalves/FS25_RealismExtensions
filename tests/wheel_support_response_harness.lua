@@ -54,7 +54,10 @@ for _,patch in ipairs(df.contactPatches) do
     -- topology changes where it is applied rather than inventing a "dual
     -- bonus" in TerrainResponse.
     assert(math.abs(dr.pressureDrive-sr.pressureDrive)<0.000001)
-    assert(dr.rutWidthM < sr.rutWidthM)
+    -- Each tyre is the same 0.60 m width as the single reference tyre, so its
+    -- own rut width stays the same. The dual advantage here is load sharing /
+    -- shorter contact length and two separated lanes, not a fake width bonus.
+    assert(math.abs(dr.rutWidthM-sr.rutWidthM)<0.000001)
 end
 
 local crawler=baseContext()
