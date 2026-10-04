@@ -90,7 +90,9 @@ Harnesses now cover:
 - direct chunk indexing;
 - streamed runtime with no second retained copy of closed history.
 
-**Decision:** this branch is ready for the runtime protocol. Do not implement post-runtime phases merely to make the feature look “complete”; their designs should be informed by the evidence the protocol is intended to collect.
+**Runtime update — 2026-10-04:** the first in-game session validated adapter integrity and the 15/1 point/cut boundary, but did not observe createTrack at all. VisualTrackCapture therefore remains gated. The loaded-contact recovery guard also proved over-broad (~98% of eligible queried recovery candidates blocked) and must be redesigned with eventual/deferred completion before it can be considered a successful VMT-derived safety integration.
+
+**Decision:** keep post-runtime phases gated. The adapter boundary is healthy, but capture bootstrap and recovery-guard semantics require another design/implementation pass.
 ---
 
 ## Goal
