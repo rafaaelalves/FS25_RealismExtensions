@@ -706,3 +706,34 @@ Research/design document:
 
 Important validation rule:
 the R7 profile values beyond CULTIVATOR are initial evidence-informed gameplay mappings, not claimed measured physical coefficients. Validate class detection and qualitative ordering before fine tuning.
+
+
+## R6 runtime gate — PASS (build 977cfaef, 2026-10-04)
+
+User visual result: PASS. The bounded target-plane recovery still removes the causal ruts without reintroducing R4-style mounds or R1/H2 depressions.
+
+Runtime evidence from `log(20261004-202419).txt`:
+- correct build: `977cfaef51dbc80fe7e93a138e7bb77491a9f8e7`;
+- TARGET isolated: 1,432 TARGET jobs/brushes, `raiseJobs=0`, `smoothJobs=0`;
+- 922 exact-center no-ops (64.4%), down from R5's 2,818/4,120 (68.4%);
+- 414 improved callbacks (28.9%), up from R5's 25.1%;
+- 15 worsened callbacks (1.05%); residual reduction 12.1681 m vs worsening 0.1113 m;
+- 324 stalled sequences (22.6% of TARGET applies), down proportionally from R5's 24.4%;
+- 217 initial-positive stale-debt skips (15.2%), down from R5's 16.2%;
+- patch reconciliation examined 6,702 causal cells and verified 768 as converged, recovering 4.3042 m of logical rut debt inside TARGET footprints;
+- SpatialHistory retirement is active: 971 cells retired during the run; 971 history cells / 5.948 m of logical rut debt were reconciled overall;
+- preflight probe reuse is complete: `preProbeReuse=1432` for `targetJobs=1432`;
+- no target timeouts, no writer failed jobs, no rejected recovery brushes, queue returned to zero;
+- performance remained healthy: vehicleUpdate avg 0.0343 ms / max 1.798 ms, recovery avg 0.4052 ms / max 0.830 ms, flushInclusive avg 0.4967 ms / max 1.249 ms, callbackNested avg 0.0558 ms / max 0.519 ms;
+- versus R5, flush average dropped ~21% and flush max ~53%, recovery average ~8% and recovery max ~9%. Treat this as directional rather than a strict A/B benchmark because runtime activity differed.
+
+Interpretation:
+- R6 achieved its goal: reduce redundant work without changing the proven R5 physics;
+- patch reconciliation is materially useful: more than one causal cell can be retired by a single physical TARGET footprint;
+- history lifecycle no longer leaves every recovered cell resident forever, although active history can still remain near the 50k cap when new deformation is being created simultaneously;
+- remaining no-op rate is still high enough that later throughput tuning can be useful, but it is now a gameplay/calibration issue rather than a structural correctness blocker.
+
+Non-RE shutdown noise:
+- the session ends with `delete(nil)` from `FS25_manualAttach/src/core/DetectionHandler.lua` via ManualAttach deleteMap. No RealismExtensions frame appears in that stack.
+
+Decision: close the R6 consolidation/runtime gate as PASS and proceed with R7 tillage-specific recovery profiles. Do not reopen R6 architecture unless a later regression provides new evidence.
