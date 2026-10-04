@@ -27,6 +27,7 @@ Status vocabulary:
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
 | player geometric wheel ruts | FarmKit capability currently suppressed | PLANNED | TerrainDeformation module |
+| persistent visual tire tracks | Persistent Tracks demonstrates feasibility; RE has no owner yet | CANDIDATE_ABSORB | reimplement as native-track journal + spatial streamer, integrated with TerrainDeformation/recovery; do not copy unlicensed source |
 | AI/implement terrain tracks/deformation | True AI Tracks | CANDIDATE_ABSORB | exact-source audit confirms strong full functional-absorption target for TerrainDeformation |
 | lateral tire scrub deformation | no active owner | PLANNED | TerrainDeformation |
 | freeze/thaw deformation response | no active owner in target profile | PLANNED | consume Mud/environment state |
