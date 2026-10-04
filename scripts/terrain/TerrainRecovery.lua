@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 10
+Recovery.VERSION = 11
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -15,6 +15,13 @@ Recovery.DEFAULTS = {
     brushHardness = 0.20,
     targetSpacingFactor = 0.85,
     maxBrushesPerWorkArea = 24,
+
+    -- Strategy H: agricultural recovery is allowed only where SpatialHistory
+    -- still carries RE-attributable rut debt. Candidate rut cells are clustered
+    -- into native-smoothing centers instead of smoothing the full implement
+    -- footprint blindly.
+    historyIntentMaxCells = 512,
+    minHistoryIntentRutM = 0.003,
 
     -- Cultivation owns the final surface state for a short window, mirroring
     -- vanilla Cultivator.processCultivatorArea() erasing tire tracks inside
@@ -61,6 +68,11 @@ local function newStats()
         workAreaCalls = 0,
         workedAreaCalls = 0,
         coveragePoints = 0,
+        intentCandidateCells = 0,
+        intentPoints = 0,
+        intentEmptyWorkAreas = 0,
+        intentMaxRutM = 0,
+        intentDeferredGone = 0,
         stampSkips = 0,
         brushesEnqueued = 0,
         brushesRejected = 0,
@@ -226,29 +238,88 @@ function Recovery.isRecentlyCultivated(x,z,nowMs)
     return true
 end
 
-local function buildCoveragePoints(g, radius)
-    local spacing = math.max(0.20, radius * Recovery.DEFAULTS.targetSpacingFactor)
-    local maxBrushes = math.max(1, Recovery.DEFAULTS.maxBrushesPerWorkArea)
+local function buildHistoryGuidedPoints(history, g, radius, nowMs)
+    if history == nil
+        or type(history.getRecoveryCandidatesParallelogram) ~= "function" then
+        return {}
+    end
 
-    local nx = math.max(1, math.ceil(g.widthM / spacing))
-    local nz = math.max(1, math.ceil(g.depthM / spacing))
-    while nx * nz > maxBrushes do
-        spacing = spacing * 1.15
-        nx = math.max(1, math.ceil(g.widthM / spacing))
-        nz = math.max(1, math.ceil(g.depthM / spacing))
+    local candidates = history:getRecoveryCandidatesParallelogram(
+        g.xs,
+        g.zs,
+        g.xs + g.ux,
+        g.zs + g.uz,
+        g.xs + g.vx,
+        g.zs + g.vz,
+        {
+            minRutM = Recovery.DEFAULTS.minHistoryIntentRutM,
+            nowMs = nowMs,
+            cooldownMs = 0,
+            maxCells = Recovery.DEFAULTS.historyIntentMaxCells
+        }
+    ) or {}
+
+    Recovery.stats.intentCandidateCells =
+        Recovery.stats.intentCandidateCells + #candidates
+
+    if #candidates == 0 then
+        Recovery.stats.intentEmptyWorkAreas =
+            Recovery.stats.intentEmptyWorkAreas + 1
+        return {}
+    end
+
+    local spacing = math.max(
+        0.20,
+        radius * Recovery.DEFAULTS.targetSpacingFactor
+    )
+    local groups = {}
+
+    for _, candidate in ipairs(candidates) do
+        local x = tonumber(candidate.x)
+        local z = tonumber(candidate.z)
+        local rut = math.max(0, tonumber(candidate.rutDepthM) or 0)
+        if x ~= nil and z ~= nil
+            and rut >= Recovery.DEFAULTS.minHistoryIntentRutM then
+            local ix = math.floor(x / spacing + 0.5)
+            local iz = math.floor(z / spacing + 0.5)
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local current = groups[key]
+            if current == nil or rut > current.rutDepthM then
+                groups[key] = {
+                    x = x,
+                    z = z,
+                    rutDepthM = rut,
+                    intentCellKey = candidate.key
+                }
+            end
+            Recovery.stats.intentMaxRutM =
+                math.max(Recovery.stats.intentMaxRutM, rut)
+        end
     end
 
     local points = {}
-    for iz = 1, nz do
-        local b = (iz - 0.5) / nz
-        for ix = 1, nx do
-            local a = (ix - 0.5) / nx
-            points[#points + 1] = {
-                x = g.xs + g.ux * a + g.vx * b,
-                z = g.zs + g.uz * a + g.vz * b
-            }
-        end
+    for _, point in pairs(groups) do
+        points[#points + 1] = point
     end
+
+    table.sort(points, function(a, b)
+        if a.rutDepthM ~= b.rutDepthM then
+            return a.rutDepthM > b.rutDepthM
+        end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.z < b.z
+    end)
+
+    local maxBrushes = math.max(
+        1,
+        math.floor(Recovery.DEFAULTS.maxBrushesPerWorkArea)
+    )
+    while #points > maxBrushes do
+        points[#points] = nil
+    end
+
+    Recovery.stats.intentPoints =
+        Recovery.stats.intentPoints + #points
     return points
 end
 
@@ -572,34 +643,48 @@ function Recovery.update(dt)
             elseif nowMs < entry.nextAttemptMs then
                 Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
             else
-                local blocked = queryLoadedContact(
-                    entry.x,
-                    entry.z,
-                    entry.params.radius,
-                    nowMs
-                )
-                if blocked then
-                    entry.nextAttemptMs =
-                        nowMs + Recovery.DEFAULTS.deferredRetryMs
-                    Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
-                    Recovery.stats.deferredStillBlocked =
-                        Recovery.stats.deferredStillBlocked + 1
+                -- The brush center is a real SpatialHistory candidate cell.
+                -- If another successful recovery already erased that local
+                -- debt while this request waited under a loaded wheel, the
+                -- physical smoothing request is no longer justified.
+                local h = type(runtime.history.get) == "function"
+                    and runtime.history:get(entry.x, entry.z) or nil
+                local remainingRut = h ~= nil
+                    and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if remainingRut < Recovery.DEFAULTS.minHistoryIntentRutM then
+                    removeDeferred(entry)
+                    Recovery.stats.intentDeferredGone =
+                        Recovery.stats.intentDeferredGone + 1
                 else
-                    local accepted = enqueueRecoveryPoint(
-                        runtime,
-                        {x=entry.x,z=entry.z},
-                        entry.key,
-                        entry.params,
-                        nowMs,
-                        true
+                    local blocked = queryLoadedContact(
+                        entry.x,
+                        entry.z,
+                        entry.params.radius,
+                        nowMs
                     )
-                    if accepted then
-                        removeDeferred(entry)
-                    else
+                    if blocked then
                         entry.nextAttemptMs =
                             nowMs + Recovery.DEFAULTS.deferredRetryMs
-                        Recovery.deferredQueue[#Recovery.deferredQueue + 1] =
-                            entry
+                        Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
+                        Recovery.stats.deferredStillBlocked =
+                            Recovery.stats.deferredStillBlocked + 1
+                    else
+                        local accepted = enqueueRecoveryPoint(
+                            runtime,
+                            {x=entry.x,z=entry.z},
+                            entry.key,
+                            entry.params,
+                            nowMs,
+                            true
+                        )
+                        if accepted then
+                            removeDeferred(entry)
+                        else
+                            entry.nextAttemptMs =
+                                nowMs + Recovery.DEFAULTS.deferredRetryMs
+                            Recovery.deferredQueue[#Recovery.deferredQueue + 1] =
+                                entry
+                        end
                     end
                 end
             end
@@ -652,7 +737,12 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
     protectWorkArea(g, nowMs)
-    local points = buildCoveragePoints(g, radius)
+    local points = buildHistoryGuidedPoints(
+        runtime.history,
+        g,
+        radius,
+        nowMs
+    )
     Recovery.stats.coveragePoints =
         Recovery.stats.coveragePoints + #points
 
