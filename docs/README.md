@@ -30,3 +30,7 @@ Use documents by purpose instead of reading everything.
 - Tracks/VMT assimilation checkpoint: `tests/tracks-assimilation-runtime.md`.
 
 Do not duplicate current status into audit/research notes. Link back to `CURRENT_HANDOFF.md` for the live state.
+
+## Current assimilation research
+- `audits/hydraulic-suspension/README.md`: active/self-leveling suspension candidate and MR composition requirements.
+- `audits/4x4-traction/README.md`: drivetrain-demand ideas for RMS without a second physical drivetrain owner.
