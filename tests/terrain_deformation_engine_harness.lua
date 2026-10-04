@@ -31,13 +31,26 @@ RealismExtensionsState = {
     getWheelContext = function(vehicle, wheel)
         contexts = contexts + 1
         return {
-            contextVersion=1,
+            contextVersion=2,
             grounded=true,
             soilContact=true,
             worldX=wheel.testX,
             worldZ=0,
             structuralRadiusM=0.8,
-            supportWidthM=0.6,
+            supportWidthM=wheel.testCrawler and 0.70
+                or (wheel.testDual and 1.00 or 0.60),
+            supportContactWidthM=wheel.testCrawler and 0.70
+                or (wheel.testDual and 1.00 or 0.60),
+            supportSpanM=wheel.testDual and 1.14
+                or (wheel.testCrawler and 0.70 or 0.60),
+            supportGapWidthM=wheel.testDual and 0.14 or 0,
+            supportKind=wheel.testCrawler and "CRAWLER" or "ROUND_WHEEL",
+            isCrawler=wheel.testCrawler==true,
+            trackFootprintFactor=wheel.testCrawler and 3 or 1,
+            supportSegments=wheel.testDual and {
+                {offsetM=-0.32,widthM=0.50,radiusM=0.8},
+                {offsetM=0.32,widthM=0.50,radiusM=0.8}
+            } or nil,
             wheelLoadN=20000,
             wheelLoadMeasured=true,
             tirePressureBar=1.0,
@@ -56,12 +69,54 @@ RealismExtensionsState = {
 
 RealismExtensionsFootprintModel = {
     compute = function(context)
+        if context.isCrawler==true then
+            return {
+                available=true,
+                kind="CRAWLER",
+                supportWidthM=0.70,
+                supportSpanM=0.70,
+                supportGapWidthM=0,
+                supportSegmentCount=1,
+                footprintLengthM=1.10,
+                structuralRadiusM=0.8,
+                groundPressurePa=45000,
+                contactPatches={
+                    {available=true,kind="CRAWLER_PATCH",supportWidthM=0.70,footprintLengthM=1.10,groundPressurePa=45000,longitudinalOffsetM=-0.35,exposureShare=1/3},
+                    {available=true,kind="CRAWLER_PATCH",supportWidthM=0.70,footprintLengthM=1.10,groundPressurePa=45000,longitudinalOffsetM=0,exposureShare=1/3},
+                    {available=true,kind="CRAWLER_PATCH",supportWidthM=0.70,footprintLengthM=1.10,groundPressurePa=45000,longitudinalOffsetM=0.35,exposureShare=1/3}
+                }
+            }
+        end
+        if type(context.supportSegments)=="table" then
+            return {
+                available=true,
+                kind="ROUND_WHEEL",
+                supportWidthM=1.0,
+                supportSpanM=1.14,
+                supportGapWidthM=0.14,
+                supportSegmentCount=2,
+                footprintLengthM=0.25,
+                structuralRadiusM=0.8,
+                groundPressurePa=100000,
+                contactPatches={
+                    {available=true,kind="ROUND_WHEEL_PATCH",supportWidthM=0.5,footprintLengthM=0.25,groundPressurePa=100000,offsetM=-0.32},
+                    {available=true,kind="ROUND_WHEEL_PATCH",supportWidthM=0.5,footprintLengthM=0.25,groundPressurePa=100000,offsetM=0.32}
+                }
+            }
+        end
         return {
             available=true,
+            kind="ROUND_WHEEL",
             supportWidthM=0.6,
+            supportSpanM=0.6,
+            supportGapWidthM=0,
+            supportSegmentCount=1,
             footprintLengthM=0.4,
             structuralRadiusM=0.8,
-            groundPressurePa=100000
+            groundPressurePa=100000,
+            contactPatches={
+                {available=true,kind="ROUND_WHEEL_PATCH",supportWidthM=0.6,footprintLengthM=0.4,groundPressurePa=100000,offsetM=0}
+            }
         }
     end
 }
@@ -224,6 +279,34 @@ assert(contexts == beforeProtectedContexts + 2)
 assert(enqueued == beforeProtectedEnqueued)
 assert((RealismExtensionsTerrainRuntime.stats.cultivationProtectionSkips or 0) >= 2)
 RealismExtensionsTerrainRecovery.protected = false
+
+-- A dual wheel is routed into two lateral terrain patches rather than one
+-- continuous brush spanning the gap.
+bodySpeedKph=5
+wheelA.testDual=true
+wheelA.testCrawler=false
+wheelB.testDual=false
+wheelB.testCrawler=false
+wheelA.testX=1.4
+wheelB.testX=1.9
+local beforeDual=enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(enqueued>=beforeDual+3)
+assert((RealismExtensionsTerrainRuntime.stats.segmentedSupportContexts or 0)>=1)
+assert((RealismExtensionsTerrainRuntime.stats.segmentedWheelPatches or 0)>=2)
+
+-- A crawler is no longer rejected. Its long support area is discretized into
+-- longitudinal patches while the footprint model shares exposure between them.
+wheelA.testDual=false
+wheelA.testCrawler=true
+wheelA.testX=1.8
+wheelB.testX=2.3
+local beforeCrawler=enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(enqueued>=beforeCrawler+4)
+assert((RealismExtensionsTerrainRuntime.stats.crawlerContexts or 0)>=1)
+assert((RealismExtensionsTerrainRuntime.stats.crawlerTerrainPatches or 0)>=3)
+wheelA.testCrawler=false
 
 -- AI field work keeps normal load-driven terrain consequences while
 -- receiving only the anti-pathology model overrides for steering/slip.

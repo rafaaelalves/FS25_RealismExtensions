@@ -598,11 +598,20 @@ function RealismExtensionsCore:update(dt)
 
                 if (d.footprintAccepted or 0) > 0 then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "Footprint runtime | contexts=%d wideSupport=%d maxBaseWidth=%.3f maxSupportWidth=%.3f maxWidthRatio=%.2f maxLoadN=%.0f maxArea=%.3f pressurePa=%.0f..%.0f maxInflationBar=%.2f",
+                        "Footprint runtime | contexts=%d wideSupport=%d segmented=%d crawler=%d patches=%d/%d maxBaseWidth=%.3f maxContactWidth=%.3f maxSpan=%.3f maxGap=%.3f maxSegments=%d trackFx=%.2f trackLength=%.3f maxWidthRatio=%.2f maxLoadN=%.0f maxArea=%.3f pressurePa=%.0f..%.0f maxInflationBar=%.2f",
                         d.footprintAccepted or 0,
                         d.wideSupportContexts or 0,
+                        d.segmentedSupportContexts or 0,
+                        d.crawlerContexts or 0,
+                        d.segmentedWheelPatches or 0,
+                        d.crawlerTerrainPatches or 0,
                         d.maxBaseTireWidthM or 0,
                         d.maxSupportWidthM or 0,
+                        d.maxSupportSpanM or 0,
+                        d.maxSupportGapWidthM or 0,
+                        d.maxSupportSegmentCount or 0,
+                        d.maxTrackFootprintFactor or 0,
+                        d.maxTrackContactLengthM or 0,
                         d.maxSupportWidthRatio or 0,
                         d.maxWheelLoadN or 0,
                         d.maxContactAreaM2 or 0,

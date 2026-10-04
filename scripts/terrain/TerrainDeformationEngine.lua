@@ -493,6 +493,118 @@ function Engine.processSample(
     return false
 end
 
+local function normalizedXZ(x, z)
+    local length = math.sqrt((tonumber(x) or 0)^2 + (tonumber(z) or 0)^2)
+    if length <= 0.000001 then return nil, nil end
+    return x / length, z / length
+end
+
+local function resolvePatchAxes(wheel, travelDirX, travelDirZ)
+    local node = wheel ~= nil
+        and (wheel.linkNode or wheel.repr or wheel.node) or nil
+    if node ~= nil and node ~= 0
+        and type(localDirectionToWorld) == "function" then
+        local okL, lx, _, lz = pcall(localDirectionToWorld, node, 1, 0, 0)
+        local okF, fx, _, fz = pcall(localDirectionToWorld, node, 0, 0, 1)
+        if okL and okF then
+            lx, lz = normalizedXZ(lx, lz)
+            fx, fz = normalizedXZ(fx, fz)
+            if lx ~= nil and fx ~= nil then
+                return lx, lz, fx, fz
+            end
+        end
+    end
+
+    local fx, fz = normalizedXZ(travelDirX, travelDirZ)
+    if fx ~= nil then
+        return -fz, fx, fx, fz
+    end
+
+    -- Degraded first/stationary sample. Production GIANTS wheels normally
+    -- provide a transform node; keeping the center is safer than guessing a
+    -- world-space axle direction.
+    return 0, 0, 0, 0
+end
+
+local function footprintSamplingWidth(footprint)
+    local minimum = nil
+    for _, patch in ipairs(footprint.contactPatches or {}) do
+        local width = tonumber(patch.supportWidthM)
+        if width ~= nil and width > 0 then
+            minimum = minimum == nil and width or math.min(minimum, width)
+        end
+    end
+    return minimum or tonumber(footprint.supportWidthM)
+end
+
+local function processFootprintSample(
+    vehicle,
+    wheel,
+    state,
+    context,
+    footprint,
+    x,
+    z,
+    dtMs,
+    stationaryWheelspin,
+    travelDirX,
+    travelDirZ,
+    actor
+)
+    local patches = footprint.contactPatches
+    if type(patches) ~= "table" or #patches == 0 then
+        patches = { footprint }
+    end
+
+    local lateralX, lateralZ, forwardX, forwardZ =
+        resolvePatchAxes(wheel, travelDirX, travelDirZ)
+
+    if #patches > 1 then
+        diagCount("multiPatchSamples", 1)
+    end
+    if footprint.kind == "CRAWLER" then
+        diagCount("crawlerFootprintSamples", 1)
+        diagCount("crawlerTerrainPatches", #patches)
+    elseif #patches > 1 then
+        diagCount("segmentedWheelSamples", 1)
+        diagCount("segmentedWheelPatches", #patches)
+    end
+
+    local wrote = false
+    for _, patch in ipairs(patches) do
+        local lateralOffset = tonumber(patch.offsetM) or 0
+        local longitudinalOffset = tonumber(patch.longitudinalOffsetM) or 0
+        local px = x
+            + lateralX * lateralOffset
+            + forwardX * longitudinalOffset
+        local pz = z
+            + lateralZ * lateralOffset
+            + forwardZ * longitudinalOffset
+        local exposureShare = math.max(
+            0.01,
+            math.min(1, tonumber(patch.exposureShare) or 1)
+        )
+
+        if Engine.processSample(
+            vehicle,
+            wheel,
+            state,
+            context,
+            patch,
+            px,
+            pz,
+            dtMs * exposureShare,
+            stationaryWheelspin,
+            travelDirX,
+            travelDirZ,
+            actor
+        ) then
+            wrote = true
+        end
+    end
+    return wrote
+end
+
 function Engine.processWheel(vehicle, wheel, dt)
     if wheel == nil then return end
     diagCount("wheelTicks", 1)
@@ -605,18 +717,19 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     diagCount("footprintAccepted", 1)
 
-    -- Footprint telemetry is intentionally source-state focused. It lets the
-    -- next runtime test prove how MR/Mud represent duals before RE invents any
-    -- dual-specific multiplier.
+    -- v2 distinguishes actual support width from the full lateral span. A
+    -- dual therefore carries load through two patches without deforming its
+    -- physical gap.
     local supportWidthM = tonumber(footprint.supportWidthM)
     local baseWidthM = tonumber(context.baseTireWidthM)
+    local supportSpanM = tonumber(footprint.supportSpanM) or supportWidthM
     local contactAreaM2 = tonumber(footprint.contactAreaM2)
     local groundPressurePa = tonumber(footprint.groundPressurePa)
     local wheelLoadN = tonumber(footprint.wheelLoadN or context.wheelLoadN)
     local inflationBar = tonumber(footprint.inflationPressureBar or context.tirePressureBar)
 
     if loadedContactGuardEnabled() then
-        local contactWidthM = math.max(0, supportWidthM or 0)
+        local contactWidthM = math.max(0, supportSpanM or supportWidthM or 0)
         local contactLengthM = math.max(0, tonumber(footprint.footprintLengthM) or 0)
         local contactRadiusM = 0.5 * math.sqrt(
             contactWidthM * contactWidthM + contactLengthM * contactLengthM
@@ -665,6 +778,25 @@ function Engine.processWheel(vehicle, wheel, dt)
     Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
 
     diagMax("maxSupportWidthM", supportWidthM)
+    diagMax("maxSupportSpanM", supportSpanM)
+    diagMax("maxSupportGapWidthM", tonumber(footprint.supportGapWidthM))
+    if footprint.kind == "CRAWLER" then
+        diagCount("crawlerContexts", 1)
+        diagMax(
+            "maxTrackFootprintFactor",
+            tonumber(footprint.trackFootprintFactor)
+        )
+        diagMax(
+            "maxTrackContactLengthM",
+            tonumber(footprint.footprintLengthM)
+        )
+    elseif (tonumber(footprint.supportSegmentCount) or 1) > 1 then
+        diagCount("segmentedSupportContexts", 1)
+        diagMax(
+            "maxSupportSegmentCount",
+            tonumber(footprint.supportSegmentCount)
+        )
+    end
     diagMax("maxBaseTireWidthM", baseWidthM)
     diagMax("maxContactAreaM2", contactAreaM2)
     diagMax("maxWheelLoadN", wheelLoadN)
@@ -685,7 +817,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        Engine.processSample(
+        processFootprintSample(
             vehicle, wheel, state, context, footprint,
             x, z, elapsedMs, stationaryWheelspin, nil, nil, actor
         )
@@ -695,8 +827,10 @@ function Engine.processWheel(vehicle, wheel, dt)
     local pathDistance = distance2D(lastX, lastZ, x, z)
     local spacing = math.max(
         Engine.DEFAULTS.minPathSpacingM,
-        math.min(footprint.supportWidthM, footprint.footprintLengthM)
-            * Engine.DEFAULTS.pathSpacingFactor
+        math.min(
+            footprintSamplingWidth(footprint),
+            footprint.footprintLengthM
+        ) * Engine.DEFAULTS.pathSpacingFactor
     )
 
     local movingSamples = math.max(1, math.ceil(pathDistance / spacing))
@@ -724,7 +858,7 @@ function Engine.processWheel(vehicle, wheel, dt)
         local t = i / movingSamples
         local sx = lastX + (x - lastX) * t
         local sz = lastZ + (z - lastZ) * t
-        Engine.processSample(
+        processFootprintSample(
             vehicle,
             wheel,
             state,

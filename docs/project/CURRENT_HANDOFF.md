@@ -827,3 +827,46 @@ New telemetry:
 `TerrainMaintenance v1 | periods=... scanned=... eligible=neighbor/municipal buckets=... queued=... started=... target=... complete=... neighbor=... municipal=... stale=... blocked=... boundaryReject=... surfaceReject=... patch=examined/recovered depth=... pending=... inFlight=...`
 
 This completes the originally planned neighbor/municipal responsibility loop. Runtime observation can now happen through normal gameplay; no exhaustive manual test matrix is required.
+
+
+## Wheel/track support topology — coordinated RC/RE layer
+
+Terrain v1 exposed a remaining contact-geometry gap:
+- aggregate dual/triple width was treated as one solid strip;
+- crawler footprints were rejected.
+
+A paired contract upgrade is implemented on:
+- RC: `feat/wheel-support-topology-v2`;
+- RE: `feat/wheel-support-topology`.
+
+RE now requires RC provider API / WheelContext v2.
+
+Ownership:
+- MR/Mud/Reifen own wheel force, traction, pressure, slip, sink and structural
+  radius state;
+- RC normalizes actual support topology;
+- RE owns the missing persistent heightfield consequence;
+- SoilCompaction remains untouched.
+
+Round multi-support:
+- total pressure-driven area is conserved;
+- GIANTS WheelVisual offsets/widths are retained;
+- each tyre writes its own lateral strip; gaps remain undeformed.
+
+Crawler:
+- no pneumatic pressure is assumed;
+- MR `mrTrackFx` provides the effective support-length contract;
+- average track area/pressure is computed once;
+- long support is written through bounded longitudinal sub-patches whose
+  exposure shares sum to one.
+
+Do not add direct tyre-type rut multipliers. Upstream type effects should arrive
+through normalized slip/sink/load state.
+
+Known parked issue:
+general solid/small-wheel vs pneumatic eligibility remains unresolved because
+the current owner mods expose pressure/wear broadly and FS25 has no stable
+semantic flag sufficient for a general classifier. Keep fail-closed; do not use
+name/radius heuristics.
+
+Detailed study: `docs/research/wheel-support-topology-study.md`.
