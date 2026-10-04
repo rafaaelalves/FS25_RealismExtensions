@@ -420,3 +420,37 @@ Runtime gate:
 Important: old v23 ruts are not the best H2 reference because v23 could already have erased/understated their logical history without physically removing them.
 
 If fresh H2-owned ruts still do not close, stop tuning native SMOOTH and implement Strategy R1 target-plane recovery.
+
+
+### Runtime gate — v26R1 structural recovery
+
+H2 runtime conclusion is now stable:
+- causal rut selection works;
+- native SMOOTH works well for finishing/shallow irregularity;
+- native SMOOTH is not a sufficient deep-rut reconstruction actuator.
+
+The next build uses hybrid R1:
+- >3 cm causal center deficit: narrow target-plane structural repair;
+- <=3 cm: H2 native SMOOTH finishing;
+- every structural step capped by remaining RE rut ownership;
+- current robust local boundary plane is the reference.
+
+Green code commit:
+`fd665a5c6f11b2976c1d3ed91db363ece4f524d5`
+
+Runtime test must use fresh ruts generated after loading this build.
+
+Primary telemetry:
+`TerrainRecovery v26R1`
+and
+`TerrainRecoveryStructural`.
+
+Success signal:
+- targetJobs/targetBrushes > 0;
+- targetRaised > 0;
+- targetLowered near zero for causal hole centers;
+- centerRaised and deficitReduce are centimeter-scale on deep ruts;
+- maxAfter materially below maxBefore;
+- ownershipExhausted does not dominate normal fresh-rut repair.
+
+The tracks assimilation runtime gate is separately CLOSED/PASS.
