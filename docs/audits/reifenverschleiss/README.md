@@ -146,10 +146,11 @@ Mud pressure/sink is transient deformation.
 The existing RC structural-radius composition is conceptually correct and already runtime validated.
 
 ### MRRMS / dynamic driven wheels
-This audit reopens a previously closed question:
-Reifen FORCE-WEAR uses GIANTS differential topology and permanent cached wheel shares, while RC MRRMS changes MR's effective driven-wheel flags during 2WD/4WD/AUTO transitions.
+The later RMS 0.10.0.0 deep audit closed this source-level question.
 
-A focused runtime/harness audit is now justified to determine whether Reifen allocates force wear to disengaged axles.
+RMS physically removes/rebuilds the GIANTS differential graph during 2WD/4WD/AUTO transitions, while Reifen FORCE-WEAR computes and caches torque shares from that graph. The cached shares can therefore become stale after an RMS topology change. RC MRRMS repairs MoreRealistic metadata but does not invalidate Reifen's cache.
+
+This is now a confirmed static cross-mod mismatch. Focused runtime remains useful to quantify the wear error and validate the eventual fix.
 
 ## Audit status
 
