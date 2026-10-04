@@ -7,6 +7,32 @@ RealismExtensionsCore = {
     terrainDiagPrevious = nil
 }
 
+local function getModules()
+    return RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules or {}
+end
+
+local function tireTrackProbeEnabled()
+    return getModules().NativeTireTrackProbe == true
+end
+
+local function visualTrackCaptureEnabled()
+    return getModules().VisualTrackCapture == true
+end
+
+local function tireTrackAdapterNeeded()
+    return tireTrackProbeEnabled() or visualTrackCaptureEnabled()
+end
+
+local function configureTireTrackAdapterProbe()
+    if RealismExtensionsNativeTireTrackAdapter ~= nil
+        and type(RealismExtensionsNativeTireTrackAdapter.setProbeEnabled) == "function" then
+        RealismExtensionsNativeTireTrackAdapter.setProbeEnabled(
+            tireTrackProbeEnabled()
+        )
+    end
+end
+
 function RealismExtensionsCore:tryDiscoverProvider()
     if RealismExtensionsState == nil then return false end
 
@@ -42,16 +68,19 @@ function RealismExtensionsCore:loadMap()
 
     self:tryDiscoverProvider()
 
-    if RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.modules ~= nil
-        and RealismExtensionsConfig.modules.NativeTireTrackProbe == true
+    configureTireTrackAdapterProbe()
+    if tireTrackAdapterNeeded()
         and RealismExtensionsNativeTireTrackAdapter ~= nil then
         local ok, reason = RealismExtensionsNativeTireTrackAdapter.installFromMission()
         if ok then
-            RealismExtensionsDiagnostics.info("native TireTrack probe active")
+            RealismExtensionsDiagnostics.info(
+                "native TireTrack adapter active; probe="
+                .. tostring(tireTrackProbeEnabled())
+                .. " capture=" .. tostring(visualTrackCaptureEnabled())
+            )
         else
             RealismExtensionsDiagnostics.verbose(
-                "native TireTrack probe pending: " .. tostring(reason)
+                "native TireTrack adapter pending: " .. tostring(reason)
             )
         end
     end
@@ -114,9 +143,9 @@ function RealismExtensionsCore:update(dt)
         end
     end
 
-    if RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.modules ~= nil
-        and RealismExtensionsConfig.modules.NativeTireTrackProbe == true
+    configureTireTrackAdapterProbe()
+
+    if tireTrackAdapterNeeded()
         and RealismExtensionsNativeTireTrackAdapter ~= nil
         and RealismExtensionsNativeTireTrackAdapter.installed ~= true then
         self.tireTrackProbeElapsedMs = (self.tireTrackProbeElapsedMs or 0)
@@ -125,11 +154,16 @@ function RealismExtensionsCore:update(dt)
             self.tireTrackProbeElapsedMs = 0
             RealismExtensionsNativeTireTrackAdapter.installFromMission()
         end
+    elseif not tireTrackAdapterNeeded()
+        and RealismExtensionsNativeTireTrackAdapter ~= nil
+        and RealismExtensionsNativeTireTrackAdapter.installed == true then
+        if RealismExtensionsVisualTrackRuntime ~= nil then
+            RealismExtensionsVisualTrackRuntime.shutdown()
+        end
+        RealismExtensionsNativeTireTrackAdapter.uninstall()
     end
 
-    if RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.modules ~= nil
-        and RealismExtensionsConfig.modules.VisualTrackCapture == true
+    if visualTrackCaptureEnabled()
         and RealismExtensionsVisualTrackRuntime ~= nil
         and RealismExtensionsVisualTrackRuntime.active ~= true
         and RealismExtensionsNativeTireTrackAdapter ~= nil
@@ -142,6 +176,10 @@ function RealismExtensionsCore:update(dt)
                 "visual track capture pending: " .. tostring(reason)
             )
         end
+    elseif not visualTrackCaptureEnabled()
+        and RealismExtensionsVisualTrackRuntime ~= nil
+        and RealismExtensionsVisualTrackRuntime.active == true then
+        RealismExtensionsVisualTrackRuntime.shutdown()
     end
 
     if RealismExtensionsConfig ~= nil
