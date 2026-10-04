@@ -69,6 +69,9 @@ local function newStats()
         historyRecoveredDepthM = 0,
         protectedCellsMarked = 0,
         protectionSkips = 0,
+        loadedContactQueries = 0,
+        loadedContactSkips = 0,
+        loadedContactMaxLoadN = 0,
         workAreaGeometrySamples = 0,
         minWorkAreaWidthM = nil,
         maxWorkAreaWidthM = 0,
@@ -299,12 +302,39 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
         if not stampAvailable(key, nowMs) then
             Recovery.stats.stampSkips = Recovery.stats.stampSkips + 1
         else
-            Recovery.pendingStamps[key] = true
-            -- Claim the physical patch at enqueue time. Even a no-op smoothing
-            -- result must not be hammered again every frame of the same pass.
-            Recovery.processedStamps[key] = nowMs
+            local blockedByLoadedContact = false
+            local blockingContact = nil
+            if RealismExtensionsLoadedContactRegistry ~= nil
+                and type(RealismExtensionsLoadedContactRegistry.overlapsCircle) == "function" then
+                Recovery.stats.loadedContactQueries =
+                    Recovery.stats.loadedContactQueries + 1
+                blockedByLoadedContact, blockingContact =
+                    RealismExtensionsLoadedContactRegistry.overlapsCircle(
+                        point.x,
+                        point.z,
+                        radius,
+                        nowMs
+                    )
+            end
 
-            local accepted = runtime.writer:enqueue({
+            if blockedByLoadedContact then
+                -- Do not claim the recovery stamp. The same physical work area
+                -- may retry after the loaded wheel moves away.
+                Recovery.stats.loadedContactSkips =
+                    Recovery.stats.loadedContactSkips + 1
+                if blockingContact ~= nil then
+                    Recovery.stats.loadedContactMaxLoadN = math.max(
+                        Recovery.stats.loadedContactMaxLoadN,
+                        tonumber(blockingContact.loadN) or 0
+                    )
+                end
+            else
+                Recovery.pendingStamps[key] = true
+                -- Claim the physical patch at enqueue time. Even a no-op smoothing
+                -- result must not be hammered again every frame of the same pass.
+                Recovery.processedStamps[key] = nowMs
+
+                local accepted = runtime.writer:enqueue({
                 x = point.x,
                 z = point.z,
                 mode = "SMOOTH",
@@ -376,14 +406,15 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
                 end
             })
 
-            if accepted then
-                Recovery.stats.brushesEnqueued =
-                    Recovery.stats.brushesEnqueued + 1
-            else
-                Recovery.pendingStamps[key] = nil
-                Recovery.processedStamps[key] = nil
-                Recovery.stats.brushesRejected =
-                    Recovery.stats.brushesRejected + 1
+                if accepted then
+                    Recovery.stats.brushesEnqueued =
+                        Recovery.stats.brushesEnqueued + 1
+                else
+                    Recovery.pendingStamps[key] = nil
+                    Recovery.processedStamps[key] = nil
+                    Recovery.stats.brushesRejected =
+                        Recovery.stats.brushesRejected + 1
+                end
             end
         end
     end
