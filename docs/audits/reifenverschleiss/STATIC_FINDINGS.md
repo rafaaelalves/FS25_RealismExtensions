@@ -150,10 +150,18 @@ Visual wear worker writes structural target directly into current `physics.radiu
 
 Differential wheel shares and torque capacity are cached per vehicle from GIANTS graph.
 
-## R-29 FORCE-WEAR does not consume MRRMS effective driven flags
-**STRONG_CANDIDATE cross-mod mismatch**
+## R-29 FORCE-WEAR cached shares become stale across RMS 2WD/4WD/AUTO topology changes
+**CONFIRMED_STATIC cross-mod mismatch**
 
-RC dynamically changes `mrIsDriven` for 2WD/4WD/AUTO without rebuilding differential graph. Reifen can continue force-wearing disengaged axle wheels.
+The later RMS 0.10.0.0 deep audit cross-read this exact Reifen source against RMS drivetrain ownership.
+
+Reifen computes wheel FORCE-WEAR torque shares by traversing `spec_motorized.differentials` and caches those shares per vehicle. RMS physically removes/rebuilds that GIANTS differential graph when switching 2WD/4WD/AUTO.
+
+Therefore the cached Reifen distribution can describe the previous graph after RMS changes topology. Live diagnostics may stop classifying a disconnected axle as currently driven, but the remaining active axle can still retain its former full-graph share, under-allocating FORCE-WEAR; track/reference-wheel paths can consume the stale share more directly.
+
+RC `MRRMS` synchronizes MoreRealistic driven-wheel metadata after RMS changes topology, but does not invalidate Reifen's private share cache.
+
+Preferred resolution: Reifen invalidates/recomputes its cache from a topology signature/revision. A future RMS public drivetrain provider would make this cleaner. Runtime T19 remains useful for magnitude/parity evidence, not for proving the source mismatch itself.
 
 ## R-30 Roller lifetime randomness is not explicitly network synchronized
 **STRONG_CANDIDATE MP divergence**
