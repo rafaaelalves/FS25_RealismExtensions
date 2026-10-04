@@ -492,3 +492,56 @@ Green runtime target:
 - `raiseMaxDelta` becomes centimetric rather than decimetric/metre-scale;
 - `machineSmoothJobs=0`;
 - repaired rut centers stop within the local-plane tolerance without surrounding-field depression or new mounds.
+
+
+### Runtime gate — v29R4 signed recovery controller
+
+R3 runtime (build `945c54b57f0bd2b461ae74227b7524949a7b21b5`) preserved the field but became ineffective on deep ruts:
+- build identity was correct;
+- serial execution was healthy (`timeouts=0`);
+- no recovery RAISE lowered terrain (`loweringViolations=0`);
+- however 4,242 applied fill callbacks produced 4,119 center no-ops;
+- the linear gain controller collapsed to its minimum gain and stayed pinned at `commandMax=0.002500`;
+- only 123/4,242 callbacks visibly raised the sampled center.
+This falsifies the R3 assumption that the actuator can be modeled as a smooth linear gain. Runtime behavior is closer to a dead-zone/quantized actuator.
+
+User also clarified an important architectural distinction:
+- native SMOOTH is bad as a repeated deep-hole filler because it can lower the surrounding field;
+- that does not make SMOOTH useless;
+- positive causal peaks/berms are the opposite geometry, where redistribution/smoothing is the appropriate tool.
+
+R4 state machine:
+- signed residual < -4 mm: RAISE only;
+- signed residual within +/-4 mm: converged;
+- signed residual > +4 mm: SMOOTH only when that peak is explicitly authorized.
+For this build, positive-peak authorization is deliberately narrow: the exact recovery sequence must have created the overshoot. A stale rut marker alone is not permission to smooth a player-created mound. General tire/soil berm repair should later gain its own SpatialHistory ownership field (for example `bermHeightM`) when SoilMassTransport creates the berm.
+
+R4 RAISE controller:
+- remove the failed linear gain estimator;
+- start at opaque command 0.005;
+- on physical no-op, multiply command by 1.70 up to 0.040;
+- remember the discovered working command globally for new causal patches;
+- after an overly large physical response, back command down to 65%;
+- desired physical step remains ~12.5 mm / <=50% of current deficit / <=remaining rut debt;
+- one structural command remains globally in flight at a time;
+- deferred queue processing stops after accepting that command, preventing pointless churn while awaiting its callback.
+
+R4 peak cleanup:
+- recovery-created positive overshoot may use one bounded native SMOOTH pulse at a time;
+- re-measure signed residual after every pulse;
+- never continue SMOOTH after crossing below the reference plane;
+- no pre-existing positive mound is altered merely because stale rut history exists.
+
+Primary runtime telemetry:
+`TerrainRecovery v29R4`
+and
+`TerrainRecoveryFill`.
+
+Green runtime target:
+- no-op ratio falls sharply after initial command discovery;
+- `escalations>0` early, then command estimate stabilizes;
+- `effectiveMin/effectiveMax` identify the real FS25 actuation band;
+- causal deep-rut center deficit materially decreases on each pass;
+- `loweringViolations=0`;
+- any quantized overshoot is small and followed by `peakSmooth` cleanup;
+- no broad field depression returns.

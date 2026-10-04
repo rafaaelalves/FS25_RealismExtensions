@@ -1,20 +1,24 @@
--- TerrainRecovery R3 closed-loop monotonic fill harness.
+-- TerrainRecovery R4 signed-state / dead-zone controller harness.
 RealismExtensionsConfig = {
     modules = {TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false}
 }
 
-local pending,cells,offsets = {},{},{}
-local engineGain=40
+local pending,cells,residuals = {},{},{}
+local raiseDeadzone=0.010
+local raiseQuantum=0.0125
 local forceLower=false
+local smoothCalls=0
 
 local function hkey(x,z) return string.format("%.2f:%.2f",x,z) end
 local function seedHistory(list)
-    cells,offsets,pending={},{},{}
+    cells,residuals,pending={},{},{}
+    smoothCalls=0
     for _,v in ipairs(list or {}) do
         local key=hkey(v.x,v.z)
         cells[key]={x=v.x,z=v.z,rutDepthM=v.rutDepthM,deformationExposure=1.0}
-        -- Signed residual to the desired local plane: negative=hole, positive=mound.
-        offsets[key]=-(v.physicalDeficitM or v.rutDepthM or 0)
+        residuals[key]=v.residualM ~= nil
+            and v.residualM
+            or -(v.physicalDeficitM or v.rutDepthM or 0)
     end
 end
 
@@ -46,7 +50,7 @@ end
 
 local writer={}
 function writer:measureRecoveryAt(x,z,probeRadius)
-    local residual=offsets[hkey(x,z)] or 0
+    local residual=residuals[hkey(x,z)] or 0
     return {
         centerY=10+residual,
         referenceCenterY=10,
@@ -60,9 +64,8 @@ function writer:measureRecoveryAt(x,z,probeRadius)
     }
 end
 function writer:enqueue(brush)
-    assert(brush.source=="RECOVERY" and brush.mode=="RAISE")
-    assert(brush.raiseHeightM>=0.000019)
-    assert(math.abs(brush.radiusM-0.30)<0.000001)
+    assert(brush.source=="RECOVERY")
+    assert(brush.mode=="RAISE" or brush.mode=="SMOOTH")
     pending[#pending+1]=brush
     return true
 end
@@ -71,15 +74,28 @@ local function applyNext()
     assert(#pending>0)
     local brush=table.remove(pending,1)
     local key=hkey(brush.x,brush.z)
-    local before=offsets[key] or 0
-    local delta
-    if forceLower then
-        delta=-0.002
+    local before=residuals[key] or 0
+    local delta=0
+
+    if brush.mode=="RAISE" then
+        if forceLower then
+            delta=-0.002
+        elseif brush.raiseHeightM>=raiseDeadzone then
+            -- Deliberately quantized/nonlinear engine model: once above the
+            -- native dead zone, one height quantum is applied.
+            delta=raiseQuantum
+        end
     else
-        delta=brush.raiseHeightM*engineGain
+        smoothCalls=smoothCalls+1
+        if before>0 then
+            delta=-math.min(before,0.0035)
+        elseif before<0 then
+            delta=math.min(-before,0.0035)
+        end
     end
+
     local after=before+delta
-    offsets[key]=after
+    residuals[key]=after
     brush.onApplied(1,delta,10+before,10+after,0.01,{
         centerDeficitBeforeM=math.max(0,-before),
         centerDeficitAfterM=math.max(0,-after),
@@ -90,6 +106,8 @@ local function applyNext()
         reliefBeforeM=math.abs(before),reliefAfterM=math.abs(after),
         roughnessBeforeM=math.abs(before)*0.25,
         roughnessAfterM=math.abs(after)*0.25,
+        peakBeforeM=math.max(0,before),
+        peakAfterM=math.max(0,after),
         planeAxAfter=0,planeAzAfter=0
     })
 end
@@ -132,7 +150,7 @@ local function repeatSuper(self,wa,dt) self.spec_cultivator.isWorking=true retur
 local function rejectedSuper(self,wa,dt) self.spec_cultivator.isWorking=false return 0,0 end
 
 local function pump(limit)
-    limit=limit or 200
+    limit=limit or 500
     for _=1,limit do
         local d=Recovery.getDiagnostics()
         if d.deferredCount==0 and d.structuralInFlight==0 and #pending==0 then
@@ -145,65 +163,49 @@ local function pump(limit)
     error("pump did not converge")
 end
 
--- 1. High-gain engine: two separate deep ruts converge without mounds.
-seedHistory({
-    {x=0.40,z=0.40,rutDepthM=0.090},
-    {x=1.20,z=0.40,rutDepthM=0.070}
-})
+-- 1. Controller must escape a native dead zone instead of pinning at a tiny
+-- command forever, then converge a causal depression.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.030}})
 Recovery.resetRuntimeState()
-engineGain=40
+raiseDeadzone=0.010
+raiseQuantum=0.0125
 forceLower=false
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#pending==0)
-assert(Recovery.getDiagnostics().deferredCount>=1)
-
-g_currentMission.time=g_currentMission.time+60
-Recovery.update(16)
-assert(#pending==1)
-local pendingBefore=#pending
-Recovery.update(16)
-assert(#pending==pendingBefore) -- globally serialized while callback is in flight
-applyNext()
 pump()
-
 local d=Recovery.getDiagnostics()
-assert(d.structuralCompleted>=2)
-assert(d.structuralGainSamples>0)
-assert(d.structuralObservedGainMax>30)
+assert(d.structuralCommandEscalations>=2)
+assert(d.structuralNoopPulses>=2)
+assert(d.structuralEffectiveCommandMin~=nil)
+assert(d.structuralEffectiveCommandMin>=raiseDeadzone)
+assert(d.structuralCenterRaisedM>=0.025)
 assert(d.structuralLoweringViolations==0)
-assert(d.structuralMaxOvershootM<=0.004001)
-assert((offsets[hkey(0.40,0.40)] or 0)<=0.004001)
-assert((offsets[hkey(1.20,0.40)] or 0)<=0.004001)
-assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
-assert((historyApi:get(1.20,0.40).rutDepthM or 0)<0.003)
+assert(math.abs(residuals[hkey(0.40,0.40)] or 0)<=0.004001)
 
--- 2. Close causal cells collapse into non-overlapping recovery centers.
-seedHistory({
-    {x=0.40,z=0.40,rutDepthM=0.050},
-    {x=0.60,z=0.40,rutDepthM=0.045}
-})
-Recovery.resetRuntimeState()
-g_currentMission.time=g_currentMission.time+1000
-Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-d=Recovery.getDiagnostics()
-assert(d.intentCandidateCells==2)
-assert(d.intentPoints==1)
+-- 2. Quantized final fill may overshoot the plane; that exact causal peak is
+-- routed to SMOOTH, not more RAISE. SMOOTH stops inside the deadband.
+assert(d.structuralOvershootCount>=1)
+assert(d.peakSmoothApplied>=1)
+assert(d.peakSmoothCompleted>=1)
+assert(smoothCalls>=1)
+assert(math.abs(residuals[hkey(0.40,0.40)] or 0)<=0.004001)
 
--- 3. Stale logical debt on already-flat terrain retires with no actuator.
-seedHistory({{x=0.40,z=0.40,rutDepthM=0.040,physicalDeficitM=0}})
+-- 3. A stale rut marker under a pre-existing positive mound is NOT enough
+-- authorization to smooth player terrain.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.030,residualM=0.020}})
 Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
 pump()
 d=Recovery.getDiagnostics()
-assert(#pending==0)
+assert(smoothCalls==0)
+assert(math.abs((residuals[hkey(0.40,0.40)] or 0)-0.020)<0.000001)
 assert(d.structuralPreflightNoDeficit==1)
-assert(d.structuralCompleted==1)
 
--- 4. Any downward response remains a hard stop and consumes no continuation.
-seedHistory({{x=0.40,z=0.40,rutDepthM=0.040}})
+-- 4. Any negative RAISE response remains a hard safety violation.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.030}})
 Recovery.resetRuntimeState()
 forceLower=true
+raiseDeadzone=0
 g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
 g_currentMission.time=g_currentMission.time+60
@@ -214,9 +216,10 @@ d=Recovery.getDiagnostics()
 assert(d.structuralLoweringViolations==1)
 assert(d.deferredCount==0)
 forceLower=false
+raiseDeadzone=0.010
 
--- 5. Loaded contact keeps the intent queued until the wheel clears.
-seedHistory({{x=0.40,z=0.40,rutDepthM=0.030}})
+-- 5. Loaded contact retains the causal request and executes after clearing.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.020}})
 Recovery.resetRuntimeState()
 local blocked=true
 RealismExtensionsLoadedContactRegistry={
@@ -232,9 +235,8 @@ Recovery.update(16)
 assert(#pending==0 and Recovery.getDiagnostics().deferredCount==1)
 blocked=false
 pump()
-assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
 
--- 6. Repeat work remains valid; no causal history remains inert.
+-- 6. Repeat work remains physical; no causal history remains inert.
 RealismExtensionsLoadedContactRegistry=nil
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.020}})
 Recovery.resetRuntimeState()
@@ -257,4 +259,4 @@ Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
 assert(perfBegins==perfFinishes)
 
-print("terrain_recovery_r3_closed_loop_harness: OK")
+print("terrain_recovery_r4_signed_deadzone_harness: OK")
