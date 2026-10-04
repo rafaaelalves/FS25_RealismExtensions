@@ -13,8 +13,13 @@ Implemented on `feat/assimilation-tracks-vmt`:
 - **Phase 1C instrumentation complete:** runtime diagnostics expose observed Mud sink, rut-history overlap proxy and residual sink proxy. No Mud/radius ownership was changed.
 - **Phase 2A implemented:** `NativeTireTrackAdapter` owns a guarded observation boundary for `createTrack`, `addTrackPoint`, and `cutTrack`.
 - **Phase 2B implemented:** the adapter records only call counts, argument counts and type signatures; it does not persist raw GIANTS payloads.
-- **Phase 2C deliberately NOT enabled yet:** AI visual-track policy remains pending exact runtime confirmation of the FS25 specialization/native gating chain.
-- Persistent visual journal, simplification, chunk store and savegame persistence remain intentionally unimplemented until probe evidence defines the native payload semantics.
+- Official FS25 TireTracks source now documents the native contract: `createTrack(width, atlasIndex)`, 15-argument `addTrackPoint`, and `cutTrack(trackId)`. This allows a clean normalized domain without copying Persistent Tracks' raw-call journal.
+- **Phase 2C deliberately NOT enabled yet:** AI visual-track policy remains pending runtime proof that RE fully replaces True AI Tracks physical AI/implement behavior and an exact ownership plan for the AI specialization overwrite chain.
+- **Phase 3A implemented, capture gated OFF:** `VisualTrackJournal` normalizes native point semantics and never stores raw GIANTS call arrays as its domain model.
+- **Phase 3B implemented:** clean-room adaptive simplification preserves endpoints/cuts, geometric deviations, direction changes, attribute transitions and a bounded maximum spacing.
+- **Phase 3C core store implemented:** `VisualTrackChunkStore` splits closed fragments into direct-addressed spatial chunks and duplicates one boundary point for continuity; nearby queries use grid-key lookup rather than whole-history scan/sort.
+- **Gated runtime wiring implemented:** `VisualTrackRuntime` can attach the normalized journal as an adapter observer, but `VisualTrackCapture=false` remains the default until the in-game probe confirms the exact runtime contract.
+- Savegame persistence, native replay/rendering, semantic aging/invalidation and multiplayer replication remain intentionally unimplemented.
 
 Automated harnesses cover:
 - contact spatial movement / TTL / exclusion / cleanup;
@@ -26,7 +31,7 @@ Automated harnesses cover:
 - pointer-drift detection;
 - non-destructive uninstall when another mod takes hook ownership.
 
-This is the intended stopping point before the first in-game probe. The next implementation step must be driven by observed TireTrack signatures and runtime AI/implement behavior, not by guessing private GIANTS payload fields.
+This is the intended stopping point before the first in-game probe. The normalized journal/chunk architecture is ready, but the runtime capture toggle stays off until the probe confirms the official 2/15/1 call contract in the user's actual stack. AI visual policy, replay and persistence remain evidence-gated.
 
 ---
 
