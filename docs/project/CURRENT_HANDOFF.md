@@ -281,3 +281,71 @@ A new chat should read, in order:
 4. relevant decision/audit docs.
 
 CURRENT_HANDOFF is expected to be updated after every meaningful runtime conclusion, not only at release boundaries.
+
+
+## 2026-10-04 consolidation / current active state
+
+Canonical active branch remains **`feat/terrain-recovery`**.
+
+Repository organization:
+- validated pre-recovery terrain foundation through the v10.2 profiler baseline is now merged into `main`;
+- current recovery experiments, tracks/VMT assimilation and completed assimilation audits continue only on `feat/terrain-recovery`;
+- do not create another branch for the next TireTrack bootstrap or recovery iteration;
+- branch cleanup inventory: `docs/project/BRANCH_CLEANUP_2026-10-04.md`.
+
+CI policy:
+- docs-only / Markdown-only pushes no longer create a build artifact;
+- mixed code + docs changes still run the full workflow.
+
+### Tracks/VMT runtime result
+
+First runtime test of the adapter checkpoint:
+- `addTrackPoint=65622`;
+- `cutTrack=3972`;
+- `createTrack=0`;
+- max args `0/15/1`;
+- `observerErrors=0`;
+- `drift=0`.
+
+Interpretation:
+- mission-instance adapter boundary is stable;
+- point/cut contracts are proven;
+- current `Core:loadMap()` installation is too late to observe existing track creation;
+- `VisualTrackCapture` remains OFF.
+
+Next tracks step is documented in:
+`docs/research/native-tire-track-create-bootstrap.md`.
+
+Preferred next experiment:
+- install the mission-instance adapter from a lightweight `TireTracks:onPreLoad` bootstrap;
+- first test remains probe-only;
+- require runtime `createTrack>0` and `2/15/1` before enabling capture.
+
+### Recovery runtime result
+
+The new loaded-contact safety guard is over-broad in normal cultivation.
+
+Observed final session:
+- coverage candidates: 14,552;
+- post-stamp contact queries: 13,678;
+- blocked by loaded contact: 13,409;
+- smoothing brushes enqueued: 269.
+
+This means the current guard prevents a fair comparison of recovery geometry and must be redesigned.
+
+Recovery is now explicitly split into:
+1. safety/eligibility;
+2. recovery intent/reference;
+3. terrain operation.
+
+The current preferred research sequence is:
+1. deferred/eventual recovery for temporarily blocked patches;
+2. measure actual wheel-channel depth/width instead of only roughness;
+3. retest GIANTS native smoothing under fair coverage;
+4. add history-guided target behavior only if native smoothing still leaves persistent rut relief;
+5. explicit raise/lower redistribution only as a later proven need.
+
+Design document:
+`docs/research/terrain-recovery-design-study.md`.
+
+Do **not** implement frozen original-height restoration.
