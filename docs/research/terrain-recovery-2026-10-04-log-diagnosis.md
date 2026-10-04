@@ -5,11 +5,11 @@ Source session:
 - ModMixer log: `ModMixer.log`
 - RE build: `feat/terrain-recovery` commit `7d5a41e8bf7c0c0ae2ae288f48b87251eb78501c`
 - recovery implementation: v22
-- observed symptom: cultivation initially visibly repairs terrain, then deep/wide wheel ruts remain after repeated passes.
+- observed symptom: cultivation initially visibly repairs terrain, then deep wheel ruts remain after repeated passes. Follow-up user observation clarified that the surviving ruts are not necessarily broad; they can remain narrow/deep enough for wheels to fall back into them.
 
 ## Executive diagnosis
 
-**The main failure is not that recovery stops being called. It is that v22 defines successful physical recovery as local roughness reduction while using native smoothing as the only terrain operation.**
+**The main failure is not that recovery stops being called. v22 also uses an insufficient success metric: local roughness reduction is treated as physical rut recovery even though it does not prove that the rut relief itself was removed.**
 
 For a deep rut, smoothing can reduce roughness by lowering the surrounding/high samples rather than raising the depression.
 
@@ -20,15 +20,14 @@ The log proves this is the dominant behavior:
 - center lowered: 8,602;
 - writer rejected: 0.
 
-Therefore a large fraction of brushes classified as "improved" did not fill a rut. They flattened local relief mainly by lowering terrain.
+Therefore a large fraction of brushes classified as "improved" primarily lowered the sampled center. That proves the current success metric is ambiguous; it does **not** by itself prove that lowering is wrong or that the rut necessarily became broad.
 
-Once a wheel rut becomes a broad smooth depression:
-- the local roughness metric becomes small;
-- native smoothing has little remaining local gradient to act on;
-- repeated passes can produce little/no visible recovery;
-- yet SpatialHistory may already have been reduced because roughness previously improved.
+Follow-up observation is important: the vanilla landscaping Smooth tool can lower the average field surface and still produce an acceptable result because the wheel channels themselves disappear. The failure criterion for agricultural recovery is therefore **remaining rut relief/depth**, not preservation of absolute elevation.
 
-This matches the reported user-visible symptom.
+The correct conclusion from this first log is narrower:
+- roughness reduction alone cannot prove rut removal;
+- SpatialHistory must not be reduced from roughness alone;
+- the final target/reference strategy remains an open design question.
 
 ## Evidence that the recovery loop did not stop
 
@@ -100,12 +99,7 @@ RMS roughness decreases, so v22 reports an improvement.
 
 But the actual terrain has not returned toward its pre-rut/reference surface. Some surrounding soil was merely lowered.
 
-If this continues, the area approaches a broad low basin:
-- low roughness;
-- large absolute elevation error;
-- no remaining gradient for smoothing.
-
-That is the observed "worked at first, then stopped doing anything" failure mode.
+This is only a counterexample showing why roughness is ambiguous. The follow-up test/user observation does **not** support claiming that the actual surviving terrain necessarily became a broad basin. The observed channels can remain narrow and deep.
 
 ## Logical/physical divergence
 
@@ -301,3 +295,27 @@ implement bounded volume redistribution.
 
 This preserves the project's rule:
 **measure the phenomenon first, then give the writer a physical target.**
+
+
+## Revision after follow-up test
+
+The next runtime session used `feat/assimilation-tracks-vmt` and changed the interpretation further.
+
+Two distinct questions must remain separate:
+
+1. **Safety/eligibility:** when may recovery alter terrain near loaded wheels?
+2. **Recovery geometry:** once eligible, what operation/target should cultivation apply?
+
+The new LoadedContactRegistry guard currently prevents a fair evaluation of question 2 because it rejects almost every recovery candidate while the cultivator combination is operating.
+
+Do not replace native smoothing or implement an absolute-height target until that safety-policy regression is resolved and native smoothing can be compared under equivalent coverage/cadence.
+
+### Correct recovery objective
+
+The desired observable is:
+- wheel-channel relief becomes shallow enough that the vehicle no longer falls back into the rut;
+- the worked surface is acceptably smooth for the implement/operation;
+- natural/intentional terrain shape is preserved;
+- absolute terrain elevation may legitimately move.
+
+Therefore "restore original map height" is **not** the current design decision.
