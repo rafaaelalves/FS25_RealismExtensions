@@ -22,9 +22,10 @@ Utils = {
 
 RealismExtensionsConfig = {
     diagnostics = { verbose = true },
-    modules = { TerrainDeformation = true }
+    modules = { TerrainDeformation = true, TerrainRecovery = true }
 }
 
+g_currentMission = { time = 1000 }
 local contexts = 0
 RealismExtensionsState = {
     getWheelContext = function(vehicle, wheel)
@@ -172,6 +173,23 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
+
+-- A stationary, non-spinning but still loaded wheel must remain in the
+-- recovery safety registry. Only the low-cadence contact refresh should query
+-- the provider; ordinary rut processing remains activity-gated.
+wheelA.physics.mrLastWheelSpeed = 0
+wheelB.physics.mrLastWheelSpeed = 0
+local beforeGuardRefresh = contexts
+for _ = 1, 3 do
+    g_currentMission.time = g_currentMission.time + 250
+    RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
+end
+assert(contexts == beforeGuardRefresh)
+g_currentMission.time = g_currentMission.time + 250
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
+assert(contexts == beforeGuardRefresh + 2)
+assert((RealismExtensionsTerrainRuntime.stats.loadedContactRefreshes or 0) >= 2)
+assert(RealismExtensionsLoadedContactRegistry.getStats(g_currentMission.time).activeContacts == 2)
 
 -- An actively working repair implement suppresses RE rut writing for the whole
 -- combination before spatial protection is even needed.
