@@ -267,6 +267,21 @@ function RealismExtensionsCore:update(dt)
                         r.repeatAreaUnits or 0
                     ))
 
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainRecoveryGeometry | relief=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm maxBefore=%.4fm maxAfter=%.4fm deferredChecks=%d deferredCoalesced=%d deferredDropped=%d",
+                        r.reliefVerified or 0,
+                        r.reliefImproved or 0,
+                        r.reliefWorsened or 0,
+                        r.reliefNeutral or 0,
+                        r.reliefImprovementM or 0,
+                        r.reliefWorseningM or 0,
+                        r.maxReliefBeforeM or 0,
+                        r.maxReliefAfterM or 0,
+                        r.deferredChecks or 0,
+                        r.deferredCoalesced or 0,
+                        r.deferredDroppedCapacity or 0
+                    ))
+
                     if diagConfig.causalWindows ~= false then
                         RealismExtensionsDiagnostics.verbose(string.format(
                         "TerrainWindow %dms | work=%d changed=%d repeat=%d processedArea=%.0f repeatArea=%.0f smooth=%d callbacks=%d improved=%d worsened=%d rutBlocked=%d protected=%d rutAccepted=%d",
