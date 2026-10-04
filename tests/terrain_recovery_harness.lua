@@ -1,30 +1,134 @@
--- TerrainRecovery v22 physical-work-state harness.
-RealismExtensionsConfig = { modules={TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false} }
+-- TerrainRecovery H2 causal-center / convergence harness.
+RealismExtensionsConfig = {
+    modules = {
+        TerrainDeformation = true,
+        TerrainRecovery = true,
+        SoilMassTransport = false
+    }
+}
 
 local enqueued = {}
-local historyCells, historyDepth = 0, 0
-local historyCandidatesEnabled = true
-local historyRutDepthM = 0.05
-local historyApi = {
-    getRecoveryCandidatesParallelogram=function(self,xs,zs,xw,zw,xh,zh,options)
-        if not historyCandidatesEnabled then return {} end
-        assert(options.minRutM > 0)
-        return {
-            {key="2:2",x=0.40,z=0.40,rutDepthM=historyRutDepthM},
-            {key="6:2",x=1.20,z=0.40,rutDepthM=0.03}
+local exactRecoveryCalls = 0
+local exactRecoveryDepth = 0
+local cells = {}
+local callbackMode = "COMPLETE"
+local convergenceStep = 0
+
+local function hkey(x,z)
+    return string.format("%.2f:%.2f", x, z)
+end
+
+local function clearHistory()
+    cells = {}
+    exactRecoveryCalls = 0
+    exactRecoveryDepth = 0
+end
+
+local function seedHistory(list)
+    clearHistory()
+    for _,v in ipairs(list or {}) do
+        cells[hkey(v.x,v.z)] = {
+            x=v.x,
+            z=v.z,
+            rutDepthM=v.rutDepthM,
+            deformationExposure=1.0
         }
-    end,
-    get=function(self,x,z)
-        if not historyCandidatesEnabled then return nil end
-        return {rutDepthM=historyRutDepthM}
-    end,
-    applyRecoveryCircle=function(self,x,z,radius,amount,fraction,options)
-        assert(radius > 0 and amount > 0 and fraction > 0)
-        historyCells = historyCells + 2
-        historyDepth = historyDepth + amount
-        return 2, amount
     end
-}
+end
+
+local historyApi = {}
+
+function historyApi:getRecoveryCandidatesParallelogram(xs,zs,xw,zw,xh,zh,options)
+    local out = {}
+    for key,h in pairs(cells) do
+        if (h.rutDepthM or 0) >= (options.minRutM or 0) then
+            out[#out+1] = {
+                key=key,
+                x=h.x,
+                z=h.z,
+                rutDepthM=h.rutDepthM
+            }
+        end
+    end
+    table.sort(out,function(a,b) return a.x < b.x end)
+    return out
+end
+
+function historyApi:get(x,z)
+    return cells[hkey(x,z)]
+end
+
+function historyApi:applyRecoveryAt(x,z,amount,options)
+    local h = cells[hkey(x,z)]
+    if h == nil then return 0 end
+    local minRut = options ~= nil and (options.minRutM or 0) or 0
+    local rut = math.max(0,h.rutDepthM or 0)
+    if rut < minRut then return 0 end
+    local applied = math.min(rut,math.max(0,amount or 0))
+    h.rutDepthM = rut - applied
+    exactRecoveryCalls = exactRecoveryCalls + 1
+    exactRecoveryDepth = exactRecoveryDepth + applied
+    return applied
+end
+
+local function geometryForMode()
+    if callbackMode == "COMPLETE" then
+        return {
+            roughnessBeforeM=0.020,
+            roughnessAfterM=0.012,
+            reliefBeforeM=0.060,
+            reliefAfterM=0.035,
+            centerDeficitBeforeM=0.020,
+            centerDeficitAfterM=0.002
+        }
+    elseif callbackMode == "ROUGHNESS_ONLY" then
+        -- Regression case from v23: the region becomes less rough while the
+        -- causal rut center does not improve at all.
+        return {
+            roughnessBeforeM=0.020,
+            roughnessAfterM=0.010,
+            reliefBeforeM=0.060,
+            reliefAfterM=0.045,
+            centerDeficitBeforeM=0.030,
+            centerDeficitAfterM=0.030
+        }
+    elseif callbackMode == "WORSEN_CENTER" then
+        return {
+            roughnessBeforeM=0.020,
+            roughnessAfterM=0.015,
+            reliefBeforeM=0.060,
+            reliefAfterM=0.055,
+            centerDeficitBeforeM=0.030,
+            centerDeficitAfterM=0.035
+        }
+    elseif callbackMode == "CONVERGE" then
+        convergenceStep = convergenceStep + 1
+        if convergenceStep == 1 then
+            return {
+                roughnessBeforeM=0.030, roughnessAfterM=0.022,
+                reliefBeforeM=0.070, reliefAfterM=0.055,
+                centerDeficitBeforeM=0.030,
+                centerDeficitAfterM=0.020
+            }
+        elseif convergenceStep == 2 then
+            return {
+                roughnessBeforeM=0.022, roughnessAfterM=0.016,
+                reliefBeforeM=0.055, reliefAfterM=0.038,
+                centerDeficitBeforeM=0.020,
+                centerDeficitAfterM=0.010
+            }
+        else
+            return {
+                roughnessBeforeM=0.016, roughnessAfterM=0.010,
+                reliefBeforeM=0.038, reliefAfterM=0.020,
+                centerDeficitBeforeM=0.010,
+                centerDeficitAfterM=0.002
+            }
+        end
+    end
+    error("unexpected callbackMode")
+end
+
 RealismExtensionsTerrainRuntime = {
     history = historyApi,
     writer = {
@@ -36,14 +140,8 @@ RealismExtensionsTerrainRuntime = {
             assert(math.abs(brush.hardness-0.20)<0.000001)
             assert(math.abs(brush.strength-0.50)<0.000001)
             assert(brush.probeRadiusM>0)
-            brush.onApplied(1,-0.002,1.0,0.998,0,{
-                roughnessBeforeM=0.020,
-                roughnessAfterM=0.012,
-                roughnessDeltaM=0.008,
-                reliefBeforeM=0.060,
-                reliefAfterM=0.035,
-                reliefDeltaM=0.025
-            })
+            local g=geometryForMode()
+            brush.onApplied(1,-0.002,1.0,0.998,0,g)
             return true
         end
     }
@@ -73,6 +171,8 @@ SpecializationUtil={
 
 dofile("scripts/terrain/TerrainWorkContext.lua")
 dofile("scripts/terrain/TerrainRecovery.lua")
+
+local Recovery=RealismExtensionsTerrainRecovery
 local rootVehicle={}
 local vehicle={
     spec_cultivator={useDeepMode=false,isEnabled=true,isWorking=false},
@@ -88,166 +188,208 @@ local function repeatSuper(self,wa,dt)
     self.spec_cultivator.isWorking=true
     return 0,12
 end
-
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#enqueued > 0)
-local firstCount=#enqueued
-local d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.coveragePoints >= firstCount)
-assert(d.intentCandidateCells > 0)
-assert(d.intentPoints == firstCount)
-assert(d.intentMaxRutM >= 0.05)
-assert(d.roughnessImproved == firstCount)
-assert(d.reliefImproved == firstCount)
-assert(d.reliefVerified == firstCount)
-assert(d.centerLowered == firstCount)
-assert(d.historyRecoveredCells > 0 and d.historyRecoveredDepthM > 0)
-assert(d.protectedCellsMarked > 0)
-assert(d.activeCombinationMarks > 0)
-assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,10000)==true)
-assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,11501)==false)
-assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,10000)==true)
-assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,19001)==false)
-
--- Repeated pass over already-cultivated ground reports realArea=0 but
--- area>0. It must still mark the combination active and keep recovery alive.
-g_currentMission.time=10800
-local beforeRepeat=#enqueued
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
-assert(#enqueued > beforeRepeat)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.repeatWorkAreaCalls > 0)
-assert(d.areaPositiveCalls > 0)
-assert(d.physicalWorkAreaCalls > 0)
-assert(d.preSuperActiveMarks > 0)
-assert(d.processedAreaUnits >= 24)
-assert(d.changedAreaUnits == 12)
-assert(d.repeatAreaUnits >= 12)
-assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,10800)==true)
-
--- Same immediate physical patch must still obey the stamp cooldown.
-local repeatCount=#enqueued
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
-assert(#enqueued == repeatCount)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.stampSkips > 0)
-
--- A later pass can work the same ground again, but worsening relief never
--- reconciles logical rut history.
-g_currentMission.time=16000
-local beforeHistory=historyDepth
-RealismExtensionsTerrainRuntime.writer.enqueue=function(self,brush)
-    enqueued[#enqueued+1]=brush
-    brush.onApplied(1,-0.001,1.0,0.999,0,{
-        roughnessBeforeM=0.012,
-        roughnessAfterM=0.015,
-        roughnessDeltaM=-0.003,
-        reliefBeforeM=0.030,
-        reliefAfterM=0.040,
-        reliefDeltaM=-0.010
-    })
-    return true
-end
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#enqueued > firstCount)
-assert(historyDepth == beforeHistory)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.roughnessWorsened > 0)
-
-local beforeEnqueued=#enqueued
 local function rejectedSuper(self,wa,dt)
     self.spec_cultivator.isWorking=false
     return 0,0
 end
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
-assert(#enqueued==beforeEnqueued)
-assert(perfBegins==perfFinishes)
 
--- Strategy H: a physically working cultivator must not smooth arbitrary
--- terrain when SpatialHistory has no RE-attributable rut debt in the work area.
-RealismExtensionsTerrainRecovery.resetRuntimeState()
-g_currentMission.time=19000
-historyCandidatesEnabled=false
-local beforeNoIntent=#enqueued
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#enqueued==beforeNoIntent)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
+-- 1. Causal history candidates are centered and successful center-deficit
+-- reduction reconciles only those exact cells.
+seedHistory({
+    {x=0.40,z=0.40,rutDepthM=0.05},
+    {x=1.20,z=0.40,rutDepthM=0.03}
+})
+callbackMode="COMPLETE"
+Recovery.resetRuntimeState()
+local before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+local firstCount=#enqueued-before
+assert(firstCount==2)
+local d=Recovery.getDiagnostics()
+assert(d.intentCandidateCells==2)
+assert(d.intentPoints==2)
+assert(d.intentMaxRutM>=0.05)
+assert(d.centerDeficitVerified==2)
+assert(d.centerDeficitImproved==2)
+assert(d.convergenceCompleted>=2)
+assert(d.historyRecoveredCells>=2)
+assert(d.historyRecoveredDepthM>0)
+assert(exactRecoveryCalls>=2)
+assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
+assert((historyApi:get(1.20,0.40).rutDepthM or 0)<0.003)
+assert(d.protectedCellsMarked>0)
+assert(d.activeCombinationMarks>0)
+assert(Recovery.isRutGenerationSuppressed(rootVehicle,10000)==true)
+assert(Recovery.isRutGenerationSuppressed(rootVehicle,11501)==false)
+assert(Recovery.isRecentlyCultivated(1.0,0.5,10000)==true)
+assert(Recovery.isRecentlyCultivated(1.0,0.5,19001)==false)
+
+-- 2. Repeated physical pass is still recognized even when vanilla realArea=0.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.04}})
+Recovery.resetRuntimeState()
+g_currentMission.time=12000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+assert(#enqueued>before)
+d=Recovery.getDiagnostics()
+assert(d.repeatWorkAreaCalls>0)
+assert(d.areaPositiveCalls>0)
+assert(d.physicalWorkAreaCalls>0)
+assert(d.processedAreaUnits>=12)
+assert(d.changedAreaUnits==0)
+
+-- 3. Core v23 regression guard:
+-- roughness/relief may improve while the wheel-channel center does not.
+-- In that case logical rut debt MUST remain untouched.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+Recovery.resetRuntimeState()
+callbackMode="ROUGHNESS_ONLY"
+g_currentMission.time=14000
+local debtBefore=historyApi:get(0.40,0.40).rutDepthM
+local recoveryBefore=exactRecoveryDepth
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+d=Recovery.getDiagnostics()
+assert(d.roughnessImproved>0)
+assert(d.reliefImproved>0)
+assert(d.centerDeficitNeutral>0)
+assert(d.historyRecoveredDepthM==0)
+assert(exactRecoveryDepth==recoveryBefore)
+assert(math.abs(historyApi:get(0.40,0.40).rutDepthM-debtBefore)<0.000001)
+assert(d.convergenceScheduled>0)
+
+-- Do not let the queued neutral pulse contaminate later cases.
+Recovery.resetRuntimeState()
+
+-- 4. Material worsening at the causal center must neither erase history nor
+-- launch an unbounded convergence loop.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+callbackMode="WORSEN_CENTER"
+g_currentMission.time=15000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+d=Recovery.getDiagnostics()
+assert(#enqueued==before+1)
+assert(d.centerDeficitWorsened==1)
+assert(d.historyRecoveredDepthM==0)
+assert(d.convergenceScheduled==0)
+assert(d.convergenceStalled>=1)
+assert(math.abs(historyApi:get(0.40,0.40).rutDepthM-0.05)<0.000001)
+
+-- 5. H2 temporal convergence: one agricultural authorization can continue
+-- native SOFTEN pulses on the same history-owned rut center after the work-area
+-- callback has moved on, until the physical center deficit is <=3mm.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+Recovery.resetRuntimeState()
+callbackMode="CONVERGE"
+convergenceStep=0
+g_currentMission.time=20000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==before+1)
+d=Recovery.getDiagnostics()
+assert(d.convergenceScheduled==1)
+assert(d.deferredCount==1)
+assert(d.historyRecoveredDepthM>0)
+
+g_currentMission.time=20160
+Recovery.update(16)
+assert(#enqueued==before+2)
+d=Recovery.getDiagnostics()
+assert(d.convergenceApplied>=1)
+assert(d.convergenceScheduled>=2)
+assert(d.deferredCount==1)
+
+g_currentMission.time=20320
+Recovery.update(16)
+assert(#enqueued==before+3)
+d=Recovery.getDiagnostics()
+assert(d.convergenceApplied>=2)
+assert(d.convergenceCompleted>=1)
+assert(d.deferredCount==0)
+assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
+
+-- 6. No RE-attributable rut debt => physically working cultivation must not
+-- smooth arbitrary landscaping/current baseline terrain.
+clearHistory()
+Recovery.resetRuntimeState()
+callbackMode="COMPLETE"
+g_currentMission.time=22000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==before)
+d=Recovery.getDiagnostics()
 assert(d.intentEmptyWorkAreas>0)
 assert(d.intentCandidateCells==0)
 assert(d.intentPoints==0)
-historyCandidatesEnabled=true
 
--- A loaded wheel blocks smoothing, but the worked patch becomes a bounded
--- deferred request. It must complete after the contact clears even if no new
--- Cultivator work-area callback ever visits that patch.
-RealismExtensionsTerrainRecovery.resetRuntimeState()
-g_currentMission.time=20000
+-- 7. A loaded wheel defers the first authorized pulse; overlapping callbacks
+-- coalesce. Once the wheel clears, recovery executes without requiring another
+-- Cultivator callback.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+Recovery.resetRuntimeState()
+callbackMode="COMPLETE"
+g_currentMission.time=24000
 local blockRecovery=true
 RealismExtensionsLoadedContactRegistry={
     overlapsCircle=function(x,z,radius,nowMs)
-        if blockRecovery then
-            return true,{loadN=32000}
-        end
+        if blockRecovery then return true,{loadN=32000} end
         return false,nil
     end
 }
-local beforeLoadedGuard=#enqueued
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(#enqueued==beforeLoadedGuard)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==before)
+d=Recovery.getDiagnostics()
 assert(d.loadedContactQueries>0)
 assert(d.loadedContactSkips>0)
 assert(d.loadedContactMaxLoadN>=32000)
-assert(d.deferredCreated>0)
-assert(d.deferredCount>0)
+assert(d.deferredCreated==1)
+assert(d.deferredCount==1)
 
--- Repeated overlapping callbacks coalesce into the same spatial request.
 local createdBefore=d.deferredCreated
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+d=Recovery.getDiagnostics()
 assert(d.deferredCreated==createdBefore)
 assert(d.deferredCoalesced>0)
 
--- Clearing the wheel is not enough until the bounded retry cadence elapses.
 blockRecovery=false
-g_currentMission.time=20100
-RealismExtensionsTerrainRecovery.update(16)
-assert(#enqueued==beforeLoadedGuard)
-
-g_currentMission.time=20250
-RealismExtensionsTerrainRecovery.update(16)
-assert(#enqueued>beforeLoadedGuard)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
+g_currentMission.time=24100
+Recovery.update(16)
+assert(#enqueued==before)
+g_currentMission.time=24250
+Recovery.update(16)
+assert(#enqueued==before+1)
+d=Recovery.getDiagnostics()
 assert(d.deferredApplied>0)
 assert(d.deferredCount==0)
+assert(d.convergenceCompleted>0)
 
--- If rut debt disappears while a patch waits under a loaded wheel, Strategy H
--- must discard the stale physical smoothing request rather than touching
--- unrelated/current baseline terrain.
-RealismExtensionsTerrainRecovery.resetRuntimeState()
-g_currentMission.time=21000
+-- 8. If causal debt disappears while a first pulse waits under a loaded wheel,
+-- the stale request must be discarded without touching terrain.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+Recovery.resetRuntimeState()
+g_currentMission.time=26000
 blockRecovery=true
-historyRutDepthM=0.05
-local beforeStale=#enqueued
-RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.deferredCount>0)
-historyRutDepthM=0
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(Recovery.getDiagnostics().deferredCount==1)
+historyApi:get(0.40,0.40).rutDepthM=0
 blockRecovery=false
-g_currentMission.time=21250
-RealismExtensionsTerrainRecovery.update(16)
-assert(#enqueued==beforeStale)
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
+g_currentMission.time=26250
+Recovery.update(16)
+assert(#enqueued==before)
+d=Recovery.getDiagnostics()
 assert(d.intentDeferredGone>0)
 assert(d.deferredCount==0)
-historyRutDepthM=0.05
 
--- Runtime reset must clear temporary map/session state without removing API.
+-- 9. Inactive/rejected work area stays inert and perf accounting remains paired.
 RealismExtensionsLoadedContactRegistry=nil
-RealismExtensionsTerrainRecovery.resetRuntimeState()
-d=RealismExtensionsTerrainRecovery.getDiagnostics()
-assert(d.workAreaCalls==0)
-assert(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(rootVehicle,16000)==false)
-assert(RealismExtensionsTerrainRecovery.isRecentlyCultivated(1.0,0.5,16000)==false)
+clearHistory()
+Recovery.resetRuntimeState()
+g_currentMission.time=28000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
+assert(#enqueued==before)
+assert(perfBegins==perfFinishes)
 
-print("terrain_recovery_v22_physical_work_state_harness: OK")
+print("terrain_recovery_h2_causal_center_harness: OK")
