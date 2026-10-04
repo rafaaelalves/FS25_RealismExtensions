@@ -725,3 +725,50 @@ Next runtime gate:
 - verify unrelated/current landscaping remains untouched;
 - if TARGET raises correctly, tune implement-specific recovery capacity only
   after the actuator itself is proven.
+
+
+
+## R5 runtime gate — concept proven, efficiency/refactor gate opened
+
+Runtime build: `988f97421f80ebb4c034205433c7d91f592293da` (workflow 37224032054, green).
+
+Observed result:
+- user visual gate: PASS. Repeated cultivator passes can remove the RE ruts without producing the R4 replacement mountains;
+- TARGET is isolated correctly: final runtime had `raiseJobs=0`, `smoothJobs=0`, `targetJobs=4120`;
+- no target timeout/rejection/backlog failure: `timeouts=0`, `rejected=0`, `deferredDropped=0`, final writer queue 0;
+- geometric direction is healthy overall: `residualReduce=28.8858m` vs `residualWorsen=0.2961m`, with only 39 worsening callbacks;
+- the largest observed TARGET center delta was ~0.1012m, far below the 0.2-0.84m additive R4 jumps.
+
+The runtime also exposed the next bottleneck: efficiency, not correctness.
+- 4,120 TARGET callbacks produced 2,818 exact-center no-ops (~68.4%);
+- 1,255 callbacks raised the sampled center and 47 lowered it;
+- 1,006 structural sequences stalled;
+- 666 completions were initial-positive/stale-debt skips rather than physical TARGET convergence;
+- 29,544 structural schedule requests collapsed into only 4,120 physical TARGET jobs, with 24,339 deferred coalesces.
+
+Primary architectural mismatch:
+- one R5 TARGET brush physically modifies a ~0.40m-radius patch;
+- logical reconciliation still clears only the exact 0.20m SpatialHistory cell at the selected center;
+- neighboring causal cells may already be physically repaired by the same brush but retain logical rut debt and are selected again on later passes;
+- this is the leading explanation for the user's "works, but needs many passes" result and for the high no-op/initial-positive counts.
+
+Preferred next refactor before gameplay tuning:
+1. Add patch-level verified reconciliation: enumerate causal SpatialHistory cells inside the applied TARGET footprint, sample their post-operation terrain height against the same fitted target plane, and clear only cells physically within tolerance. Do not blindly erase a circle.
+2. Retire dormant SpatialHistory cells when rut/shear/exposure state is fully recovered. The R5 session loaded 49,567 cells and ended around 49,150 against the current 50,000-cell cap, so stale zero-debt cells are a real large-field scalability risk.
+3. Reuse the preflight RecoverySurfaceEstimator probe in TerrainWriter rather than immediately sampling the same 16-point ring again. Current TARGET flow does at least preflight + writer-before + writer-after probing; passing the verified preProbe into the writer can remove one full ring per TARGET without changing physics.
+4. Replace the writer's front-of-array `table.remove(queue, 1)` with a head-index/ring queue before enabling higher TARGET throughput or SoilMassTransport.
+5. Clean telemetry semantics: TARGET `heightChangeAmount` is an actuator intensity, not meters. Current generic writer counters therefore emit misleading values such as `requestedDepth=3495.188` / `maxRequested=1.000`. Split additive-depth metrics from TARGET-intensity metrics.
+6. Mark performance timing as inclusive where appropriate: direct TerrainDeformation callbacks run inside writer flush, so callback time is nested inside flush and should not be double-counted.
+
+Performance interpretation from the ~620s runtime:
+- vehicle update: avg ~0.045ms, max ~2.149ms;
+- recovery work-area logic: avg ~0.439ms, max ~0.916ms;
+- writer flush when non-empty: avg ~0.628ms, max ~2.652ms;
+- callback: avg ~0.056ms, max ~1.999ms (nested in direct apply/flush);
+- measured non-double-counted RE terrain CPU is roughly ~1.14% of one CPU core averaged across the session. This is healthy and does not justify a rewrite.
+
+Calibration should follow the refactor, not precede it:
+- do not simply increase TARGET amount (already reaches 1.0);
+- investigate hit-rate/coverage after patch reconciliation;
+- R3's old `targetSpacingFactor=2.10` was chosen to prevent additive RAISE overlap. With bounded TARGET this anti-overlap constraint may now be obsolete, but spacing/radius should be tuned only after neighboring history cells are physically verified and reconciled;
+- if throughput still limits large fields after no-op debt is removed, consider a small bounded set of non-overlapping independent TARGET patches per frame rather than the current single global structural in-flight slot.
