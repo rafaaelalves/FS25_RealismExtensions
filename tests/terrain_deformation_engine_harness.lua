@@ -180,6 +180,7 @@ assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 
 wheelA.physics.mrLastWheelSpeed = 0
 wheelB.physics.mrLastWheelSpeed = 0
 local beforeGuardRefresh = contexts
+local beforeGuardRefreshWrites = enqueued
 for _ = 1, 3 do
     g_currentMission.time = g_currentMission.time + 250
     RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
@@ -188,7 +189,9 @@ assert(contexts == beforeGuardRefresh)
 g_currentMission.time = g_currentMission.time + 250
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == beforeGuardRefresh + 2)
+assert(enqueued == beforeGuardRefreshWrites)
 assert((RealismExtensionsTerrainRuntime.stats.loadedContactRefreshes or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.loadedContactRefreshOnly or 0) >= 2)
 assert(RealismExtensionsLoadedContactRegistry.getStats(g_currentMission.time).activeContacts == 2)
 
 -- An actively working repair implement suppresses RE rut writing for the whole
