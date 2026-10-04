@@ -278,7 +278,10 @@ assert(math.abs(historyApi:get(0.40,0.40).rutDepthM-0.05)<0.000001)
 -- 5. H2 temporal convergence: one agricultural authorization can continue
 -- native SOFTEN pulses on the same history-owned rut center after the work-area
 -- callback has moved on, until the physical center deficit is <=3mm.
-seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
+-- Deliberately seed only 5mm of logical debt against a 30mm physical
+-- center deficit. The first pulse can exhaust logical debt, but H2 must keep
+-- converging until the measured heightfield center is flat.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.005}})
 Recovery.resetRuntimeState()
 callbackMode="CONVERGE"
 convergenceStep=0
