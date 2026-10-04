@@ -68,8 +68,10 @@ CI runs automatically on:
 - `diag/**`;
 - `chore/**`;
 - `research/**`;
-- every pull request;
+- pull requests that include non-documentation changes;
 - manual `workflow_dispatch`.
+
+Documentation-only changes under `docs/**` or Markdown-only commits are ignored by the automatic push/PR workflow, so they do not build or upload a mod ZIP. Mixed code + documentation commits still run the full CI.
 
 Every successful run:
 - runs all Lua harnesses;
