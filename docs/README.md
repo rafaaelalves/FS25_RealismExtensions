@@ -15,6 +15,7 @@ Use documents by purpose instead of reading everything.
 - `project/ARCHITECTURE.md`: stable module boundaries.
 - `project/ROADMAP.md`: capability progression.
 - `project/TERRAIN_EVOLUTION_PLAN.md`: detailed recovery/contact/AI/world-maintenance implementation plan.
+- `project/ASSIMILATION_PLAN_TRACKS_VMT.md`: gated assimilation plan and implementation checkpoint for Persistent Tracks, Visual Mud Tracks and True AI Tracks.
 - `decisions/`: non-obvious decisions and their rationale.
 
 ## Evidence / research
