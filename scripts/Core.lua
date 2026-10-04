@@ -129,6 +129,23 @@ function RealismExtensionsCore:update(dt)
 
     if RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.VisualTrackCapture == true
+        and RealismExtensionsVisualTrackRuntime ~= nil
+        and RealismExtensionsVisualTrackRuntime.active ~= true
+        and RealismExtensionsNativeTireTrackAdapter ~= nil
+        and RealismExtensionsNativeTireTrackAdapter.installed == true then
+        local ok, reason = RealismExtensionsVisualTrackRuntime.initialize(
+            RealismExtensionsNativeTireTrackAdapter
+        )
+        if not ok then
+            RealismExtensionsDiagnostics.verbose(
+                "visual track capture pending: " .. tostring(reason)
+            )
+        end
+    end
+
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsTerrainRuntime ~= nil then
         local brushes, jobs = RealismExtensionsTerrainRuntime.flush()
@@ -394,6 +411,23 @@ function RealismExtensionsCore:update(dt)
                     ))
                 end
 
+                if RealismExtensionsVisualTrackRuntime ~= nil
+                    and RealismExtensionsConfig.modules.VisualTrackCapture == true then
+                    local v = RealismExtensionsVisualTrackRuntime.getDiagnostics()
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "VisualTrackCapture | active=%s create=%d points=%d accepted=%d simplified=%d cuts=%d retained=%d rejected=%d pruned=%d",
+                        tostring(v.active),
+                        v.creates or 0,
+                        v.pointsSeen or 0,
+                        v.pointsAccepted or 0,
+                        v.pointsSimplified or 0,
+                        v.cuts or 0,
+                        v.retainedPoints or 0,
+                        v.rejectedCalls or 0,
+                        v.prunedPoints or 0
+                    ))
+                end
+
                 if RealismExtensionsNativeTireTrackAdapter ~= nil
                     and RealismExtensionsConfig.modules.NativeTireTrackProbe == true then
                     local t = RealismExtensionsNativeTireTrackAdapter.getDiagnostics()
@@ -440,6 +474,9 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsVisualTrackRuntime ~= nil then
+        RealismExtensionsVisualTrackRuntime.shutdown()
+    end
     if RealismExtensionsNativeTireTrackAdapter ~= nil then
         RealismExtensionsNativeTireTrackAdapter.uninstall()
         RealismExtensionsNativeTireTrackAdapter.resetProbe()
