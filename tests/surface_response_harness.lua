@@ -67,7 +67,8 @@ local plowed = Surface.resolve(context({
     physicalGroundWetness=0.9
 }), 0, 0)
 assert(plowed.category == "FIELD_SOFT")
-assert(plowed.maxSlipRutDepthM == 0.18)
+assert(plowed.maxSlipRutDepthM == 0.13)
+assert(plowed.modelOptions.plasticSinkMaxWithSlip == 0.68)
 
 local grass = Surface.resolve(context({
     soilContact=true,
@@ -75,6 +76,7 @@ local grass = Surface.resolve(context({
     physicalGroundWetness=0.9
 }), 0, 0)
 assert(grass.category == "FIELD_FIRM")
-assert(grass.maxSlipRutDepthM == 0.10)
+assert(grass.maxSlipRutDepthM == 0.075)
+assert(grass.modelOptions.plasticSinkMaxWithSlip == 0.45)
 
 print("surface_response_harness: OK")
