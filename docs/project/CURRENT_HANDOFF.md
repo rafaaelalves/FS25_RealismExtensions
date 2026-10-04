@@ -737,3 +737,33 @@ Non-RE shutdown noise:
 - the session ends with `delete(nil)` from `FS25_manualAttach/src/core/DetectionHandler.lua` via ManualAttach deleteMap. No RealismExtensions frame appears in that stack.
 
 Decision: close the R6 consolidation/runtime gate as PASS and proceed with R7 tillage-specific recovery profiles. Do not reopen R6 architecture unless a later regression provides new evidence.
+
+
+## R8 actor policy + territorial maintenance foundation
+
+Trigger: R7 runtime showed that hired-worker navigation can generate persistent ruts outside the already-protected active tillage pass. The worker/root produced hundreds of accepted rut brushes per 5 s window while the recovery controller itself remained healthy.
+
+Implemented:
+- `TerrainActorPolicy.lua` classifies PLAYER / AI_FIELD / AI_GENERIC at the combination root;
+- normal AI field work uses **exactly the same terrain physics as player driving**;
+- persistent RE rut writes are suppressed only for explicit AI-navigation pathology:
+  - GIANTS field-worker turn/corner-cut;
+  - stationary AI wheelspin/stuck;
+- wheel context, MR/Mud, loaded-contact tracking and visual tire tracks remain upstream and active;
+- new `TerrainActors` telemetry exposes samples, accepted brushes/depth and suppressed-turn/spin counts;
+- `TerrainMaintenancePolicy.lua` classifies territory fail-closed:
+  - player farm → none;
+  - other farm/human → none;
+  - NPC field → neighbor;
+  - public/non-buyable → municipal;
+  - unowned buyable/unknown → none;
+- passive neighbor/municipal terrain mutation is **not enabled yet**. Only classification exists.
+
+Architecture rule:
+- native GIANTS actor/farmland semantics belong in RE;
+- if Courseplay/AutoDrive or another external AI system needs extra actor state, normalize it through RC/provider integration rather than hard-coding mod-specific behavior into terrain physics.
+
+Validation rule:
+- do not demand an exhaustive manual matrix. Use ordinary gameplay plus `TerrainActors` / existing recovery telemetry. Add directed tests only when runtime exposes a missing class or pathology.
+
+Detailed design: `docs/research/terrain-ai-and-maintenance-policy-study.md`.

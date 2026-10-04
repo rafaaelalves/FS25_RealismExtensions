@@ -27,6 +27,8 @@
         <sourceFile filename="scripts/terrain/RecoverySurfaceEstimator.lua"/>
         <sourceFile filename="scripts/terrain/TillageRecoveryProfiles.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWorkContext.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainActorPolicy.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainMaintenancePolicy.lua"/>
         <sourceFile filename="scripts/terrain/TerrainTelemetry.lua"/>
         <sourceFile filename="scripts/terrain/LoadedContactRegistry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>

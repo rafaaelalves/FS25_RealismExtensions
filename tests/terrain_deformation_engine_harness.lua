@@ -66,8 +66,10 @@ RealismExtensionsFootprintModel = {
     end
 }
 
+local lastModelOptions=nil
 RealismExtensionsTerrainResponseModel = {
-    compute = function(context, footprint, history, dt)
+    compute = function(context, footprint, history, dt, options)
+        lastModelOptions=options
         local previous = history and history.rutDepthM or 0
         return {
             available=true,
@@ -84,6 +86,7 @@ RealismExtensionsTerrainResponseModel = {
 }
 
 dofile("scripts/terrain/LoadedContactRegistry.lua")
+dofile("scripts/terrain/TerrainActorPolicy.lua")
 dofile("scripts/terrain/SurfaceResponse.lua")
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
@@ -221,6 +224,58 @@ assert(contexts == beforeProtectedContexts + 2)
 assert(enqueued == beforeProtectedEnqueued)
 assert((RealismExtensionsTerrainRuntime.stats.cultivationProtectionSkips or 0) >= 2)
 RealismExtensionsTerrainRecovery.protected = false
+
+-- AI field work keeps normal load-driven terrain consequences while
+-- receiving only the anti-pathology model overrides for steering/slip.
+RealismExtensionsTerrainRecovery.active = false
+RealismExtensionsTerrainRecovery.protected = false
+bodySpeedKph = 5
+vehicle.getIsAIActive = function() return true end
+vehicle.getIsFieldWorkActive = function() return true end
+vehicle.getAIFieldWorkerIsTurning = function() return false end
+wheelA.testX = 1.6
+wheelB.testX = 2.1
+local beforeAIStraight = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(enqueued > beforeAIStraight)
+assert(lastModelOptions ~= nil)
+assert(lastModelOptions.longitudinalPassWeight==nil)
+assert(lastModelOptions.lateralPassWeight==nil)
+assert(lastModelOptions.plasticSinkSlipBoost==nil)
+assert((RealismExtensionsTerrainRuntime.stats.actorBrushes_AI_FIELD or 0)>=2)
+
+-- A GIANTS field-worker turn is navigation geometry, not player-authored
+-- driving. Context/footprint remain alive but no persistent rut is written.
+vehicle.getAIFieldWorkerIsTurning = function() return true end
+wheelA.testX = 2.0
+wheelB.testX = 2.5
+local beforeAITurnContexts = contexts
+local beforeAITurn = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeAITurnContexts + 2)
+assert(enqueued == beforeAITurn)
+assert((RealismExtensionsTerrainRuntime.stats.actorSuppressed_AI_TURN or 0)>=2)
+
+-- A blocked AI worker may spin while its drive strategy recovers. Do not turn
+-- that waiting time into permanent excavation.
+vehicle.getAIFieldWorkerIsTurning = function() return false end
+bodySpeedKph = 0
+wheelA.physics.mrLastWheelSpeed = 2.5
+wheelB.physics.mrLastWheelSpeed = 2.5
+local beforeAISpinContexts = contexts
+local beforeAISpin = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeAISpinContexts + 2)
+assert(enqueued == beforeAISpin)
+assert((RealismExtensionsTerrainRuntime.stats.actorSuppressed_AI_STATIONARY_SPIN or 0)>=2)
+
+-- Return to player semantics for the remaining module/client gates.
+vehicle.getIsAIActive = nil
+vehicle.getIsFieldWorkActive = nil
+vehicle.getAIFieldWorkerIsTurning = nil
+bodySpeedKph = 5
+wheelA.physics.mrLastWheelSpeed = 0
+wheelB.physics.mrLastWheelSpeed = 0
 
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false

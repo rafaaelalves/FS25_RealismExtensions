@@ -56,6 +56,14 @@ local runtimeDiag = {
     activeCultivatorRutSkips = 8,
     cultivationProtectionSkips = 2,
     brushesAccepted = 3,
+    actorSamples_PLAYER = 4,
+    actorBrushes_PLAYER = 3,
+    actorAppliedDepth_PLAYER = 0.012,
+    actorSamples_AI_FIELD = 2,
+    actorBrushes_AI_FIELD = 1,
+    actorAppliedDepth_AI_FIELD = 0.003,
+    actorSuppressed_AI_TURN = 2,
+    actorSuppressed_AI_STATIONARY_SPIN = 1,
     rutWriter_TestImplement = 3,
     rutWriterRoot_TestTractor = 3
 }
@@ -129,6 +137,10 @@ assert(RealismExtensionsCore.terrainDiagPrevious.rutWriter_TestImplement == 5)
 local joined = table.concat(Logging.lines, "\n")
 assert(joined:find("TerrainWindow 5000ms", 1, true) ~= nil)
 assert(joined:find("RutWriters runtime", 1, true) ~= nil)
+assert(joined:find("TerrainActors |", 1, true) ~= nil)
+assert(joined:find("AI_FIELD=2/1/0.003", 1, true) ~= nil)
+assert(joined:find("suppressedTurn=2", 1, true) ~= nil)
+assert(joined:find("suppressedSpin=1", 1, true) ~= nil)
 assert(joined:find("TestImplement=5(+2)", 1, true) ~= nil)
 assert(joined:find("TestTractor=5(+2)", 1, true) ~= nil)
 

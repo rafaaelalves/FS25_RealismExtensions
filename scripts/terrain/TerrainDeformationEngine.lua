@@ -282,10 +282,36 @@ function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
     end
 end
 
-function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin, travelDirX, travelDirZ)
+function Engine.processSample(
+    vehicle,
+    wheel,
+    wheelState,
+    context,
+    footprint,
+    x,
+    z,
+    dtMs,
+    stationaryWheelspin,
+    travelDirX,
+    travelDirZ,
+    actor
+)
     diagCount("samplesProcessed", 1)
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
+
+    if actor ~= nil then
+        diagCount("actorSamples_" .. tostring(actor.kind or "UNKNOWN"), 1)
+        local actorPolicy = RealismExtensionsTerrainActorPolicy
+        local reason = actorPolicy ~= nil
+            and type(actorPolicy.getSuppressionReason) == "function"
+            and actorPolicy.getSuppressionReason(actor, stationaryWheelspin)
+            or nil
+        if reason ~= nil then
+            diagCount("actorSuppressed_" .. tostring(reason), 1)
+            return false
+        end
+    end
 
     -- A working soil-repair implement owns the persistent terrain state for
     -- the complete tractor/implement combination. Keep wheel context,
@@ -340,15 +366,24 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     diagCount("surfaceAccepted", 1)
     diagCount("surfaceDeformable_" .. tostring(surface.category or "UNKNOWN"), 1)
 
+    local modelOptions = {
+        absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
+        absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
+    }
+    local actorPolicy = RealismExtensionsTerrainActorPolicy
+    local actorOverrides = actorPolicy ~= nil
+        and type(actorPolicy.getModelOverrides) == "function"
+        and actorPolicy.getModelOverrides(actor) or nil
+    for key, value in pairs(actorOverrides or {}) do
+        modelOptions[key] = value
+    end
+
     local response = RealismExtensionsTerrainResponseModel.compute(
         context,
         footprint,
         history,
         dtMs,
-        {
-            absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
-            absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
-        }
+        modelOptions
     )
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
@@ -424,6 +459,11 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         )
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
+        if actor ~= nil then
+            local kind = tostring(actor.kind or "UNKNOWN")
+            diagCount("actorBrushes_" .. kind, 1)
+            diagCount("actorAppliedDepth_" .. kind, appliedDepth)
+        end
         local workApi = RealismExtensionsTerrainWorkContext
         local vehicleLabel = workApi ~= nil
             and workApi.getVehicleLabel(vehicle) or "vehicle"
@@ -499,6 +539,12 @@ function Engine.processWheel(vehicle, wheel, dt)
         and wheelSpeedMps >= Engine.DEFAULTS.inactiveWheelSpeedMps
     if stationaryWheelspin then
         diagCount("stationaryWheelspinCandidates", 1)
+    end
+
+    local actor = nil
+    if RealismExtensionsTerrainActorPolicy ~= nil
+        and type(RealismExtensionsTerrainActorPolicy.classify) == "function" then
+        actor = RealismExtensionsTerrainActorPolicy.classify(vehicle)
     end
 
     diagCount("contextRequests", 1)
@@ -636,7 +682,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     if lastX == nil or lastZ == nil then
         Engine.processSample(
             vehicle, wheel, state, context, footprint,
-            x, z, elapsedMs, stationaryWheelspin, nil, nil
+            x, z, elapsedMs, stationaryWheelspin, nil, nil, actor
         )
         return
     end
@@ -684,7 +730,8 @@ function Engine.processWheel(vehicle, wheel, dt)
             sampleDt,
             stationaryWheelspin,
             travelDirX,
-            travelDirZ
+            travelDirZ,
+            actor
         )
     end
 end

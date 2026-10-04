@@ -467,6 +467,40 @@ function RealismExtensionsCore:update(dt)
                     jobs or 0
                 ))
 
+                local actorKinds = {
+                    "PLAYER",
+                    "AI_FIELD",
+                    "AI_GENERIC"
+                }
+                local actorParts = {}
+                for _, kind in ipairs(actorKinds) do
+                    local samples = d["actorSamples_" .. kind] or 0
+                    local brushesForActor = d["actorBrushes_" .. kind] or 0
+                    local depthForActor = d["actorAppliedDepth_" .. kind] or 0
+                    if samples > 0 or brushesForActor > 0 then
+                        actorParts[#actorParts + 1] = string.format(
+                            "%s=%d/%d/%.3f",
+                            kind,
+                            samples,
+                            brushesForActor,
+                            depthForActor
+                        )
+                    end
+                end
+                local aiTurnSkips = d.actorSuppressed_AI_TURN or 0
+                local aiSpinSkips = d.actorSuppressed_AI_STATIONARY_SPIN or 0
+                if #actorParts > 0 or aiTurnSkips > 0 or aiSpinSkips > 0 then
+                    RealismExtensionsDiagnostics.verbose(
+                        "TerrainActors | samples/brushes/depthM "
+                        .. table.concat(actorParts, " ")
+                        .. string.format(
+                            " suppressedTurn=%d suppressedSpin=%d",
+                            aiTurnSkips,
+                            aiSpinSkips
+                        )
+                    )
+                end
+
                 local categories = {
                     "FIELD_SOFT", "FIELD", "FIELD_FIRM",
                     "MUD", "DIRT_WET", "DIRT_COMPACTED",
