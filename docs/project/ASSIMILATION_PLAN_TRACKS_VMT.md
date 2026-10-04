@@ -6,33 +6,91 @@ Branch: `feat/assimilation-tracks-vmt`
 
 ## Implementation status — 2026-10-04
 
-Implemented on `feat/assimilation-tracks-vmt`:
+**Pre-runtime implementation checkpoint: CLOSED / READY FOR IN-GAME VALIDATION.**
 
-- **Phase 1A complete:** spatial `LoadedContactRegistry` records recent grounded/loaded wheel contacts without a mission-wide fleet scan.
-- **Phase 1B complete for TerrainRecovery:** SMOOTH recovery brushes defer when they overlap a recent loaded contact; blocked points do not consume their recovery stamp and can retry after the wheel moves.
-- **Phase 1C instrumentation complete:** runtime diagnostics expose observed Mud sink, rut-history overlap proxy and residual sink proxy. No Mud/radius ownership was changed.
-- **Phase 2A implemented:** `NativeTireTrackAdapter` owns a guarded observation boundary for `createTrack`, `addTrackPoint`, and `cutTrack`.
-- **Phase 2B implemented:** the adapter records only call counts, argument counts and type signatures; it does not persist raw GIANTS payloads.
-- Official FS25 TireTracks source now documents the native contract: `createTrack(width, atlasIndex)`, 15-argument `addTrackPoint`, and `cutTrack(trackId)`. This allows a clean normalized domain without copying Persistent Tracks' raw-call journal.
-- **Phase 2C deliberately NOT enabled yet:** AI visual-track policy remains pending runtime proof that RE fully replaces True AI Tracks physical AI/implement behavior and an exact ownership plan for the AI specialization overwrite chain.
-- **Phase 3A implemented, capture gated OFF:** `VisualTrackJournal` normalizes native point semantics and never stores raw GIANTS call arrays as its domain model.
-- **Phase 3B implemented:** clean-room adaptive simplification preserves endpoints/cuts, geometric deviations, direction changes, attribute transitions and a bounded maximum spacing.
-- **Phase 3C core store implemented:** `VisualTrackChunkStore` splits closed fragments into direct-addressed spatial chunks and duplicates one boundary point for continuity; nearby queries use grid-key lookup rather than whole-history scan/sort.
-- **Gated runtime wiring implemented:** `VisualTrackRuntime` can attach the normalized journal as an adapter observer, but `VisualTrackCapture=false` remains the default until the in-game probe confirms the exact runtime contract.
-- Savegame persistence, native replay/rendering, semantic aging/invalidation and multiplayer replication remain intentionally unimplemented.
+This does **not** mean the three external capabilities are already retired. It means the implementation that can be justified without runtime evidence has been reviewed, refactored and covered by automated harnesses. Features whose correctness depends on actual game behavior remain intentionally gated.
 
-Automated harnesses cover:
-- contact spatial movement / TTL / exclusion / cleanup;
+### Terrain safety / VMT-derived lessons
+
+- **LoadedContactRegistry v2:** contacts are indexed into every grid cell touched by their own footprint. Query cost is local; no global maximum contact radius can permanently inflate lookup cost.
+- Contact radii are sanity-bounded before indexing.
+- Stationary loaded contacts remain authoritative through a low-cadence (~1 s) refresh only for wheels already known to be loaded.
+- That refresh updates contact position/load and the wheel path anchor, then exits before TerrainResponse: **a parked wheel is not allowed to deepen a rut merely because its safety contact was refreshed.**
+- TerrainRecovery SMOOTH operations defer when overlapping recent loaded contacts.
+- A blocked recovery point does not consume its stamp and can be retried after the wheel moves.
+- Mud sink ↔ persistent rut remains telemetry-only. No private Mud radius/CTIS state is modified.
+
+### Native TireTrack boundary
+
+- **NativeTireTrackAdapter v2** is mission-instance scoped rather than a global TireTrackSystem class owner.
+- Probe-only addTrackPoint takes an allocation-light fast path: no argument/result tables are created when there are no capture observers.
+- Signature sampling is bounded; counters remain cheap after the sampling budget is exhausted.
+- Capture observers are isolated by pcall.
+- Pointer drift is counted as a state transition rather than once per diagnostics window.
+- Uninstall restores the exact pre-install lookup shape: inherited methods return to inheritance instead of being frozen as direct instance methods.
+- Adapter installation is required when **either** probe or capture is enabled; capture no longer accidentally depends on the probe toggle.
+
+### Normalized visual-track domain
+
+- **VisualTrackJournal v2** is a normalizer/simplifier, not the long-term persistence store.
+- Native trackId is treated as transient. Reuse creates a new RE logical track identity and closes the old generation.
+- Large spatial gaps/teleports close the current fragment instead of creating a long false track segment.
+- onTerrain=false contact is excluded from world-persistent history; terrain re-entry starts a new fragment.
+- Attribute thresholds are per semantic field. Ground depth no longer shares a generic epsilon with RGB/dirt.
+- Endpoints, cuts, geometric curvature, direction changes and visual/material transitions remain preservation boundaries.
+- Closed fragments are emitted incrementally to sinks.
+
+### Spatial storage
+
+- **VisualTrackChunkStore** consumes finalized fragments directly.
+- Runtime no longer follows journal -> full snapshot -> full chunk rebuild.
+- In capture mode, the journal emits a closed fragment to the chunk store, which copies it once into spatial ownership; the journal then releases its historical point copy.
+- Chunks retain stable logicalTrackId / fragment sequence metadata rather than depending on array indices.
+- Nearby lookup remains direct grid addressing rather than whole-history scanning/sorting.
+
+### Gated runtime
+
+- VisualTrackCapture=false remains the default.
+- With capture disabled, only the bounded native probe runs.
+- After the game confirms the official 2/15/1 native contract in the real target stack, capture can be enabled without changing hook ownership.
+- Current automated head is green after the architecture review/refactor.
+
+### Intentionally NOT implemented before runtime proof
+
+1. AI visual tire-track policy.
+   - GIANTS documentation proves vanilla TireTracks owns distance/segment-quality limits and AI specializations add the not-getIsAIActive suppression.
+   - We still will not implement a blanket return-true; the final hook must remove only the AI suppression without bypassing other owners in the actual specialization chain.
+2. Native replay/render of restored persistent tracks.
+3. Savegame sidecar for visual tracks.
+4. Visual aging/weather/tillage invalidation.
+5. Multiplayer spatial replication / late join.
+
+Those are **post-runtime implementation phases**, not missing cleanup for this checkpoint.
+
+### Automated coverage after review
+
+Harnesses now cover:
+- cell-covered contact spatial indexing;
+- radius sanity bounds;
+- contact movement / expiry / owner exclusion;
+- low-cadence stationary loaded-contact refresh;
+- proof that contact refresh performs zero rut writes;
 - recovery deferral without stamp loss;
-- TerrainDeformation contact registration and delete cleanup;
-- TireTrack adapter native-first call ordering;
+- native TireTrack adapter native-first ordering;
+- probe fast path;
+- bounded signature sampling;
 - observer failure isolation;
-- signature probing;
-- pointer-drift detection;
-- non-destructive uninstall when another mod takes hook ownership.
+- pointer drift transition detection;
+- non-destructive instance uninstall;
+- native-track-id reuse;
+- teleport/gap fragmentation;
+- terrain/non-terrain lifecycle split;
+- per-attribute visual preservation;
+- incremental finalized-fragment sink;
+- direct chunk indexing;
+- streamed runtime with no second retained copy of closed history.
 
-This is the intended stopping point before the first in-game probe. The normalized journal/chunk architecture is ready, but the runtime capture toggle stays off until the probe confirms the official 2/15/1 call contract in the user's actual stack. AI visual policy, replay and persistence remain evidence-gated.
-
+**Decision:** this branch is ready for the runtime protocol. Do not implement post-runtime phases merely to make the feature look “complete”; their designs should be informed by the evidence the protocol is intended to collect.
 ---
 
 ## Goal
