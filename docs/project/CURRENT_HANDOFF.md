@@ -369,3 +369,24 @@ No physical smoothing constants changed.
 Current physical strategy remains GIANTS native SMOOTH until runtime determines whether fair coverage + deferred completion removes the surviving wheel channels.
 
 Latest integrated recovery/measurement code is green in CI; the earlier tracks-only artifact remains the required build for the current createTrack test.
+
+
+### Current recovery head — Strategy H1
+
+After the v23 runtime proved deferred eventual completion, recovery selection moved from blind full-width coverage to SpatialHistory-guided intent.
+
+Current rules:
+- a cultivator work area alone is not permission to alter terrain;
+- only RE-attributable rut debt creates recovery centers;
+- nearby history cells are clustered and deepest debt is prioritized;
+- GIANTS native SMOOTH remains the only physical actuator;
+- deferred requests are revalidated against remaining rut debt before execution;
+- no original-height target exists.
+
+The previous full-width v23 runtime remains the evidence baseline:
+- 3,284 deferred created / 3,176 applied;
+- queue drained to zero;
+- ~86% of measured brushes reduced local relief;
+- full geometry probing was expensive at v23 brush volume.
+
+Next runtime should use the latest green Strategy H1 artifact and compare intent/brush/performance counters against v23.
