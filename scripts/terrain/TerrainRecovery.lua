@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 16
+Recovery.VERSION = 17
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -28,49 +28,29 @@ Recovery.DEFAULTS = {
     minCenterDeficitM = 0.003,
     minCenterRecoveryM = 0.00015,
 
-    -- R4 is a signed geometric controller. Negative center residual means a
-    -- causal depression and is handled by additive RAISE. Positive residual
-    -- means an excess/mound; only a peak that this recovery sequence itself
-    -- created is currently authorized for native SMOOTH cleanup.
+    -- R5: bounded local target-plane grading. Runtime R4 proved that additive
+    -- RAISE can close a rut but has a coarse/quantized response: useful pulses
+    -- jumped 0.22-0.84 m and created large mounds. Current TerraFarm likewise
+    -- moved machine RAISE/LOWER with a target into flatten/set-deformation
+    -- semantics. Treat setHeightTarget() as the geometric stop and the amount
+    -- below as actuator intensity only.
     structuralThresholdM = 0.003,
-    structuralRadiusM = 0.30,
-    structuralProbeRadiusM = 1.20,
+    structuralRadiusM = 0.40,
+    structuralProbeRadiusM = 1.25,
     structuralToleranceM = 0.004,
+    structuralMinBoundaryInlierRatio = 0.50,
 
-    -- Runtime R3 falsified the linear gain model. TerrainDeformation has an
-    -- effective dead zone / quantized response: 4,242 commands produced 4,119
-    -- center no-ops while the controller was pinned at 0.0025. Search for the
-    -- minimum working actuator command instead, then back off after a large
-    -- response. Command units are deliberately treated as opaque.
-    structuralDesiredPhysicalStepM = 0.0125,
-    structuralDeficitFraction = 0.50,
-    structuralCommandInitial = 0.0050,
-    structuralCommandMin = 0.0025,
-    structuralCommandMax = 0.0400,
-    structuralCommandGrowth = 1.70,
-    structuralCommandBackoff = 0.65,
-    structuralCommandFineGrowth = 1.15,
-    structuralResponseHighFactor = 1.60,
-    structuralMaxNoopsAtMax = 4,
-    structuralOvershootToleranceM = 0.004,
-    structuralStrength = 0.35,
-    structuralHardness = 0.35,
+    structuralTargetAmount = 0.75,
+    structuralTargetAmountMax = 1.00,
+    structuralTargetNoopGrowth = 1.25,
+    structuralTargetStrength = 0.35,
+    structuralTargetHardness = 0.20,
+    structuralMaxNoops = 2,
 
-    -- Native SMOOTH is not a hole filler. It is retained as the opposite-side
-    -- actuator: relax a known positive peak toward its current local reference
-    -- plane. Re-measure after every pulse and never continue smoothing once the
-    -- center crosses below the plane.
-    peakSmoothRadiusM = 0.45,
-    peakSmoothProbeRadiusM = 1.20,
-    peakSmoothAmountM = 0.050,
-    peakSmoothStrength = 0.25,
-    peakSmoothHardness = 0.20,
-    maxPeakSmoothPulses = 4,
-
-    structuralRetryMs = 50,
-    structuralTtlMs = 12000,
+    structuralRetryMs = 80,
+    structuralTtlMs = 8000,
     structuralInFlightTimeoutMs = 2000,
-    maxStructuralPulses = 32,
+    maxStructuralPulses = 6,
 
     -- Strategy H: agricultural recovery is allowed only where SpatialHistory
     -- still carries RE-attributable rut debt. Candidate rut cells are clustered
@@ -174,6 +154,21 @@ local function newStats()
         structuralLoweringViolations = 0,
         structuralNoopPulses = 0,
         structuralPreflightNoDeficit = 0,
+        targetPlaneApplied = 0,
+        targetPlaneCompleted = 0,
+        targetPlaneNoop = 0,
+        targetPlaneImproved = 0,
+        targetPlaneWorsened = 0,
+        targetPlaneInitialPositiveSkips = 0,
+        targetPlaneLowConfidence = 0,
+        targetPlaneSignCrossings = 0,
+        targetPlaneResidualReductionM = 0,
+        targetPlaneResidualWorseningM = 0,
+        targetPlaneMaxAbsBeforeM = 0,
+        targetPlaneMaxAbsAfterM = 0,
+        targetPlaneCenterRaisedM = 0,
+        targetPlaneCenterLoweredM = 0,
+        targetPlaneAmountMax = 0,
         structuralOvershootCount = 0,
         structuralOvershootM = 0,
         structuralMaxOvershootM = 0,
@@ -238,7 +233,6 @@ function Recovery.resetRuntimeState()
     Recovery.structuralInFlightKey = nil
     Recovery.structuralInFlightSinceMs = 0
     Recovery.structuralInFlightMode = nil
-    Recovery.raiseCommandEstimate = Recovery.DEFAULTS.structuralCommandInitial
     Recovery.activeCombinationUntil = setmetatable({}, { __mode = "k" })
     Recovery._lastStampCleanupMs = 0
     Recovery.stats = newStats()
@@ -873,19 +867,32 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     )
     local beforeResidual = tonumber(beforeProbe.centerResidualM)
         or -beforeDeficit
+    local beforeAbs = math.abs(beforeResidual)
     local tolerance = Recovery.DEFAULTS.structuralToleranceM
+    local inlierRatio = tonumber(beforeProbe.boundaryInlierRatio) or 0
 
     Recovery.stats.structuralMaxDeficitBeforeM = math.max(
         Recovery.stats.structuralMaxDeficitBeforeM,
         beforeDeficit
     )
+    Recovery.stats.targetPlaneMaxAbsBeforeM = math.max(
+        Recovery.stats.targetPlaneMaxAbsBeforeM,
+        beforeAbs
+    )
 
-    -- The signed local-plane error is the state machine:
-    --   residual < -tol : fill causal low point
-    --   residual > +tol : relax only an explicitly-authorized peak
-    --   otherwise       : converged
-    if math.abs(beforeResidual) <= tolerance then
+    if inlierRatio < Recovery.DEFAULTS.structuralMinBoundaryInlierRatio then
+        Recovery.pendingStamps[key] = nil
+        Recovery.stats.targetPlaneLowConfidence =
+            Recovery.stats.targetPlaneLowConfidence + 1
+        Recovery.stats.structuralStalled =
+            Recovery.stats.structuralStalled + 1
+        return true
+    end
+
+    if beforeAbs <= tolerance then
         recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
+        Recovery.stats.targetPlaneCompleted =
+            Recovery.stats.targetPlaneCompleted + 1
         Recovery.stats.structuralCompleted =
             Recovery.stats.structuralCompleted + 1
         Recovery.processedStamps[key] = nowMs
@@ -893,203 +900,50 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         return true
     end
 
-    if beforeResidual > tolerance then
-        -- A stale rut marker is not permission to flatten a player-made mound.
-        -- For now PEAK smoothing is authorized only if this exact recovery
-        -- sequence crossed above the reference plane. Dedicated berm ownership
-        -- from SoilMassTransport can extend this later.
-        if params.peakAuthorized ~= true then
-            recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
-            Recovery.stats.structuralPreflightNoDeficit =
-                Recovery.stats.structuralPreflightNoDeficit + 1
-            Recovery.stats.structuralCompleted =
-                Recovery.stats.structuralCompleted + 1
-            Recovery.processedStamps[key] = nowMs
-            Recovery.pendingStamps[key] = nil
-            return true
-        end
-
-        local peakPulse = math.max(1, math.floor(
-            tonumber(params.peakPulse) or 1
-        ))
-        if peakPulse > Recovery.DEFAULTS.maxPeakSmoothPulses then
-            Recovery.stats.peakSmoothStalled =
-                Recovery.stats.peakSmoothStalled + 1
-            Recovery.stats.structuralStalled =
-                Recovery.stats.structuralStalled + 1
-            Recovery.pendingStamps[key] = nil
-            return true
-        end
-
-        Recovery.pendingStamps[key] = true
-        Recovery.structuralInFlightKey = key
-        Recovery.structuralInFlightSinceMs = nowMs
-        Recovery.structuralInFlightMode = "SMOOTH"
-        Recovery.stats.peakSmoothMaxBeforeM = math.max(
-            Recovery.stats.peakSmoothMaxBeforeM,
-            beforeResidual
-        )
-
-        local accepted = writer:enqueue({
-            x = point.x,
-            z = point.z,
-            mode = "SMOOTH",
-            smoothAmountM = Recovery.DEFAULTS.peakSmoothAmountM,
-            radiusM = Recovery.DEFAULTS.peakSmoothRadiusM,
-            hardness = Recovery.DEFAULTS.peakSmoothHardness,
-            strength = Recovery.DEFAULTS.peakSmoothStrength,
-            source = "RECOVERY",
-            probeRadiusM = Recovery.DEFAULTS.peakSmoothProbeRadiusM,
-            onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
-                Recovery.pendingStamps[key] = nil
-                if Recovery.structuralInFlightKey == key then
-                    Recovery.structuralInFlightKey = nil
-                    Recovery.structuralInFlightSinceMs = 0
-                    Recovery.structuralInFlightMode = nil
-                end
-                Recovery.stats.callbacks = Recovery.stats.callbacks + 1
-                Recovery.stats.peakSmoothApplied =
-                    Recovery.stats.peakSmoothApplied + 1
-
-                local afterResidual = geometry ~= nil
-                    and tonumber(geometry.centerResidualAfterM) or nil
-                if afterResidual == nil
-                    and type(writer.measureRecoveryAt) == "function" then
-                    local post = writer:measureRecoveryAt(
-                        point.x,
-                        point.z,
-                        Recovery.DEFAULTS.peakSmoothProbeRadiusM
-                    )
-                    afterResidual = post ~= nil
-                        and tonumber(post.centerResidualM) or nil
-                end
-
-                if afterResidual == nil then
-                    Recovery.stats.peakSmoothStalled =
-                        Recovery.stats.peakSmoothStalled + 1
-                    Recovery.stats.structuralStalled =
-                        Recovery.stats.structuralStalled + 1
-                    return
-                end
-
-                Recovery.stats.peakSmoothMaxAfterM = math.max(
-                    Recovery.stats.peakSmoothMaxAfterM,
-                    math.max(0, afterResidual)
-                )
-
-                if math.abs(afterResidual) <= tolerance then
-                    recordRecoveredDepth(clearRecoveryDebt(
-                        history,
-                        point,
-                        g_currentMission ~= nil
-                            and g_currentMission.time or nowMs
-                    ))
-                    Recovery.stats.peakSmoothCompleted =
-                        Recovery.stats.peakSmoothCompleted + 1
-                    Recovery.stats.structuralCompleted =
-                        Recovery.stats.structuralCompleted + 1
-                    return
-                end
-
-                if afterResidual < -tolerance then
-                    -- Smoothing has crossed the desired plane. Stop smoothing
-                    -- immediately. If causal rut debt remains, the next state
-                    -- may use RAISE; otherwise leave the small residual alone.
-                    Recovery.stats.peakSmoothCrossedBelow =
-                        Recovery.stats.peakSmoothCrossedBelow + 1
-                    local current = type(history.get) == "function"
-                        and history:get(point.x, point.z) or nil
-                    local debt = current ~= nil
-                        and math.max(0, tonumber(current.rutDepthM) or 0) or 0
-                    if debt < Recovery.DEFAULTS.minHistoryIntentRutM then
-                        Recovery.stats.peakSmoothStalled =
-                            Recovery.stats.peakSmoothStalled + 1
-                        return
-                    end
-                end
-
-                if pulseIndex >= Recovery.DEFAULTS.maxStructuralPulses then
-                    Recovery.stats.peakSmoothStalled =
-                        Recovery.stats.peakSmoothStalled + 1
-                    Recovery.stats.structuralStalled =
-                        Recovery.stats.structuralStalled + 1
-                    return
-                end
-
-                params.peakPulse = peakPulse + 1
-                if scheduleDeferred ~= nil and scheduleDeferred(
-                    point,
-                    key,
-                    params,
-                    g_currentMission ~= nil
-                        and g_currentMission.time or nowMs,
-                    "STRUCTURAL",
-                    pulseIndex + 1
-                ) then
-                    Recovery.stats.structuralScheduled =
-                        Recovery.stats.structuralScheduled + 1
-                else
-                    Recovery.stats.peakSmoothStalled =
-                        Recovery.stats.peakSmoothStalled + 1
-                    Recovery.stats.structuralStalled =
-                        Recovery.stats.structuralStalled + 1
-                end
-            end
-        })
-
-        if accepted then
-            Recovery.stats.brushesEnqueued =
-                Recovery.stats.brushesEnqueued + 1
-            Recovery.stats.structuralApplied =
-                Recovery.stats.structuralApplied + 1
-            return true
-        end
-
+    -- A positive residual found before this recovery sequence touched the patch
+    -- is not enough evidence that the player wants it graded away. This keeps
+    -- legacy/player-authored mounds safe. Once a causal target sequence starts
+    -- from a rut, however, later sign changes remain part of that same repair.
+    if pulseIndex == 1 and beforeResidual > tolerance then
+        recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
+        Recovery.stats.targetPlaneInitialPositiveSkips =
+            Recovery.stats.targetPlaneInitialPositiveSkips + 1
+        Recovery.stats.structuralPreflightNoDeficit =
+            Recovery.stats.structuralPreflightNoDeficit + 1
+        Recovery.stats.structuralCompleted =
+            Recovery.stats.structuralCompleted + 1
+        Recovery.processedStamps[key] = nowMs
         Recovery.pendingStamps[key] = nil
-        if Recovery.structuralInFlightKey == key then
-            Recovery.structuralInFlightKey = nil
-            Recovery.structuralInFlightSinceMs = 0
-            Recovery.structuralInFlightMode = nil
-        end
-        Recovery.stats.brushesRejected =
-            Recovery.stats.brushesRejected + 1
-        return false
-    end
-
-    -- Negative residual: only causal rut debt can authorize additional fill.
-    if remainingRut < Recovery.DEFAULTS.minHistoryIntentRutM then
-        Recovery.pendingStamps[key] = nil
-        Recovery.stats.structuralOwnershipExhausted =
-            Recovery.stats.structuralOwnershipExhausted + 1
         return true
     end
 
-    local desiredPhysicalM = math.min(
-        Recovery.DEFAULTS.structuralDesiredPhysicalStepM,
-        remainingRut,
-        beforeDeficit * Recovery.DEFAULTS.structuralDeficitFraction
-    )
+    local targetY = tonumber(beforeProbe.referenceCenterY)
+    local planeAx = tonumber(beforeProbe.planeAx)
+    local planeAz = tonumber(beforeProbe.planeAz)
+    if targetY == nil or planeAx == nil or planeAz == nil then
+        Recovery.pendingStamps[key] = nil
+        Recovery.stats.structuralStalled =
+            Recovery.stats.structuralStalled + 1
+        return false
+    end
 
-    local commandM = tonumber(params.nextCommandM)
-        or tonumber(Recovery.raiseCommandEstimate)
-        or Recovery.DEFAULTS.structuralCommandInitial
-    commandM = math.max(
-        Recovery.DEFAULTS.structuralCommandMin,
-        math.min(Recovery.DEFAULTS.structuralCommandMax, commandM)
+    local targetAmount = tonumber(params.targetAmount)
+        or Recovery.DEFAULTS.structuralTargetAmount
+    targetAmount = math.max(
+        Recovery.DEFAULTS.structuralTargetAmount,
+        math.min(Recovery.DEFAULTS.structuralTargetAmountMax, targetAmount)
     )
-    params.nextCommandM = commandM
+    params.targetAmount = targetAmount
 
-    Recovery.stats.structuralCommandSum =
-        Recovery.stats.structuralCommandSum + commandM
-    Recovery.stats.structuralCommandMax = math.max(
-        Recovery.stats.structuralCommandMax,
-        commandM
+    Recovery.stats.targetPlaneAmountMax = math.max(
+        Recovery.stats.targetPlaneAmountMax,
+        targetAmount
     )
 
     Recovery.pendingStamps[key] = true
     Recovery.structuralInFlightKey = key
     Recovery.structuralInFlightSinceMs = nowMs
-    Recovery.structuralInFlightMode = "RAISE"
+    Recovery.structuralInFlightMode = "TARGET"
     if pulseIndex == 1 then
         Recovery.processedStamps[key] = nowMs
     end
@@ -1097,11 +951,14 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     local accepted = writer:enqueue({
         x = point.x,
         z = point.z,
-        mode = "RAISE",
-        raiseHeightM = commandM,
+        mode = "TARGET",
+        targetY = targetY,
+        targetPlaneAx = planeAx,
+        targetPlaneAz = planeAz,
+        targetAmount = targetAmount,
         radiusM = Recovery.DEFAULTS.structuralRadiusM,
-        hardness = Recovery.DEFAULTS.structuralHardness,
-        strength = Recovery.DEFAULTS.structuralStrength,
+        hardness = Recovery.DEFAULTS.structuralTargetHardness,
+        strength = Recovery.DEFAULTS.structuralTargetStrength,
         source = "RECOVERY",
         probeRadiusM = Recovery.DEFAULTS.structuralProbeRadiusM,
         onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
@@ -1112,23 +969,15 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 Recovery.structuralInFlightMode = nil
             end
             Recovery.stats.callbacks = Recovery.stats.callbacks + 1
+            Recovery.stats.targetPlaneApplied =
+                Recovery.stats.targetPlaneApplied + 1
 
-            local delta = tonumber(deltaY) or 0
-            if delta < -0.00005 then
-                Recovery.stats.centerLowered =
-                    Recovery.stats.centerLowered + 1
-                Recovery.stats.structuralLoweringViolations =
-                    Recovery.stats.structuralLoweringViolations + 1
-                Recovery.stats.structuralStalled =
-                    Recovery.stats.structuralStalled + 1
-                return
-            end
-
-            local afterD = geometry ~= nil
-                and tonumber(geometry.centerDeficitAfterM) or nil
             local afterResidual = geometry ~= nil
                 and tonumber(geometry.centerResidualAfterM) or nil
-            if (afterD == nil or afterResidual == nil)
+            local afterDeficit = geometry ~= nil
+                and tonumber(geometry.centerDeficitAfterM) or nil
+
+            if afterResidual == nil
                 and type(writer.measureRecoveryAt) == "function" then
                 local post = writer:measureRecoveryAt(
                     point.x,
@@ -1136,161 +985,106 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                     Recovery.DEFAULTS.structuralProbeRadiusM
                 )
                 if post ~= nil then
-                    afterD = afterD ~= nil and afterD
-                        or tonumber(post.centerDeficitM)
-                    afterResidual = afterResidual ~= nil and afterResidual
-                        or tonumber(post.centerResidualM)
+                    afterResidual = tonumber(post.centerResidualM)
+                    afterDeficit = tonumber(post.centerDeficitM)
                 end
             end
 
-            if afterD ~= nil then
+            if afterResidual == nil then
+                Recovery.stats.structuralStalled =
+                    Recovery.stats.structuralStalled + 1
+                return
+            end
+
+            local afterAbs = math.abs(afterResidual)
+            Recovery.stats.targetPlaneMaxAbsAfterM = math.max(
+                Recovery.stats.targetPlaneMaxAbsAfterM,
+                afterAbs
+            )
+            if afterDeficit ~= nil then
                 Recovery.stats.structuralMaxDeficitAfterM = math.max(
                     Recovery.stats.structuralMaxDeficitAfterM,
-                    afterD
+                    afterDeficit
                 )
                 Recovery.stats.structuralDeficitReductionM =
                     Recovery.stats.structuralDeficitReductionM
-                    + math.max(0, beforeDeficit - afterD)
+                    + math.max(0, beforeDeficit - afterDeficit)
             end
 
-            local raisedM = math.max(0, delta)
-            if raisedM > Recovery.DEFAULTS.minCenterRecoveryM then
+            local delta = tonumber(deltaY) or 0
+            if delta > 0.00005 then
                 Recovery.stats.centerRaised =
                     Recovery.stats.centerRaised + 1
+                Recovery.stats.targetPlaneCenterRaisedM =
+                    Recovery.stats.targetPlaneCenterRaisedM + delta
                 Recovery.stats.structuralCenterRaisedM =
-                    Recovery.stats.structuralCenterRaisedM + raisedM
-                params.raisedByRecovery = true
-                params.maxCommandNoops = 0
-
-                Recovery.stats.structuralEffectiveCommandMin =
-                    Recovery.stats.structuralEffectiveCommandMin == nil
-                        and commandM
-                        or math.min(
-                            Recovery.stats.structuralEffectiveCommandMin,
-                            commandM
-                        )
-                Recovery.stats.structuralEffectiveCommandMax = math.max(
-                    Recovery.stats.structuralEffectiveCommandMax,
-                    commandM
-                )
-
-                local usefulFillM = math.min(
-                    raisedM,
-                    beforeDeficit,
-                    remainingRut
-                )
-                recordRecoveredDepth(history:applyRecoveryAt(
-                    point.x,
-                    point.z,
-                    usefulFillM,
-                    {
-                        minRutM = Recovery.DEFAULTS.minHistoryRutM,
-                        nowMs = g_currentMission ~= nil
-                            and g_currentMission.time or nowMs
-                    }
-                ) or 0)
-
-                local tooLarge = raisedM
-                    > desiredPhysicalM
-                        * Recovery.DEFAULTS.structuralResponseHighFactor
-                if tooLarge
-                    or (afterResidual ~= nil and afterResidual > tolerance) then
-                    local nextCommand = math.max(
-                        Recovery.DEFAULTS.structuralCommandMin,
-                        commandM * Recovery.DEFAULTS.structuralCommandBackoff
-                    )
-                    params.nextCommandM = nextCommand
-                    Recovery.raiseCommandEstimate = nextCommand
-                    Recovery.stats.structuralCommandBackoffs =
-                        Recovery.stats.structuralCommandBackoffs + 1
-                elseif raisedM < desiredPhysicalM * 0.50 then
-                    local nextCommand = math.min(
-                        Recovery.DEFAULTS.structuralCommandMax,
-                        commandM
-                            * Recovery.DEFAULTS.structuralCommandFineGrowth
-                    )
-                    params.nextCommandM = nextCommand
-                    Recovery.raiseCommandEstimate = nextCommand
-                else
-                    Recovery.raiseCommandEstimate = commandM
-                end
-            else
-                Recovery.stats.structuralNoopPulses =
-                    Recovery.stats.structuralNoopPulses + 1
-
-                local atMax = commandM
-                    >= Recovery.DEFAULTS.structuralCommandMax - 0.0000001
-                if atMax then
-                    params.maxCommandNoops =
-                        (tonumber(params.maxCommandNoops) or 0) + 1
-                    Recovery.stats.structuralNoopsAtMax =
-                        Recovery.stats.structuralNoopsAtMax + 1
-                    if params.maxCommandNoops
-                        >= Recovery.DEFAULTS.structuralMaxNoopsAtMax then
-                        Recovery.stats.structuralStalled =
-                            Recovery.stats.structuralStalled + 1
-                        return
-                    end
-                end
-
-                local nextCommand = math.min(
-                    Recovery.DEFAULTS.structuralCommandMax,
-                    math.max(
-                        Recovery.DEFAULTS.structuralCommandMin,
-                        commandM * Recovery.DEFAULTS.structuralCommandGrowth
-                    )
-                )
-                if nextCommand > commandM + 0.0000001 then
-                    Recovery.stats.structuralCommandEscalations =
-                        Recovery.stats.structuralCommandEscalations + 1
-                end
-                params.nextCommandM = nextCommand
-                Recovery.raiseCommandEstimate = math.max(
-                    tonumber(Recovery.raiseCommandEstimate) or 0,
-                    nextCommand
-                )
+                    Recovery.stats.structuralCenterRaisedM + delta
+            elseif delta < -0.00005 then
+                Recovery.stats.centerLowered =
+                    Recovery.stats.centerLowered + 1
+                Recovery.stats.targetPlaneCenterLoweredM =
+                    Recovery.stats.targetPlaneCenterLoweredM - delta
             end
 
-            local overshootM = math.max(0, tonumber(afterResidual) or 0)
-            if overshootM > Recovery.DEFAULTS.structuralOvershootToleranceM then
-                Recovery.stats.structuralOvershootCount =
-                    Recovery.stats.structuralOvershootCount + 1
-                Recovery.stats.structuralOvershootM =
-                    Recovery.stats.structuralOvershootM + overshootM
-                Recovery.stats.structuralMaxOvershootM = math.max(
-                    Recovery.stats.structuralMaxOvershootM,
-                    overshootM
-                )
-                params.peakAuthorized = true
-                params.peakPulse = 1
+            if beforeResidual * afterResidual < 0
+                and afterAbs > tolerance then
+                Recovery.stats.targetPlaneSignCrossings =
+                    Recovery.stats.targetPlaneSignCrossings + 1
             end
 
-            if afterResidual ~= nil
-                and math.abs(afterResidual) <= tolerance then
+            local residualImprovement = beforeAbs - afterAbs
+            local epsilon = Recovery.DEFAULTS.minCenterRecoveryM
+
+            if afterAbs <= tolerance then
+                Recovery.stats.targetPlaneResidualReductionM =
+                    Recovery.stats.targetPlaneResidualReductionM
+                    + math.max(0, residualImprovement)
                 recordRecoveredDepth(clearRecoveryDebt(
                     history,
                     point,
                     g_currentMission ~= nil
                         and g_currentMission.time or nowMs
                 ))
+                Recovery.stats.targetPlaneCompleted =
+                    Recovery.stats.targetPlaneCompleted + 1
                 Recovery.stats.structuralCompleted =
                     Recovery.stats.structuralCompleted + 1
                 return
             end
 
-            local current = type(history.get) == "function"
-                and history:get(point.x, point.z) or nil
-            local nextRut = current ~= nil
-                and math.max(0, tonumber(current.rutDepthM) or 0) or 0
-
-            if afterResidual ~= nil and afterResidual > tolerance
-                and params.peakAuthorized == true then
-                -- Keep the causal sequence alive even if useful fill consumed
-                -- the rut debt. The next state is peak-only SMOOTH cleanup.
-            elseif nextRut < Recovery.DEFAULTS.minHistoryIntentRutM then
-                Recovery.stats.structuralOwnershipExhausted =
-                    Recovery.stats.structuralOwnershipExhausted + 1
+            if residualImprovement > epsilon then
+                Recovery.stats.targetPlaneImproved =
+                    Recovery.stats.targetPlaneImproved + 1
+                Recovery.stats.targetPlaneResidualReductionM =
+                    Recovery.stats.targetPlaneResidualReductionM
+                    + residualImprovement
+                params.targetNoops = 0
+            elseif residualImprovement < -epsilon then
+                Recovery.stats.targetPlaneWorsened =
+                    Recovery.stats.targetPlaneWorsened + 1
+                Recovery.stats.targetPlaneResidualWorseningM =
+                    Recovery.stats.targetPlaneResidualWorseningM
+                    - residualImprovement
+                Recovery.stats.structuralStalled =
+                    Recovery.stats.structuralStalled + 1
                 return
+            else
+                Recovery.stats.targetPlaneNoop =
+                    Recovery.stats.targetPlaneNoop + 1
+                params.targetNoops = (tonumber(params.targetNoops) or 0) + 1
+
+                if params.targetNoops >= Recovery.DEFAULTS.structuralMaxNoops
+                    and targetAmount >= Recovery.DEFAULTS.structuralTargetAmountMax
+                        - 0.000001 then
+                    Recovery.stats.structuralStalled =
+                        Recovery.stats.structuralStalled + 1
+                    return
+                end
+
+                params.targetAmount = math.min(
+                    Recovery.DEFAULTS.structuralTargetAmountMax,
+                    targetAmount * Recovery.DEFAULTS.structuralTargetNoopGrowth
+                )
             end
 
             if pulseIndex >= Recovery.DEFAULTS.maxStructuralPulses then
@@ -1645,9 +1439,7 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
     local radius = Recovery.DEFAULTS.structuralRadiusM
     local baseParams = {
         radius = radius,
-        probeRadius = Recovery.DEFAULTS.structuralProbeRadiusM,
-        strength = Recovery.DEFAULTS.structuralStrength,
-        hardness = Recovery.DEFAULTS.structuralHardness
+        probeRadius = Recovery.DEFAULTS.structuralProbeRadiusM
     }
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
@@ -1674,14 +1466,9 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
             local pointParams = {
                 radius = baseParams.radius,
                 probeRadius = baseParams.probeRadius,
-                strength = baseParams.strength,
-                hardness = baseParams.hardness,
                 causalAuthorized = true,
-                nextCommandM = tonumber(Recovery.raiseCommandEstimate)
-                    or Recovery.DEFAULTS.structuralCommandInitial,
-                peakAuthorized = false,
-                peakPulse = 0,
-                maxCommandNoops = 0
+                targetAmount = Recovery.DEFAULTS.structuralTargetAmount,
+                targetNoops = 0
             }
             if scheduleDeferred(
                 point, key, pointParams, nowMs, "STRUCTURAL", 1
@@ -1781,8 +1568,6 @@ function Recovery.getDiagnostics()
     out.structuralInFlight = Recovery.structuralInFlightKey ~= nil
         and 1 or 0
     out.structuralInFlightMode = Recovery.structuralInFlightMode
-    out.structuralCommandEstimate = tonumber(Recovery.raiseCommandEstimate)
-        or Recovery.DEFAULTS.structuralCommandInitial
     return out
 end
 

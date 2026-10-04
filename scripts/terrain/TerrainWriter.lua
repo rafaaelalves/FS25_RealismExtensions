@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 11
+Writer.VERSION = 12
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -83,6 +83,8 @@ function Writer.new(options)
             recoveryTargetLoweredSamples = 0,
             recoveryTargetAbsDeltaM = 0,
             recoveryTargetMaxDeltaM = 0,
+            recoveryMachineTargetJobs = 0,
+            recoveryMachineTargetBrushes = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -103,7 +105,12 @@ function Writer:enqueue(brush)
     elseif mode == "SMOOTH" then
         amount = brush ~= nil and tonumber(brush.smoothAmountM or brush.depthM) or nil
     elseif mode == "TARGET" then
-        amount = brush ~= nil and tonumber(brush.maxStepM or brush.depthM) or nil
+        -- In GIANTS set-deformation mode this is actuator intensity, not a
+        -- requested world-space delta. TerraFarm's current flatten path uses
+        -- 0.75 and relies on setHeightTarget() to bound the destination.
+        amount = brush ~= nil and tonumber(
+            brush.targetAmount or brush.maxStepM or brush.depthM
+        ) or nil
     end
 
     local minAmount = self.options.minDepthM
@@ -242,13 +249,19 @@ local function sampleRoughnessProbe(terrain, brush)
             or tonumber(brush.radiusM) * 0.75
     )
     local offsets = {
-        {0,0,false},
-        {r,0,true}, {-r,0,true}, {0,r,true}, {0,-r,true},
-        {r*0.7071,r*0.7071,true},
-        {-r*0.7071,r*0.7071,true},
-        {r*0.7071,-r*0.7071,true},
-        {-r*0.7071,-r*0.7071,true}
+        {0,0,false}
     }
+    -- Recovery is sparse/serialized, so spend a few extra height samples on a
+    -- better local reference plane. A 16-point boundary ring is much harder
+    -- for one old rut edge or small berm to bias than the previous 8 samples.
+    for i = 0, 15 do
+        local a = (math.pi * 2 * i) / 16
+        offsets[#offsets + 1] = {
+            math.cos(a) * r,
+            math.sin(a) * r,
+            true
+        }
+    end
 
     local samples = {}
     for i,o in ipairs(offsets) do
@@ -758,6 +771,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 self.stats.recoveryMachineSmoothJobs + 1
             self.stats.recoveryMachineSmoothBrushes =
                 self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
+        elseif machineRecoveryTarget then
+            self.stats.recoveryMachineTargetJobs =
+                self.stats.recoveryMachineTargetJobs + 1
+            self.stats.recoveryMachineTargetBrushes =
+                self.stats.recoveryMachineTargetBrushes + #(brushes or {})
         elseif recoveryRaiseMode then
             self.stats.recoveryMachineRaiseJobs =
                 self.stats.recoveryMachineRaiseJobs + 1

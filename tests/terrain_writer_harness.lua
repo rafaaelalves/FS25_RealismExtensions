@@ -311,8 +311,8 @@ assert(sw.stats.recoveryMachineSmoothBrushes == 1)
 assert(created[#created].brushes[1].brush == -1)
 print("terrain_writer_smoothing_harness: OK")
 
--- R1 target-plane recovery must raise a deep causal center toward the current
--- fitted local plane without flattening the surrounding boundary samples.
+-- R5 target-plane recovery uses a strong set-deformation actuator amount, but
+-- the target plane -- not the amount -- bounds world-space motion.
 local tw = RealismExtensionsTerrainWriter.new({
     maxBrushesPerFrame=4,
     maxJobsPerFrame=2,
@@ -324,8 +324,8 @@ heights["60:60"] = 9.88
 local targetDelta,targetGeometry=nil,nil
 assert(tw:enqueue({
     x=60,z=60,mode="TARGET",targetY=10.0,
-    targetPlaneAx=0,targetPlaneAz=0,maxStepM=0.04,
-    radiusM=0.45,hardness=0.45,strength=0.90,
+    targetPlaneAx=0,targetPlaneAz=0,targetAmount=0.75,
+    radiusM=0.40,hardness=0.20,strength=0.35,
     source="RECOVERY",probeRadiusM=1.5,
     onApplied=function(state,deltaY,beforeY,afterY,volume,geometry)
         assert(state == TerrainDeformation.STATE_SUCCESS)
@@ -338,18 +338,40 @@ assert(tb==1 and tj==1)
 local td=created[#created]
 assert(td.targetMode==true and td.smoothing~=true and td.additive~=true)
 assert(td.target~=nil)
-assert(math.abs(td.depth-0.04)<0.000001)
+assert(math.abs(td.depth-0.75)<0.000001)
 assert(td.brushes[1].brush==-1)
-assert(math.abs((heights["60:60"] or 0)-9.92)<0.000001)
-assert(targetDelta~=nil and targetDelta>0.039)
+assert(math.abs((heights["60:60"] or 0)-10.0)<0.000001)
+assert(targetDelta~=nil and targetDelta>0.119 and targetDelta<0.121)
 assert(targetGeometry~=nil)
 assert(targetGeometry.centerDeficitBeforeM>0.119)
-assert(targetGeometry.centerDeficitAfterM<0.081)
+assert(targetGeometry.centerDeficitAfterM<0.001)
 assert(tw.stats.recoveryTargetJobs==1)
 assert(tw.stats.recoveryTargetBrushes==1)
 assert(tw.stats.recoveryTargetRaisedSamples==1)
 assert(tw.stats.recoveryTargetLoweredSamples==0)
-assert(tw.stats.recoveryTargetMaxDeltaM>0.039)
+assert(tw.stats.recoveryTargetMaxDeltaM>0.119)
+assert(tw.stats.recoveryMachineTargetJobs==1)
+assert(tw.stats.recoveryMachineTargetBrushes==1)
+
+-- The same target mode must also remove a recovery-created positive peak
+-- without crossing below the target plane.
+heights["61:61"]=10.20
+local peakDelta=nil
+assert(tw:enqueue({
+    x=61,z=61,mode="TARGET",targetY=10.0,
+    targetPlaneAx=0,targetPlaneAz=0,targetAmount=0.75,
+    radiusM=0.40,hardness=0.20,strength=0.35,
+    source="RECOVERY",probeRadiusM=1.25,
+    onApplied=function(state,deltaY)
+        assert(state==TerrainDeformation.STATE_SUCCESS)
+        peakDelta=deltaY
+    end
+}))
+local tpb,tpj=tw:flush()
+assert(tpb==1 and tpj==1)
+assert(math.abs((heights["61:61"] or 0)-10.0)<0.000001)
+assert(peakDelta~=nil and peakDelta < -0.199 and peakDelta > -0.201)
+assert(tw.stats.recoveryTargetLoweredSamples==1)
 print("terrain_writer_target_recovery_harness: OK")
 
 

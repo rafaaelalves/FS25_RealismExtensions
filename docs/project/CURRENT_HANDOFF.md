@@ -545,3 +545,47 @@ Green runtime target:
 - `loweringViolations=0`;
 - any quantized overshoot is small and followed by `peakSmooth` cleanup;
 - no broad field depression returns.
+
+
+### Runtime gate — v30R5 bounded target-plane recovery
+
+R4 runtime (build `1778293966ac509380e2caec297cf30db778bff9`) closed the visible rut but falsified additive RAISE as a precision actuator:
+- SoilMassTransport is disabled in the current development config, so the observed large mounds are not the lateral-berm model;
+- useful additive recovery pulses remained coarse/quantized;
+- observed recovery center raises reached ~0.224 m and later ~0.840 m in a single callback;
+- total center raise greatly exceeded measured deficit reduction;
+- R4 peak SMOOTH barely moved those mounds (example ~0.7245 m -> ~0.7206 m after many smooth jobs) and completed zero peak repairs.
+
+External precedent re-check:
+- TerraFarm issue #97 ("Machine modes update") explicitly reworked RAISE/LOWER to internally use flatten deformation mode when a landscaping target area exists;
+- current TerraFarm Flatten/Slope uses `setHeightTarget(...)` + `enableSetDeformationMode()` with `heightChangeAmount=0.75`;
+- therefore the amount is treated as actuator intensity/rate, while the target geometry bounds the destination;
+- our R1 instead used only ~0.04 and incorrectly treated the amount as a maximum physical step, which is consistent with its near-no-op runtime.
+
+R5 hypothesis:
+1. Keep causal authorization from SpatialHistory.
+2. Fit the current local boundary plane (now using a 16-sample ring).
+3. If the initial center is already above the plane, do not touch it; stale rut debt is not permission to flatten player terrain.
+4. If the causal center is below the plane, submit a localized TARGET brush to that fitted plane.
+5. Use TerraFarm-like target actuator intensity 0.75 (up to 1.0 only after verified no-op).
+6. Serialize globally and re-measure after every target callback.
+7. Keep logical rut debt until physical convergence; clear it only once |signed residual| <= 4 mm.
+8. If a target pulse crosses slightly above the plane, the same causal target sequence may correct it back down. No additive RAISE and no native SMOOTH are used in this runtime experiment.
+9. Any worsening of absolute residual stops the sequence instead of trying to overpower the terrain.
+
+Primary runtime telemetry:
+`TerrainRecovery v30R5`
+and
+`TerrainRecoveryTarget`.
+
+Green runtime target:
+- recovery `raiseJobs=0` and `smoothJobs=0`;
+- `targetJobs>0`, `targetApplied>0`;
+- `residualReduce` grows and `maxAbsAfter << maxAbsBefore`;
+- both `targetRaised` and (only if correcting a small sign-crossing) `targetLowered` are bounded by the fitted target plane;
+- `targetMaxDelta` is proportional to actual rut/peak error, never the 0.2-0.8 m additive jumps seen in R4 unless the measured error itself is that large;
+- fresh ruts converge without leaving a replacement mound or broad depression.
+
+Important test hygiene:
+- use fresh ruts generated after loading R5;
+- do not use old R4 mountains as the primary gate because their causal rut debt may already have been cleared and R5 intentionally refuses to infer ownership from geometry alone.
