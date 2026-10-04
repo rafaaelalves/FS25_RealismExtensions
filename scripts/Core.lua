@@ -1,6 +1,8 @@
 RealismExtensionsCore = {
     providerRetryMs = 1000,
     providerElapsedMs = 1000,
+    tireTrackProbeRetryMs = 1000,
+    tireTrackProbeElapsedMs = 1000,
     terrainDiagElapsedMs = 0,
     terrainDiagPrevious = nil
 }
@@ -29,6 +31,7 @@ end
 
 function RealismExtensionsCore:loadMap()
     self.providerElapsedMs = self.providerRetryMs
+    self.tireTrackProbeElapsedMs = self.tireTrackProbeRetryMs
     self.terrainDiagElapsedMs = 0
     self.terrainDiagPrevious = nil
 
@@ -38,6 +41,20 @@ function RealismExtensionsCore:loadMap()
     end
 
     self:tryDiscoverProvider()
+
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.NativeTireTrackProbe == true
+        and RealismExtensionsNativeTireTrackAdapter ~= nil then
+        local ok, reason = RealismExtensionsNativeTireTrackAdapter.installFromMission()
+        if ok then
+            RealismExtensionsDiagnostics.info("native TireTrack probe active")
+        else
+            RealismExtensionsDiagnostics.verbose(
+                "native TireTrack probe pending: " .. tostring(reason)
+            )
+        end
+    end
 
     if RealismExtensionsTerrainRuntime ~= nil then
         RealismExtensionsTerrainRuntime.initialize()
@@ -94,6 +111,19 @@ function RealismExtensionsCore:update(dt)
                 self.providerElapsedMs = 0
                 self:tryDiscoverProvider()
             end
+        end
+    end
+
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.NativeTireTrackProbe == true
+        and RealismExtensionsNativeTireTrackAdapter ~= nil
+        and RealismExtensionsNativeTireTrackAdapter.installed ~= true then
+        self.tireTrackProbeElapsedMs = (self.tireTrackProbeElapsedMs or 0)
+            + math.max(tonumber(dt) or 0, 0)
+        if self.tireTrackProbeElapsedMs >= self.tireTrackProbeRetryMs then
+            self.tireTrackProbeElapsedMs = 0
+            RealismExtensionsNativeTireTrackAdapter.installFromMission()
         end
     end
 
@@ -344,6 +374,24 @@ function RealismExtensionsCore:update(dt)
                     ))
                 end
 
+                if RealismExtensionsNativeTireTrackAdapter ~= nil
+                    and RealismExtensionsConfig.modules.NativeTireTrackProbe == true then
+                    local t = RealismExtensionsNativeTireTrackAdapter.getDiagnostics()
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TireTrackProbe | installed=%s integrity=%s create=%d point=%d cut=%d maxArgs=%d/%d/%d observerErrors=%d drift=%d",
+                        tostring(t.installed),
+                        tostring(t.integrity),
+                        t.createTrackCalls or 0,
+                        t.addTrackPointCalls or 0,
+                        t.cutTrackCalls or 0,
+                        t.maxCreateArgs or 0,
+                        t.maxPointArgs or 0,
+                        t.maxCutArgs or 0,
+                        t.observerErrors or 0,
+                        t.pointerDrift or 0
+                    ))
+                end
+
                 if (writerStats.massTransportSourceVolumeM3 or 0) > 0 then
                     local target = writerStats.massTransportTargetVolumeM3 or 0
                     local raised = writerStats.massTransportRaisedVolumeM3 or 0
@@ -372,8 +420,13 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsNativeTireTrackAdapter ~= nil then
+        RealismExtensionsNativeTireTrackAdapter.uninstall()
+        RealismExtensionsNativeTireTrackAdapter.resetProbe()
+    end
     RealismExtensionsState.clearProvider()
     self.providerElapsedMs = self.providerRetryMs
+    self.tireTrackProbeElapsedMs = self.tireTrackProbeRetryMs
     self.terrainDiagElapsedMs = 0
     self.terrainDiagPrevious = nil
     self._terrainDiagNextSnapshot = nil
