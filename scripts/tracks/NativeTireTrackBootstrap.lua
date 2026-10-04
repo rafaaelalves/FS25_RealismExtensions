@@ -9,7 +9,11 @@ Bootstrap.stats = Bootstrap.stats or {
     adapterInstallAttempts = 0,
     adapterInstalls = 0,
     adapterAlreadyActive = 0,
-    adapterUnavailable = 0
+    adapterUnavailable = 0,
+    captureInitAttempts = 0,
+    captureInitializations = 0,
+    captureAlreadyActive = 0,
+    captureInitFailures = 0
 }
 
 local function getModules()
@@ -21,6 +25,46 @@ local function adapterNeeded()
     local modules = getModules()
     return modules.NativeTireTrackProbe == true
         or modules.VisualTrackCapture == true
+end
+
+local function ensureCaptureRuntime()
+    local modules = getModules()
+    if modules.VisualTrackCapture ~= true then
+        return true, "capture disabled"
+    end
+
+    local runtime = RealismExtensionsVisualTrackRuntime
+    if runtime == nil or type(runtime.initialize) ~= "function" then
+        Bootstrap.stats.captureInitFailures =
+            Bootstrap.stats.captureInitFailures + 1
+        return false, "visual track runtime unavailable"
+    end
+
+    if runtime.active == true then
+        Bootstrap.stats.captureAlreadyActive =
+            Bootstrap.stats.captureAlreadyActive + 1
+        return true, "capture already active"
+    end
+
+    Bootstrap.stats.captureInitAttempts =
+        Bootstrap.stats.captureInitAttempts + 1
+    local ok, reason = runtime.initialize(
+        RealismExtensionsNativeTireTrackAdapter
+    )
+    if ok then
+        Bootstrap.stats.captureInitializations =
+            Bootstrap.stats.captureInitializations + 1
+        if RealismExtensionsDiagnostics ~= nil
+            and type(RealismExtensionsDiagnostics.info) == "function" then
+            RealismExtensionsDiagnostics.info(
+                "visual TireTrack capture initialized from early bootstrap"
+            )
+        end
+    else
+        Bootstrap.stats.captureInitFailures =
+            Bootstrap.stats.captureInitFailures + 1
+    end
+    return ok, reason
 end
 
 function Bootstrap.tryInstallFromMission()
@@ -42,6 +86,10 @@ function Bootstrap.tryInstallFromMission()
     if adapter.installed == true then
         Bootstrap.stats.adapterAlreadyActive =
             Bootstrap.stats.adapterAlreadyActive + 1
+        local captureOk, captureReason = ensureCaptureRuntime()
+        if not captureOk then
+            return false, captureReason
+        end
         return true, "already active"
     end
 
@@ -51,6 +99,12 @@ function Bootstrap.tryInstallFromMission()
     if ok then
         Bootstrap.stats.adapterInstalls =
             Bootstrap.stats.adapterInstalls + 1
+
+        local captureOk, captureReason = ensureCaptureRuntime()
+        if not captureOk then
+            return false, captureReason
+        end
+
         if RealismExtensionsDiagnostics ~= nil
             and type(RealismExtensionsDiagnostics.info) == "function" then
             RealismExtensionsDiagnostics.info(
