@@ -372,6 +372,26 @@ function RealismExtensionsCore:update(dt)
                         d.maxPersistentSinkDepthM or 0,
                         d.maxSinkPlasticTransfer or 0
                     ))
+
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainSinkHandoffProbe | observed=%.3f historyRepresented=%.3f residual=%.3f maxRepresented=%.3f maxResidual=%.3f loadedContacts=%d maxContactRadius=%.2f",
+                        d.lastSinkObservedProxyM or 0,
+                        d.lastSinkRepresentedByHistoryProxyM or 0,
+                        d.lastSinkResidualProxyM or 0,
+                        d.maxSinkRepresentedByHistoryProxyM or 0,
+                        d.maxSinkResidualProxyM or 0,
+                        d.loadedContactRecords or 0,
+                        d.maxLoadedContactRadiusM or 0
+                    ))
+                end
+
+                if (r.loadedContactQueries or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainRecoveryContactGuard | queries=%d blocked=%d maxBlockingLoadN=%.0f",
+                        r.loadedContactQueries or 0,
+                        r.loadedContactSkips or 0,
+                        r.loadedContactMaxLoadN or 0
+                    ))
                 end
 
                 if RealismExtensionsNativeTireTrackAdapter ~= nil
