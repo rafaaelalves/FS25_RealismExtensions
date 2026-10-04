@@ -41,6 +41,8 @@ jobs:
           lua5.4 tests/terrain_deformation_registration_harness.lua
           lua5.4 tests/terrain_recovery_registration_harness.lua
           lua5.4 tests/terrain_work_context_harness.lua
+          lua5.4 tests/loaded_contact_registry_harness.lua
+          lua5.4 tests/native_tire_track_adapter_harness.lua
           lua5.4 tests/terrain_telemetry_harness.lua
           lua5.4 tests/terrain_recovery_harness.lua
           lua5.4 tests/core_diagnostics_harness.lua
