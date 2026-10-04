@@ -220,7 +220,7 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v27R2 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
+                        "TerrainRecovery v28R3 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.intentCandidateCells or 0,
@@ -300,19 +300,28 @@ function RealismExtensionsCore:update(dt)
                     ))
 
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecoveryFill | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d loweringViolations=%d noOp=%d noDeficit=%d deficitReduce=%.4fm centerRaised=%.4fm maxBefore=%.4fm maxAfter=%.4fm raiseJobs=%d raiseBrushes=%d raiseSamples=%d raised=%d lowered=%d raiseAbsDelta=%.4fm raiseMaxDelta=%.4fm",
+                        "TerrainRecoveryFill | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d loweringViolations=%d overshoot=%d/%.4fm maxOvershoot=%.4fm noOp=%d noDeficit=%d deficitReduce=%.4fm centerRaised=%.4fm maxBefore=%.4fm maxAfter=%.4fm gain=%.2f gainSamples=%d gainMax=%.2f commandMax=%.6f inFlight=%d timeouts=%d raiseJobs=%d raiseBrushes=%d raiseSamples=%d raised=%d lowered=%d raiseAbsDelta=%.4fm raiseMaxDelta=%.4fm",
                         r.structuralScheduled or 0,
                         r.structuralApplied or 0,
                         r.structuralCompleted or 0,
                         r.structuralStalled or 0,
                         r.structuralOwnershipExhausted or 0,
                         r.structuralLoweringViolations or 0,
+                        r.structuralOvershootCount or 0,
+                        r.structuralOvershootM or 0,
+                        r.structuralMaxOvershootM or 0,
                         r.structuralNoopPulses or 0,
                         r.structuralPreflightNoDeficit or 0,
                         r.structuralDeficitReductionM or 0,
                         r.structuralCenterRaisedM or 0,
                         r.structuralMaxDeficitBeforeM or 0,
                         r.structuralMaxDeficitAfterM or 0,
+                        r.structuralGainEstimate or 0,
+                        r.structuralGainSamples or 0,
+                        r.structuralObservedGainMax or 0,
+                        r.structuralCommandMax or 0,
+                        r.structuralInFlight or 0,
+                        r.structuralInFlightTimeouts or 0,
                         writerStats.recoveryRaiseJobs or 0,
                         writerStats.recoveryRaiseBrushes or 0,
                         writerStats.recoveryRaiseSamples or 0,

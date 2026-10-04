@@ -454,3 +454,41 @@ Success signal:
 - ownershipExhausted does not dominate normal fresh-rut repair.
 
 The tracks assimilation runtime gate is separately CLOSED/PASS.
+
+
+### Runtime gate — v28R3 closed-loop monotonic recovery
+
+R2 runtime (build `8f1e6605ca5343fb7826c4aa317eb081364422f1`) proved the missing actuator:
+- additive RAISE does move the FS25 terrain under machine work;
+- recovery no longer lowered terrain (`lowered=0`, `loweringViolations=0`);
+- but treating `setAdditiveHeightChangeAmount` as metres was invalid.
+- observed runtime amplification was extreme: requested command telemetry peaked at ~0.027 while a recovery center callback observed up to 1.0389 m upward delta.
+- R2 also selected centers ~0.30 m apart with 0.70 m diameter brushes, guaranteeing spatial overlap and cumulative mounds.
+- user visually confirmed recovery overshot the original surface and created large hills.
+
+R3 control contract:
+1. Work-area callbacks schedule causal RE-owned intent only; they do not calculate/apply a raise.
+2. Exactly one recovery raise may be in flight globally.
+3. Immediately before each command, re-measure the current local boundary plane and center deficit.
+4. Command units are opaque actuator units. Start conservatively with an assumed command->world gain and learn the observed gain from `deltaY / command`.
+5. Desired physical correction is bounded (12 mm nominal and <=60% of remaining deficit per pulse).
+6. RAISE remains monotonic; any negative delta is a hard violation/stop.
+7. Only useful verified upward motion consumes SpatialHistory debt.
+8. Positive center residual above the fitted plane is explicit overshoot telemetry.
+9. Recovery centers are spaced at >=~brush diameter (0.30 m radius, spacing factor 2.10) instead of deliberately overlapping.
+10. Recovery RAISE uses the direct TerraFarm-style machine deformation path, one brush/job.
+11. TerrainDeformation objects are deleted directly in the completion callback; the R2 delayed-delete path produced one nil-handle delete error.
+
+Primary telemetry:
+`TerrainRecovery v28R3`
+and
+`TerrainRecoveryFill`.
+
+Green runtime target:
+- `loweringViolations=0`;
+- `overshoot=0` (or only millimetric, <=4 mm);
+- `maxOvershoot<=0.004m`;
+- `gainSamples>0` and gain converges;
+- `raiseMaxDelta` becomes centimetric rather than decimetric/metre-scale;
+- `machineSmoothJobs=0`;
+- repaired rut centers stop within the local-plane tolerance without surrounding-field depression or new mounds.

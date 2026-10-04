@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 10
+Writer.VERSION = 11
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -10,6 +10,7 @@ Writer.DEFAULTS = {
     maxQueuedBrushes = 512,
     depthBucketM = 0.0005,
     minDepthM = 0.0004,
+    minRecoveryRaiseCommandM = 0.00002,
     minRadiusM = 0.10,
     defaultHardness = 0.35,
     coalesceDistanceFactor = 0.35
@@ -65,6 +66,9 @@ function Writer.new(options)
             recoveryRaiseLoweredSamples = 0,
             recoveryRaiseAbsDeltaM = 0,
             recoveryRaiseMaxDeltaM = 0,
+            recoveryMachineRaiseJobs = 0,
+            recoveryMachineRaiseBrushes = 0,
+            unclassifiedRaisedVolumeM3 = 0,
             recoverySmoothJobs = 0,
             recoverySmoothSamples = 0,
             recoverySmoothRaisedSamples = 0,
@@ -102,12 +106,20 @@ function Writer:enqueue(brush)
         amount = brush ~= nil and tonumber(brush.maxStepM or brush.depthM) or nil
     end
 
+    local minAmount = self.options.minDepthM
+    if mode == "RAISE" and brush ~= nil and brush.source == "RECOVERY" then
+        minAmount = math.max(
+            0.000001,
+            tonumber(self.options.minRecoveryRaiseCommandM) or 0.00002
+        )
+    end
+
     if type(brush) ~= "table"
         or type(brush.x) ~= "number"
         or type(brush.z) ~= "number"
         or type(amount) ~= "number"
         or type(brush.radiusM) ~= "number"
-        or amount < self.options.minDepthM
+        or amount < minAmount
         or brush.radiusM <= 0
         or (mode ~= "LOWER" and mode ~= "RAISE"
             and mode ~= "SMOOTH" and mode ~= "TARGET")
@@ -351,7 +363,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
         and brushes ~= nil and #brushes == 1
         and brushes[1].source == "RECOVERY"
     local recoveryRaiseMode = mode == "RAISE"
-        and brushes ~= nil and brushes[1] ~= nil
+        and brushes ~= nil and #brushes == 1
         and brushes[1].source == "RECOVERY"
 
     if machineRecoveryTarget then
@@ -433,7 +445,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     for _, brush in ipairs(brushes) do
         local terrainBrush = TerrainDeformation.NO_TERRAIN_BRUSH
-        if machineRecoverySmooth or machineRecoveryTarget then
+        if machineRecoverySmooth or machineRecoveryTarget or recoveryRaiseMode then
             -- TerraFarm machine input smoothing uses -1 here; keep the machine
         -- terrain path separate from Construction landscaping semantics.
             terrainBrush = -1
@@ -718,21 +730,21 @@ function Writer:_submitBatch(depthM, brushes, mode)
         local d = self.deformation
         self.deformation = nil
 
-        -- Official GIANTS scripts delete queued deformation objects after the
-        -- completion callback. Prefer next-frame delete when available.
+        -- TerraFarm's machine landscaping owns and deletes the deformation
+        -- directly in its completion callback. Deferring delete to a later
+        -- async task produced a rare nil-handle delete in R2.
         if d ~= nil then
-            if g_asyncTaskManager ~= nil and g_asyncTaskManager.addTask ~= nil then
-                g_asyncTaskManager:addTask(function() d:delete() end)
-            else
-                d:delete()
-            end
+            d:delete()
         end
     end
 
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
-    if machineRecoverySmooth or machineRecoveryTarget then
+    if machineRecoverySmooth or machineRecoveryTarget or recoveryRaiseMode then
+        -- Machine recovery follows TerraFarm's direct landscaping path. It is
+        -- serialized by TerrainRecovery, so each callback belongs to exactly
+        -- one freshly measured causal patch.
         -- TerraFarm machine landscaping applies directly with preview=false.
         -- This deliberately avoids Construction's dynamic-object validation
         -- semantics, which made nearly every under-machine smoothing job a
@@ -746,6 +758,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 self.stats.recoveryMachineSmoothJobs + 1
             self.stats.recoveryMachineSmoothBrushes =
                 self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
+        elseif recoveryRaiseMode then
+            self.stats.recoveryMachineRaiseJobs =
+                self.stats.recoveryMachineRaiseJobs + 1
+            self.stats.recoveryMachineRaiseBrushes =
+                self.stats.recoveryMachineRaiseBrushes + #(brushes or {})
         end
         local ok, err = pcall(
             deformation.apply,
@@ -803,7 +820,8 @@ function Writer:flush()
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
             .. ":" .. tostring(bucket)
-        if brush.mode == "TARGET" then
+        if brush.mode == "TARGET"
+            or (brush.mode == "RAISE" and brush.source == "RECOVERY") then
             groupKey = groupKey
                 .. ":" .. string.format("%.3f", brush.x)
                 .. ":" .. string.format("%.3f", brush.z)
@@ -850,7 +868,11 @@ function Writer:flush()
             end
 
             local batch = {}
-            local batchLimit = mode == "TARGET" and 1 or perJob
+            local recoveryRaise = mode == "RAISE"
+                and group[index] ~= nil
+                and group[index].source == "RECOVERY"
+            local batchLimit = (mode == "TARGET" or recoveryRaise)
+                and 1 or perJob
             for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]

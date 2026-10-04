@@ -383,3 +383,29 @@ assert(fw.stats.recoveryRaiseRaisedSamples==1)
 assert(fw.stats.recoveryRaiseLoweredSamples==0)
 assert(fw.stats.recoveryRaiseMaxDeltaM>0.019)
 print("terrain_writer_r2_recovery_raise_harness: OK")
+
+
+-- R3 recovery commands may be far below the normal rut writer threshold and
+-- must remain one direct machine brush, never batched through construction.
+local cw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=4,maxJobsPerFrame=2,maxBrushesPerJob=4,
+    depthBucketM=0.00001,minDepthM=0.0004,
+    minRecoveryRaiseCommandM=0.00002
+})
+heights["80:80"]=9.98
+local cDelta=nil
+assert(cw:enqueue({
+    x=80,z=80,mode="RAISE",raiseHeightM=0.00010,
+    radiusM=0.30,hardness=0.35,strength=0.35,
+    source="RECOVERY",probeRadiusM=1.2,
+    onApplied=function(state,deltaY) cDelta=deltaY end
+}))
+local cb,cj=cw:flush()
+assert(cb==1 and cj==1)
+local cd=created[#created]
+assert(cd.applyCalls==1 and cd.lastApplyPreview==false)
+assert(cd.brushes[1].brush==-1)
+assert(cw.stats.recoveryMachineRaiseJobs==1)
+assert(cw.stats.recoveryMachineRaiseBrushes==1)
+assert(cDelta~=nil and cDelta>0)
+print("terrain_writer_r3_direct_micro_raise_harness: OK")
