@@ -32,6 +32,7 @@
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
         <sourceFile filename="scripts/tracks/NativeTireTrackAdapter.lua"/>
+        <sourceFile filename="scripts/tracks/AIVisualTrackPolicy.lua"/>
         <sourceFile filename="scripts/tracks/NativeTireTrackBootstrap.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackJournal.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackChunkStore.lua"/>
