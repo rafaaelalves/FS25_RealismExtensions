@@ -335,3 +335,72 @@ there is credible evidence the authoritative terrain baseline changed intentiona
 4. only then choose S, H or R.
 
 This intentionally postpones the "target surface" implementation. The correct target may be a **rut-relief target**, not an absolute elevation target.
+
+
+## Implementation checkpoint — deferred safety + robust relief probe
+
+Implemented after the 2026-10-04 over-blocking runtime:
+
+### Layer A: deferred safety
+
+Blocked worked patches are no longer abandoned.
+
+New behavior:
+- blocked recovery request becomes one spatially coalesced deferred patch;
+- queue is bounded (`maxDeferredPatches=2048`);
+- retry cadence is bounded (`200 ms`);
+- lifetime is bounded (`5 s`);
+- per-update checks are bounded (`16`);
+- a patch is revalidated against the LoadedContactRegistry before execution;
+- if another direct/deferred brush already handled the patch, the queued request is discarded as superseded;
+- protection/rut suppression behavior remains separate.
+
+Harness proves:
+- a blocked patch can complete after the contact clears with **no new Cultivator work-area callback**;
+- repeated blocked callbacks coalesce rather than duplicating queue entries;
+- the stationary loaded-contact safety invariant remains intact.
+
+### Layer B diagnostics: RecoverySurfaceEstimator
+
+A pure `RecoverySurfaceEstimator` now measures local shape relative to a robust boundary reference plane.
+
+Important semantics:
+- the center/rut sample is **not** used to define the reference plane;
+- the outer ring estimates local slope/shape;
+- boundary outliers can be rejected using MAD-based filtering;
+- uniform vertical shift of the whole field does not count as rut recovery or worsening.
+
+Metrics include:
+- center deficit;
+- valley depth;
+- peak height;
+- relief range;
+- roughness;
+- mean elevation;
+- boundary inlier/confidence signal.
+
+This is diagnostic only. It does not define an absolute target and does not change the terrain operation.
+
+### Layer C unchanged
+
+Terrain actuation remains GIANTS native `SMOOTH` with the existing:
+- amount;
+- radius;
+- hardness;
+- strength.
+
+No target-height writer, explicit raise/lower redistribution, or strength increase has been authorized.
+
+### History reconciliation remains provisional
+
+Logical SpatialHistory still follows the existing roughness-success rule for this checkpoint so the deferred-safety change can be isolated.
+
+The new relief metrics are collected specifically to decide whether that rule should be replaced.
+
+Next runtime should compare:
+- roughness reduction;
+- relief/valley reduction;
+- deferred creation vs eventual application;
+- queue expiry/drop rate.
+
+Only then decide whether Strategy S is sufficient or H/R are needed.
