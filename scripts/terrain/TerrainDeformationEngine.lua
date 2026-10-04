@@ -303,6 +303,19 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     local history = historyStore:get(x, z)
     local previousDepth = history ~= nil and tonumber(history.rutDepthM) or 0
 
+    -- Observability only: estimate how much currently observed instantaneous
+    -- sink is already represented by RE's logical persistent-rut history.
+    -- This is NOT a Mud radius handoff and must not be used as one until the
+    -- actual terrain geometry/provider contract is proven in runtime.
+    local observedSinkProxy = math.max(0, tonumber(context.sinkDepthM) or 0)
+    local representedSinkProxy = math.min(observedSinkProxy, previousDepth)
+    local residualSinkProxy = math.max(0, observedSinkProxy - representedSinkProxy)
+    diagSet("lastSinkObservedProxyM", observedSinkProxy)
+    diagSet("lastSinkRepresentedByHistoryProxyM", representedSinkProxy)
+    diagSet("lastSinkResidualProxyM", residualSinkProxy)
+    diagMax("maxSinkRepresentedByHistoryProxyM", representedSinkProxy)
+    diagMax("maxSinkResidualProxyM", residualSinkProxy)
+
     local surface = RealismExtensionsTerrainSurfaceResponse ~= nil
         and RealismExtensionsTerrainSurfaceResponse.resolve(context, x, z) or nil
     if surface == nil or surface.available ~= true then
@@ -468,11 +481,17 @@ function Engine.processWheel(vehicle, wheel, dt)
         wheelSurfaceSpeedMps = wheelSpeedMps
     })
     if context == nil then
+        if RealismExtensionsLoadedContactRegistry ~= nil then
+            RealismExtensionsLoadedContactRegistry.remove(wheel)
+        end
         diagCount("contextUnavailable", 1)
         state.lastX, state.lastZ = nil, nil
         return
     end
     if context.grounded ~= true then
+        if RealismExtensionsLoadedContactRegistry ~= nil then
+            RealismExtensionsLoadedContactRegistry.remove(wheel)
+        end
         diagCount("notGrounded", 1)
         state.lastX, state.lastZ = nil, nil
         return
@@ -488,6 +507,9 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     local footprint = RealismExtensionsFootprintModel.compute(context)
     if footprint == nil or footprint.available ~= true then
+        if RealismExtensionsLoadedContactRegistry ~= nil then
+            RealismExtensionsLoadedContactRegistry.remove(wheel)
+        end
         diagCount("footprintRejects", 1)
         state.lastX, state.lastZ = context.worldX, context.worldZ
         return
@@ -505,6 +527,30 @@ function Engine.processWheel(vehicle, wheel, dt)
     local groundPressurePa = tonumber(footprint.groundPressurePa)
     local wheelLoadN = tonumber(footprint.wheelLoadN or context.wheelLoadN)
     local inflationBar = tonumber(footprint.inflationPressureBar or context.tirePressureBar)
+
+    if RealismExtensionsLoadedContactRegistry ~= nil then
+        local contactWidthM = math.max(0, supportWidthM or 0)
+        local contactLengthM = math.max(0, tonumber(footprint.footprintLengthM) or 0)
+        local contactRadiusM = 0.5 * math.sqrt(
+            contactWidthM * contactWidthM + contactLengthM * contactLengthM
+        )
+        if contactRadiusM <= 0 then
+            contactRadiusM = math.max(0.10, tonumber(context.structuralRadiusM) or 0.10) * 0.35
+        end
+        local recorded = RealismExtensionsLoadedContactRegistry.record(
+            wheel,
+            vehicle,
+            context.worldX,
+            context.worldZ,
+            contactRadiusM,
+            wheelLoadN or 0,
+            g_currentMission ~= nil and g_currentMission.time or 0
+        )
+        if recorded then
+            diagCount("loadedContactRecords", 1)
+            diagMax("maxLoadedContactRadiusM", contactRadiusM)
+        end
+    end
 
     diagMax("maxSupportWidthM", supportWidthM)
     diagMax("maxBaseTireWidthM", baseWidthM)
@@ -612,6 +658,12 @@ function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, 
 end
 
 function Engine:onDelete()
+    local spec = self[Engine.SPEC_FIELD]
+    if spec ~= nil and RealismExtensionsLoadedContactRegistry ~= nil then
+        for _, wheel in pairs(spec.wheels or {}) do
+            RealismExtensionsLoadedContactRegistry.remove(wheel)
+        end
+    end
     self[Engine.SPEC_FIELD] = nil
 end
 
@@ -651,6 +703,10 @@ function RealismExtensionsTerrainRuntime.getDiagnostics()
 end
 
 function RealismExtensionsTerrainRuntime.clear()
+    if RealismExtensionsLoadedContactRegistry ~= nil
+        and type(RealismExtensionsLoadedContactRegistry.clear) == "function" then
+        RealismExtensionsLoadedContactRegistry.clear()
+    end
     if RealismExtensionsTerrainSurfaceResponse ~= nil
         and RealismExtensionsTerrainSurfaceResponse.clear ~= nil then
         RealismExtensionsTerrainSurfaceResponse.clear()
