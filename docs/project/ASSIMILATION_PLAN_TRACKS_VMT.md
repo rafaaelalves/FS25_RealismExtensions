@@ -2,7 +2,7 @@
 
 Updated: 2026-10-04
 Status: implementation-ready
-Branch: `feat/assimilation-tracks-vmt`
+Branch: `feat/terrain-recovery`
 
 ## Implementation status — 2026-10-04
 
