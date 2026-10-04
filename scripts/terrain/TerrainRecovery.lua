@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 11
+Recovery.VERSION = 12
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -15,6 +15,16 @@ Recovery.DEFAULTS = {
     brushHardness = 0.20,
     targetSpacingFactor = 0.85,
     maxBrushesPerWorkArea = 24,
+
+    -- A centered native-smooth pulse is allowed to continue converging after
+    -- the work-area callback has moved on. Manual landscaping succeeds partly
+    -- because SOFTEN is applied repeatedly while dragging; machine recovery
+    -- needs the same temporal property, but only on RE-owned rut centers.
+    convergenceRetryMs = 150,
+    convergenceTtlMs = 3000,
+    maxConvergencePulses = 8,
+    minCenterDeficitM = 0.003,
+    minCenterRecoveryM = 0.00015,
 
     -- Strategy H: agricultural recovery is allowed only where SpatialHistory
     -- still carries RE-attributable rut debt. Candidate rut cells are clustered
@@ -52,9 +62,9 @@ Recovery.DEFAULTS = {
     -- Contact, MR/Mud physics, footprint and visual tyre tracks remain active.
     activeCombinationGraceMs = 1500,
 
-    -- Logical RE history follows verified reduction in physical roughness.
-    -- Center-height sign is deliberately irrelevant: flattening a ridge may
-    -- lower the center while still making the worked surface better.
+    -- Roughness/relief remain diagnostics. Logical rut debt is reconciled only
+    -- from verified reduction of the causal center deficit at the exact
+    -- SpatialHistory cell. A broad reduction in roughness is not sufficient.
     minRoughnessImprovementM = 0.00015,
     shallowHistoryFraction = 0.40,
     deepHistoryFraction = 0.30,
@@ -93,6 +103,19 @@ local function newStats()
         maxReliefAfterM = 0,
         centerRaised = 0,
         centerLowered = 0,
+        centerDeficitVerified = 0,
+        centerDeficitImproved = 0,
+        centerDeficitWorsened = 0,
+        centerDeficitNeutral = 0,
+        centerDeficitReductionM = 0,
+        centerDeficitWorseningM = 0,
+        maxCenterDeficitBeforeM = 0,
+        maxCenterDeficitAfterM = 0,
+        convergenceScheduled = 0,
+        convergenceApplied = 0,
+        convergenceCompleted = 0,
+        convergenceStalled = 0,
+        convergenceExpired = 0,
         historyRecoveredCells = 0,
         historyRecoveredDepthM = 0,
         protectedCellsMarked = 0,
@@ -384,11 +407,18 @@ local function queryLoadedContact(x, z, radius, nowMs)
     return blocked, contact
 end
 
-local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred)
+local scheduleDeferred
+
+local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred, pulseIndex, deferredKind)
+    pulseIndex = math.max(1, math.floor(tonumber(pulseIndex) or 1))
     Recovery.pendingStamps[key] = true
-    -- Claim the physical patch at enqueue time. Even a no-op smoothing result
-    -- must not be hammered every frame of the same pass.
-    Recovery.processedStamps[key] = nowMs
+
+    -- Direct work-area requests claim the passage stamp. Convergence retries
+    -- intentionally bypass this cadence: they are continuation of the same
+    -- authorized repair, not a second agricultural pass.
+    if deferredKind ~= "CONVERGENCE" then
+        Recovery.processedStamps[key] = nowMs
+    end
 
     local accepted = runtime.writer:enqueue({
         x = point.x,
@@ -451,67 +481,174 @@ local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred
                 end
             end
 
+            -- Roughness remains useful telemetry, but it is no longer allowed
+            -- to erase rut ownership. v23 could lower shoulders, improve RMS
+            -- roughness, and incorrectly declare the wheel channel recovered.
             local beforeR = geometry ~= nil
                 and tonumber(geometry.roughnessBeforeM) or nil
             local afterR = geometry ~= nil
                 and tonumber(geometry.roughnessAfterM) or nil
-            if beforeR == nil or afterR == nil then
-                Recovery.stats.roughnessNeutral =
-                    Recovery.stats.roughnessNeutral + 1
-                return
-            end
-
-            Recovery.stats.roughnessVerified =
-                Recovery.stats.roughnessVerified + 1
-            local improvement = beforeR - afterR
-            local epsilon = Recovery.DEFAULTS.minRoughnessImprovementM
-
-            if improvement > epsilon then
-                Recovery.stats.roughnessImproved =
-                    Recovery.stats.roughnessImproved + 1
-                Recovery.stats.roughnessImprovementM =
-                    Recovery.stats.roughnessImprovementM + improvement
-
-                -- This reconciliation rule remains intentionally unchanged
-                -- during the deferred-safety experiment. A later geometry
-                -- probe will decide whether roughness is sufficient to reduce
-                -- logical rut history.
-                local amount = math.min(
-                    params.maxHistoryRecovery,
-                    improvement
-                )
-                local cells, depth = runtime.history:applyRecoveryCircle(
-                    point.x,
-                    point.z,
-                    params.radius,
-                    amount,
-                    params.historyFraction,
-                    {
-                        minRutM = Recovery.DEFAULTS.minHistoryRutM,
-                        nowMs = g_currentMission ~= nil
-                            and g_currentMission.time or nowMs
-                    }
-                )
-                Recovery.stats.historyRecoveredCells =
-                    Recovery.stats.historyRecoveredCells + (cells or 0)
-                Recovery.stats.historyRecoveredDepthM =
-                    Recovery.stats.historyRecoveredDepthM + (depth or 0)
-            elseif improvement < -epsilon then
-                Recovery.stats.roughnessWorsened =
-                    Recovery.stats.roughnessWorsened + 1
-                Recovery.stats.roughnessWorseningM =
-                    Recovery.stats.roughnessWorseningM - improvement
+            if beforeR ~= nil and afterR ~= nil then
+                Recovery.stats.roughnessVerified =
+                    Recovery.stats.roughnessVerified + 1
+                local improvement = beforeR - afterR
+                local epsilon = Recovery.DEFAULTS.minRoughnessImprovementM
+                if improvement > epsilon then
+                    Recovery.stats.roughnessImproved =
+                        Recovery.stats.roughnessImproved + 1
+                    Recovery.stats.roughnessImprovementM =
+                        Recovery.stats.roughnessImprovementM + improvement
+                elseif improvement < -epsilon then
+                    Recovery.stats.roughnessWorsened =
+                        Recovery.stats.roughnessWorsened + 1
+                    Recovery.stats.roughnessWorseningM =
+                        Recovery.stats.roughnessWorseningM - improvement
+                else
+                    Recovery.stats.roughnessNeutral =
+                        Recovery.stats.roughnessNeutral + 1
+                end
             else
                 Recovery.stats.roughnessNeutral =
                     Recovery.stats.roughnessNeutral + 1
             end
+
+            local beforeDeficit = geometry ~= nil
+                and tonumber(geometry.centerDeficitBeforeM) or nil
+            local afterDeficit = geometry ~= nil
+                and tonumber(geometry.centerDeficitAfterM) or nil
+
+            if beforeDeficit == nil or afterDeficit == nil then
+                Recovery.stats.convergenceStalled =
+                    Recovery.stats.convergenceStalled + 1
+                return
+            end
+
+            Recovery.stats.centerDeficitVerified =
+                Recovery.stats.centerDeficitVerified + 1
+            Recovery.stats.maxCenterDeficitBeforeM = math.max(
+                Recovery.stats.maxCenterDeficitBeforeM,
+                beforeDeficit
+            )
+            Recovery.stats.maxCenterDeficitAfterM = math.max(
+                Recovery.stats.maxCenterDeficitAfterM,
+                afterDeficit
+            )
+
+            local centerImprovement = beforeDeficit - afterDeficit
+            local centerEpsilon = Recovery.DEFAULTS.minCenterRecoveryM
+
+            if centerImprovement > centerEpsilon then
+                Recovery.stats.centerDeficitImproved =
+                    Recovery.stats.centerDeficitImproved + 1
+                Recovery.stats.centerDeficitReductionM =
+                    Recovery.stats.centerDeficitReductionM
+                    + centerImprovement
+
+                -- Reconcile only the exact causal history cell represented by
+                -- this centered brush. Never erase a 2 m circle merely because
+                -- the surrounding region became a little less rough.
+                if type(runtime.history.applyRecoveryAt) == "function" then
+                    local amount = math.min(
+                        params.maxHistoryRecovery,
+                        centerImprovement
+                    )
+                    local applied = runtime.history:applyRecoveryAt(
+                        point.x,
+                        point.z,
+                        amount,
+                        {
+                            minRutM = Recovery.DEFAULTS.minHistoryRutM,
+                            nowMs = g_currentMission ~= nil
+                                and g_currentMission.time or nowMs
+                        }
+                    )
+                    if (tonumber(applied) or 0) > 0 then
+                        Recovery.stats.historyRecoveredCells =
+                            Recovery.stats.historyRecoveredCells + 1
+                        Recovery.stats.historyRecoveredDepthM =
+                            Recovery.stats.historyRecoveredDepthM
+                            + applied
+                    end
+                end
+            elseif centerImprovement < -centerEpsilon then
+                Recovery.stats.centerDeficitWorsened =
+                    Recovery.stats.centerDeficitWorsened + 1
+                Recovery.stats.centerDeficitWorseningM =
+                    Recovery.stats.centerDeficitWorseningM
+                    - centerImprovement
+            else
+                Recovery.stats.centerDeficitNeutral =
+                    Recovery.stats.centerDeficitNeutral + 1
+            end
+
+            -- Once the causal center is physically flat within tolerance,
+            -- clear any remaining modeled debt at that exact cell. This
+            -- prevents model over-estimation from keeping a repaired patch
+            -- alive indefinitely.
+            if afterDeficit <= Recovery.DEFAULTS.minCenterDeficitM
+                and type(runtime.history.get) == "function"
+                and type(runtime.history.applyRecoveryAt) == "function" then
+                local h = runtime.history:get(point.x, point.z)
+                local remainingRut = h ~= nil
+                    and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if remainingRut >= Recovery.DEFAULTS.minHistoryRutM then
+                    local applied = runtime.history:applyRecoveryAt(
+                        point.x,
+                        point.z,
+                        remainingRut,
+                        {
+                            minRutM = Recovery.DEFAULTS.minHistoryRutM,
+                            nowMs = g_currentMission ~= nil
+                                and g_currentMission.time or nowMs
+                        }
+                    )
+                    if (tonumber(applied) or 0) > 0 then
+                        Recovery.stats.historyRecoveredCells =
+                            Recovery.stats.historyRecoveredCells + 1
+                        Recovery.stats.historyRecoveredDepthM =
+                            Recovery.stats.historyRecoveredDepthM
+                            + applied
+                    end
+                end
+                Recovery.stats.convergenceCompleted =
+                    Recovery.stats.convergenceCompleted + 1
+                return
+            end
+
+            -- Manual Landscaping SOFTEN is repeatedly applied while the cursor
+            -- is dragged. Reproduce that temporal behavior only for the
+            -- history-owned rut center, and stop on material worsening.
+            if afterDeficit > Recovery.DEFAULTS.minCenterDeficitM
+                and pulseIndex < Recovery.DEFAULTS.maxConvergencePulses
+                and centerImprovement >= -centerEpsilon
+                and scheduleDeferred ~= nil then
+                if scheduleDeferred(
+                    point,
+                    key,
+                    params,
+                    g_currentMission ~= nil
+                        and g_currentMission.time or nowMs,
+                    "CONVERGENCE",
+                    pulseIndex + 1
+                ) then
+                    Recovery.stats.convergenceScheduled =
+                        Recovery.stats.convergenceScheduled + 1
+                    return
+                end
+            end
+
+            Recovery.stats.convergenceStalled =
+                Recovery.stats.convergenceStalled + 1
         end
     })
 
     if accepted then
         Recovery.stats.brushesEnqueued =
             Recovery.stats.brushesEnqueued + 1
-        if deferred then
+        if deferredKind == "CONVERGENCE" then
+            Recovery.stats.convergenceApplied =
+                Recovery.stats.convergenceApplied + 1
+        elseif deferred then
             Recovery.stats.deferredApplied =
                 Recovery.stats.deferredApplied + 1
         end
@@ -519,10 +656,12 @@ local function enqueueRecoveryPoint(runtime, point, key, params, nowMs, deferred
     end
 
     Recovery.pendingStamps[key] = nil
-    Recovery.processedStamps[key] = nil
+    if deferredKind ~= "CONVERGENCE" then
+        Recovery.processedStamps[key] = nil
+    end
     Recovery.stats.brushesRejected =
         Recovery.stats.brushesRejected + 1
-    if deferred then
+    if deferred and deferredKind ~= "CONVERGENCE" then
         Recovery.stats.deferredRejected =
             Recovery.stats.deferredRejected + 1
     end
@@ -555,15 +694,34 @@ local function removeDeferred(entry)
     end
 end
 
-local function scheduleDeferred(point, key, params, nowMs)
+scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
+    kind = kind or "BLOCKED"
+    pulseIndex = math.max(1, math.floor(tonumber(pulseIndex) or 1))
+
     local existing = Recovery.deferredByKey[key]
     if existing ~= nil then
         existing.x = point.x
         existing.z = point.z
         existing.params = params
-        existing.expiresAtMs =
-            nowMs + Recovery.DEFAULTS.deferredTtlMs
+        existing.kind = kind
+        existing.pulseIndex = math.max(
+            tonumber(existing.pulseIndex) or 1,
+            pulseIndex
+        )
+        existing.expiresAtMs = nowMs + (
+            kind == "CONVERGENCE"
+                and Recovery.DEFAULTS.convergenceTtlMs
+                or Recovery.DEFAULTS.deferredTtlMs
+        )
         existing.lastRequestedMs = nowMs
+        existing.nextAttemptMs = math.min(
+            tonumber(existing.nextAttemptMs) or math.huge,
+            nowMs + (
+                kind == "CONVERGENCE"
+                    and Recovery.DEFAULTS.convergenceRetryMs
+                    or Recovery.DEFAULTS.deferredRetryMs
+            )
+        )
         Recovery.stats.deferredCoalesced =
             Recovery.stats.deferredCoalesced + 1
         return true
@@ -576,22 +734,35 @@ local function scheduleDeferred(point, key, params, nowMs)
         return false
     end
 
+    local retryMs = kind == "CONVERGENCE"
+        and Recovery.DEFAULTS.convergenceRetryMs
+        or Recovery.DEFAULTS.deferredRetryMs
+    local ttlMs = kind == "CONVERGENCE"
+        and Recovery.DEFAULTS.convergenceTtlMs
+        or Recovery.DEFAULTS.deferredTtlMs
+
     local entry = {
         key = key,
         x = point.x,
         z = point.z,
         params = params,
+        kind = kind,
+        pulseIndex = pulseIndex,
         createdAtMs = nowMs,
         lastRequestedMs = nowMs,
-        nextAttemptMs = nowMs + Recovery.DEFAULTS.deferredRetryMs,
-        expiresAtMs = nowMs + Recovery.DEFAULTS.deferredTtlMs
+        nextAttemptMs = nowMs + retryMs,
+        expiresAtMs = nowMs + ttlMs
     }
 
     Recovery.deferredByKey[key] = entry
     Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
     Recovery.deferredCount = (Recovery.deferredCount or 0) + 1
-    Recovery.stats.deferredCreated =
-        Recovery.stats.deferredCreated + 1
+
+    if kind == "BLOCKED" then
+        Recovery.stats.deferredCreated =
+            Recovery.stats.deferredCreated + 1
+    end
+
     Recovery.stats.deferredQueuePeak = math.max(
         Recovery.stats.deferredQueuePeak,
         Recovery.deferredCount
@@ -631,30 +802,41 @@ function Recovery.update(dt)
             Recovery.stats.deferredChecks =
                 Recovery.stats.deferredChecks + 1
 
+            local isConvergence = entry.kind == "CONVERGENCE"
+
             if nowMs > entry.expiresAtMs then
                 removeDeferred(entry)
-                Recovery.stats.deferredExpired =
-                    Recovery.stats.deferredExpired + 1
-            elseif not stampAvailable(entry.key, nowMs) then
-                -- Another direct/deferred brush already handled this patch.
+                if isConvergence then
+                    Recovery.stats.convergenceExpired =
+                        Recovery.stats.convergenceExpired + 1
+                else
+                    Recovery.stats.deferredExpired =
+                        Recovery.stats.deferredExpired + 1
+                end
+            elseif not isConvergence
+                and not stampAvailable(entry.key, nowMs) then
+                -- Another direct/deferred brush already handled this blocked
+                -- first pulse. Convergence entries deliberately ignore passage
+                -- stamps because they continue the same authorized repair.
                 removeDeferred(entry)
                 Recovery.stats.deferredSuperseded =
                     Recovery.stats.deferredSuperseded + 1
             elseif nowMs < entry.nextAttemptMs then
                 Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
             else
-                -- The brush center is a real SpatialHistory candidate cell.
-                -- If another successful recovery already erased that local
-                -- debt while this request waited under a loaded wheel, the
-                -- physical smoothing request is no longer justified.
                 local h = type(runtime.history.get) == "function"
                     and runtime.history:get(entry.x, entry.z) or nil
                 local remainingRut = h ~= nil
                     and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+
                 if remainingRut < Recovery.DEFAULTS.minHistoryIntentRutM then
                     removeDeferred(entry)
                     Recovery.stats.intentDeferredGone =
                         Recovery.stats.intentDeferredGone + 1
+                    if isConvergence then
+                        Recovery.stats.convergenceCompleted =
+                            Recovery.stats.convergenceCompleted + 1
+                    end
                 else
                     local blocked = queryLoadedContact(
                         entry.x,
@@ -662,28 +844,43 @@ function Recovery.update(dt)
                         entry.params.radius,
                         nowMs
                     )
+
                     if blocked then
-                        entry.nextAttemptMs =
-                            nowMs + Recovery.DEFAULTS.deferredRetryMs
-                        Recovery.deferredQueue[#Recovery.deferredQueue + 1] = entry
+                        entry.nextAttemptMs = nowMs + (
+                            isConvergence
+                                and Recovery.DEFAULTS.convergenceRetryMs
+                                or Recovery.DEFAULTS.deferredRetryMs
+                        )
+                        Recovery.deferredQueue[#Recovery.deferredQueue + 1] =
+                            entry
                         Recovery.stats.deferredStillBlocked =
                             Recovery.stats.deferredStillBlocked + 1
                     else
+                        -- Remove before execution so the completion callback can
+                        -- schedule the next convergence pulse under the same
+                        -- spatial key without being coalesced into a dying entry.
+                        removeDeferred(entry)
+
                         local accepted = enqueueRecoveryPoint(
                             runtime,
                             {x=entry.x,z=entry.z},
                             entry.key,
                             entry.params,
                             nowMs,
-                            true
+                            true,
+                            entry.pulseIndex,
+                            entry.kind
                         )
-                        if accepted then
-                            removeDeferred(entry)
-                        else
-                            entry.nextAttemptMs =
-                                nowMs + Recovery.DEFAULTS.deferredRetryMs
-                            Recovery.deferredQueue[#Recovery.deferredQueue + 1] =
-                                entry
+
+                        if not accepted then
+                            scheduleDeferred(
+                                {x=entry.x,z=entry.z},
+                                entry.key,
+                                entry.params,
+                                nowMs,
+                                entry.kind,
+                                entry.pulseIndex
+                            )
                         end
                     end
                 end
@@ -756,10 +953,10 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
                 point.x, point.z, radius, nowMs
             )
             if blocked then
-                scheduleDeferred(point, key, params, nowMs)
+                scheduleDeferred(point, key, params, nowMs, "BLOCKED", 1)
             else
                 enqueueRecoveryPoint(
-                    runtime, point, key, params, nowMs, false
+                    runtime, point, key, params, nowMs, false, 1, nil
                 )
             end
         end
