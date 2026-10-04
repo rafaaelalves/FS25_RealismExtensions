@@ -30,6 +30,7 @@
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
+        <sourceFile filename="scripts/tracks/NativeTireTrackAdapter.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
 </modDesc>
