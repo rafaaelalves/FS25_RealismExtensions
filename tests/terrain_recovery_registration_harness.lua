@@ -54,6 +54,7 @@ TypeManager.validateTypes(manager)
 assert(addedSpecializations.cultivatorOnly ~= nil)
 assert(addedSpecializations.directSeederHybrid ~= nil)
 assert(addedSpecializations.sowingOnly == nil)
-assert(addedSpecializations.plowOnly == nil)
+assert(addedSpecializations.plowOnly ~= nil)
 
+assert(addedSpecializations.sowingOnly == nil)
 print("terrain_recovery_registration_harness: OK")

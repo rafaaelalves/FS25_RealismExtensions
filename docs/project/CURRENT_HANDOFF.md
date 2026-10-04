@@ -676,3 +676,33 @@ Expected runtime improvement versus R5:
 - CPU should remain in the same or lower range despite patch verification because one 16-point before-probe is removed per TARGET and stale future TARGETs are avoided.
 
 R6 is a consolidation checkpoint. Do not tune radius/spacing/parallelism until its runtime log confirms patch reconciliation is reducing no-op work without altering the R5 visual result.
+
+
+## R7 tillage-capability layer — implementation checkpoint
+
+While the R6 patch-reconciliation build is being runtime-tested separately, development has started on tool-specific recovery capability.
+
+Research conclusion:
+- do not use one scalar `recoveryPower`;
+- separate surface regrade, surface finish and deep compaction relief;
+- implement identity should come from GIANTS specialization semantics, not display/config names.
+
+Implemented architecture:
+- new `TillageRecoveryProfiles.lua`;
+- CULTIVATOR preserves the R6 TARGET constants exactly;
+- distinct SHALLOW_DISC, POWER_HARROW, SUBSOILER, PLOW and PLOW_PACKER profiles;
+- Cultivator resolution uses `isSubsoiler`, `isPowerHarrow` and `useDeepMode`;
+- Plow is first-class through `processPlowArea`;
+- PlowPacker is resolved before generic Plow/Cultivator;
+- profile parameters are captured when a causal work-area pass authorizes recovery and survive deferred retries/convergence;
+- R6 causal ownership, patch verification, target-plane tolerance, loaded-contact safety and global closed-loop serialization are unchanged;
+- `surfaceFinish01` and `deepCompactionRelief01` are semantic future-facing capabilities and do not yet create extra terrain operations.
+
+New runtime line:
+`TerrainRecoveryTools | profile=workAreas/intentPoints/scheduled/applied ...`
+
+Research/design document:
+`docs/research/tillage-recovery-capability-study.md`.
+
+Important validation rule:
+the R7 profile values beyond CULTIVATOR are initial evidence-informed gameplay mappings, not claimed measured physical coefficients. Validate class detection and qualitative ordering before fine tuning.

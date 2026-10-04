@@ -6,6 +6,7 @@ getWorldTranslation = function(node)
     error("unexpected node " .. tostring(node))
 end
 
+dofile("scripts/terrain/TillageRecoveryProfiles.lua")
 dofile("scripts/terrain/TerrainWorkContext.lua")
 
 local root = {
@@ -16,7 +17,10 @@ local implement = {
     typeName = "cultivator",
     spec_cultivator = {
         isEnabled = true,
-        isWorking = false
+        isWorking = false,
+        isSubsoiler = false,
+        isPowerHarrow = false,
+        useDeepMode = true
     },
     getRootVehicle = function() return root end,
     getLastSpeed = function() return 8 end,
@@ -39,6 +43,7 @@ local pre = RealismExtensionsTerrainWorkContext.captureCultivatorPre(implement,1
 assert(pre.rootVehicle == root)
 assert(pre.enabled == true)
 assert(pre.potentiallyWorking == true)
+assert(pre.toolProfile ~= nil and pre.toolProfile.id == "CULTIVATOR")
 
 -- First pass: field state changes.
 implement.spec_cultivator.isWorking = true
@@ -50,6 +55,7 @@ assert(first.changedArea == 12)
 assert(first.processedArea == 12)
 assert(first.isRepeatPass == false)
 assert(first.geometry ~= nil)
+assert(first.toolProfile.id == "CULTIVATOR")
 
 -- Repeated physical pass: no agricultural-state change, still real work.
 local repeatPass = RealismExtensionsTerrainWorkContext.captureCultivatorPost(
@@ -79,3 +85,66 @@ local child = {
 assert(RealismExtensionsTerrainWorkContext.getCombinationRoot(child) == chainedRoot)
 
 print("terrain_work_context_harness: OK")
+
+
+-- Engine semantics resolve distinct Cultivator modes without relying on names.
+implement.spec_cultivator.useDeepMode = false
+assert(
+    RealismExtensionsTerrainWorkContext.captureCultivatorPre(implement,1300)
+        .toolProfile.id == "SHALLOW_DISC"
+)
+implement.spec_cultivator.useDeepMode = true
+implement.spec_cultivator.isPowerHarrow = true
+assert(
+    RealismExtensionsTerrainWorkContext.captureCultivatorPre(implement,1400)
+        .toolProfile.id == "POWER_HARROW"
+)
+implement.spec_cultivator.isSubsoiler = true
+assert(
+    RealismExtensionsTerrainWorkContext.captureCultivatorPre(implement,1500)
+        .toolProfile.id == "SUBSOILER"
+)
+
+-- Plow is a first-class recovery operation rather than being disguised as a
+-- cultivator. Repeated plowing remains physically valid when changedArea=0.
+local plow = {
+    typeName = "plow",
+    spec_plow = { isWorking = false },
+    getRootVehicle = function() return root end,
+    getLastSpeed = function() return 7 end
+}
+local plowPre =
+    RealismExtensionsTerrainWorkContext.capturePlowPre(plow,1600)
+assert(plowPre.enabled == true)
+assert(plowPre.potentiallyWorking == true)
+assert(plowPre.toolProfile.id == "PLOW")
+plow.spec_plow.isWorking = true
+local plowPost =
+    RealismExtensionsTerrainWorkContext.capturePlowPost(
+        plow,{start=101,width=102,height=103},0,10,1600,plowPre
+    )
+assert(plowPost.physicallyWorking == true)
+assert(plowPost.isRepeatPass == true)
+assert(plowPost.toolProfile.id == "PLOW")
+
+local packer = {
+    spec_cultivator = {
+        isEnabled=true,isWorking=true,useDeepMode=true,
+        isSubsoiler=false,isPowerHarrow=false
+    },
+    spec_plow = {isWorking=true},
+    spec_plowPacker = {},
+    getRootVehicle=function() return root end,
+    getLastSpeed=function() return 7 end
+}
+assert(
+    RealismExtensionsTerrainWorkContext.captureCultivatorPre(packer,1700)
+        .toolProfile.id == "PLOW_PACKER"
+)
+assert(
+    RealismExtensionsTerrainWorkContext.capturePlowPre(packer,1700)
+        .toolProfile.id == "PLOW_PACKER"
+)
+
+print("terrain_work_context_tillage_profiles_harness: OK")
+

@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWorkContext = RealismExtensionsTerrainWorkContext or {}
 local Work = RealismExtensionsTerrainWorkContext
 
-Work.VERSION = 1
+Work.VERSION = 2
 Work.DEFAULTS = {
     minWorkingSpeedKph = 0.5
 }
@@ -87,14 +87,36 @@ function Work.getWorkAreaGeometry(workArea)
     }
 end
 
-function Work.captureCultivatorPre(vehicle, nowMs)
-    local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
+local function resolveTillageSpec(vehicle, operationKind)
+    if vehicle == nil then return nil end
+    if operationKind == "PLOW" then
+        return vehicle.spec_plow
+    end
+    return vehicle.spec_cultivator
+end
+
+local function resolveTillageProfile(vehicle, operationKind)
+    local profiles = RealismExtensionsTillageRecoveryProfiles
+    if profiles ~= nil and type(profiles.resolve) == "function" then
+        return profiles.resolve(vehicle, operationKind)
+    end
+    return nil
+end
+
+function Work.captureTillagePre(vehicle, operationKind, nowMs)
+    operationKind = operationKind == "PLOW" and "PLOW" or "CULTIVATOR"
+    local spec = resolveTillageSpec(vehicle, operationKind)
     local speedKph = Work.getSpeedKph(vehicle)
-    local enabled = spec ~= nil and spec.isEnabled ~= false
+    local enabled = spec ~= nil
+    if operationKind == "CULTIVATOR" and spec ~= nil then
+        enabled = spec.isEnabled ~= false
+    end
 
     return {
         vehicle = vehicle,
         rootVehicle = Work.getCombinationRoot(vehicle),
+        operationKind = operationKind,
+        toolProfile = resolveTillageProfile(vehicle, operationKind),
         nowMs = tonumber(nowMs) or 0,
         speedKph = speedKph,
         enabled = enabled,
@@ -103,11 +125,23 @@ function Work.captureCultivatorPre(vehicle, nowMs)
     }
 end
 
-function Work.captureCultivatorPost(vehicle, workArea, realArea, area, nowMs, pre)
-    local spec = vehicle ~= nil and vehicle.spec_cultivator or nil
-    local changedArea = math.max(0, tonumber(realArea) or 0)
-    local processedArea = math.max(0, tonumber(area) or 0)
-    local enabled = spec ~= nil and spec.isEnabled ~= false
+function Work.captureTillagePost(
+    vehicle,
+    workArea,
+    changedAreaValue,
+    processedAreaValue,
+    nowMs,
+    pre,
+    operationKind
+)
+    operationKind = operationKind == "PLOW" and "PLOW" or "CULTIVATOR"
+    local spec = resolveTillageSpec(vehicle, operationKind)
+    local changedArea = math.max(0, tonumber(changedAreaValue) or 0)
+    local processedArea = math.max(0, tonumber(processedAreaValue) or 0)
+    local enabled = spec ~= nil
+    if operationKind == "CULTIVATOR" and spec ~= nil then
+        enabled = spec.isEnabled ~= false
+    end
     local physicallyWorking = enabled
         and spec ~= nil
         and spec.isWorking == true
@@ -116,6 +150,9 @@ function Work.captureCultivatorPost(vehicle, workArea, realArea, area, nowMs, pr
         vehicle = vehicle,
         rootVehicle = pre ~= nil and pre.rootVehicle
             or Work.getCombinationRoot(vehicle),
+        operationKind = operationKind,
+        toolProfile = pre ~= nil and pre.toolProfile
+            or resolveTillageProfile(vehicle, operationKind),
         nowMs = tonumber(nowMs) or 0,
         speedKph = pre ~= nil and pre.speedKph or Work.getSpeedKph(vehicle),
         enabled = enabled,
@@ -128,6 +165,38 @@ function Work.captureCultivatorPost(vehicle, workArea, realArea, area, nowMs, pr
         geometry = Work.getWorkAreaGeometry(workArea),
         workArea = workArea
     }
+end
+
+function Work.captureCultivatorPre(vehicle, nowMs)
+    return Work.captureTillagePre(vehicle, "CULTIVATOR", nowMs)
+end
+
+function Work.captureCultivatorPost(vehicle, workArea, realArea, area, nowMs, pre)
+    return Work.captureTillagePost(
+        vehicle,
+        workArea,
+        realArea,
+        area,
+        nowMs,
+        pre,
+        "CULTIVATOR"
+    )
+end
+
+function Work.capturePlowPre(vehicle, nowMs)
+    return Work.captureTillagePre(vehicle, "PLOW", nowMs)
+end
+
+function Work.capturePlowPost(vehicle, workArea, changedArea, area, nowMs, pre)
+    return Work.captureTillagePost(
+        vehicle,
+        workArea,
+        changedArea,
+        area,
+        nowMs,
+        pre,
+        "PLOW"
+    )
 end
 
 return Work

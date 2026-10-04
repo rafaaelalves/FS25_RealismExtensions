@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 18
+Recovery.VERSION = 19
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -225,7 +225,8 @@ local function newStats()
         preSuperActiveMarks = 0,
         changedAreaUnits = 0,
         processedAreaUnits = 0,
-        repeatAreaUnits = 0
+        repeatAreaUnits = 0,
+        toolProfiles = {}
     }
 end
 
@@ -247,6 +248,47 @@ end
 
 if Recovery.stats == nil then
     Recovery.resetRuntimeState()
+end
+
+local function resolveToolProfile(vehicle, operationKind)
+    local profiles = RealismExtensionsTillageRecoveryProfiles
+    if profiles ~= nil and type(profiles.resolve) == "function" then
+        return profiles.resolve(vehicle, operationKind)
+    end
+
+    return {
+        id = operationKind == "PLOW" and "PLOW" or "CULTIVATOR",
+        targetRadiusM = Recovery.DEFAULTS.structuralRadiusM,
+        targetProbeRadiusM = Recovery.DEFAULTS.structuralProbeRadiusM,
+        targetAmount = Recovery.DEFAULTS.structuralTargetAmount,
+        targetAmountMax = Recovery.DEFAULTS.structuralTargetAmountMax,
+        targetStrength = Recovery.DEFAULTS.structuralTargetStrength,
+        targetHardness = Recovery.DEFAULTS.structuralTargetHardness,
+        maxStructuralPulses = Recovery.DEFAULTS.maxStructuralPulses,
+        targetSpacingFactor = Recovery.DEFAULTS.targetSpacingFactor,
+        maxBrushesPerWorkArea = Recovery.DEFAULTS.maxBrushesPerWorkArea,
+        surfaceRegrade01 = 0.70,
+        surfaceFinish01 = 0.75,
+        deepCompactionRelief01 = 0.25
+    }
+end
+
+local function profileStat(profileOrId, field, amount)
+    local id = type(profileOrId) == "table"
+        and tostring(profileOrId.id or "UNKNOWN")
+        or tostring(profileOrId or "UNKNOWN")
+    local profiles = Recovery.stats.toolProfiles
+    local row = profiles[id]
+    if row == nil then
+        row = {
+            workAreas = 0,
+            intentPoints = 0,
+            targetScheduled = 0,
+            targetApplied = 0
+        }
+        profiles[id] = row
+    end
+    row[field] = (tonumber(row[field]) or 0) + (tonumber(amount) or 1)
 end
 
 local function enabled()
@@ -341,7 +383,14 @@ function Recovery.isRecentlyCultivated(x,z,nowMs)
     return true
 end
 
-local function buildHistoryGuidedPoints(history, g, radius, nowMs)
+local function buildHistoryGuidedPoints(
+    history,
+    g,
+    radius,
+    nowMs,
+    spacingFactor,
+    maxBrushesPerWorkArea
+)
     if history == nil
         or type(history.getRecoveryCandidatesParallelogram) ~= "function" then
         return {}
@@ -373,7 +422,10 @@ local function buildHistoryGuidedPoints(history, g, radius, nowMs)
 
     local spacing = math.max(
         0.20,
-        radius * Recovery.DEFAULTS.targetSpacingFactor
+        radius * (
+            tonumber(spacingFactor)
+                or Recovery.DEFAULTS.targetSpacingFactor
+        )
     )
     local groups = {}
 
@@ -415,7 +467,10 @@ local function buildHistoryGuidedPoints(history, g, radius, nowMs)
 
     local maxBrushes = math.max(
         1,
-        math.floor(Recovery.DEFAULTS.maxBrushesPerWorkArea)
+        math.floor(
+            tonumber(maxBrushesPerWorkArea)
+                or Recovery.DEFAULTS.maxBrushesPerWorkArea
+        )
     )
     while #points > maxBrushes do
         points[#points] = nil
@@ -932,6 +987,49 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     pulseIndex = math.max(1, math.floor(tonumber(pulseIndex) or 1))
     params = params or {}
 
+    local structuralRadius = math.max(
+        0.10,
+        tonumber(params.radius) or Recovery.DEFAULTS.structuralRadiusM
+    )
+    local probeRadius = math.max(
+        structuralRadius,
+        tonumber(params.probeRadius)
+            or Recovery.DEFAULTS.structuralProbeRadiusM
+    )
+    local targetAmountBase = math.max(
+        0.01,
+        tonumber(params.targetAmountBase)
+            or Recovery.DEFAULTS.structuralTargetAmount
+    )
+    local targetAmountMax = math.max(
+        targetAmountBase,
+        tonumber(params.targetAmountMax)
+            or Recovery.DEFAULTS.structuralTargetAmountMax
+    )
+    local targetStrength = math.max(
+        0.01,
+        math.min(
+            1.0,
+            tonumber(params.targetStrength)
+                or Recovery.DEFAULTS.structuralTargetStrength
+        )
+    )
+    local targetHardness = math.max(
+        0.05,
+        math.min(
+            0.98,
+            tonumber(params.targetHardness)
+                or Recovery.DEFAULTS.structuralTargetHardness
+        )
+    )
+    local maxStructuralPulses = math.max(
+        1,
+        math.floor(
+            tonumber(params.maxStructuralPulses)
+                or Recovery.DEFAULTS.maxStructuralPulses
+        )
+    )
+
     if Recovery.structuralInFlightKey ~= nil then
         return false
     end
@@ -957,7 +1055,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         and writer:measureRecoveryAt(
             point.x,
             point.z,
-            Recovery.DEFAULTS.structuralProbeRadiusM
+            probeRadius
         ) or nil
     if beforeProbe == nil then
         Recovery.pendingStamps[key] = nil
@@ -1006,7 +1104,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 targetY,
                 planeAx,
                 planeAz,
-                Recovery.DEFAULTS.structuralRadiusM,
+                structuralRadius,
                 tolerance,
                 nowMs
             ))
@@ -1038,7 +1136,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 targetY,
                 planeAx,
                 planeAz,
-                Recovery.DEFAULTS.structuralRadiusM,
+                structuralRadius,
                 tolerance,
                 nowMs
             )
@@ -1069,10 +1167,10 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     end
 
     local targetAmount = tonumber(params.targetAmount)
-        or Recovery.DEFAULTS.structuralTargetAmount
+        or targetAmountBase
     targetAmount = math.max(
-        Recovery.DEFAULTS.structuralTargetAmount,
-        math.min(Recovery.DEFAULTS.structuralTargetAmountMax, targetAmount)
+        targetAmountBase,
+        math.min(targetAmountMax, targetAmount)
     )
     params.targetAmount = targetAmount
 
@@ -1097,11 +1195,11 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         targetPlaneAx = planeAx,
         targetPlaneAz = planeAz,
         targetAmount = targetAmount,
-        radiusM = Recovery.DEFAULTS.structuralRadiusM,
-        hardness = Recovery.DEFAULTS.structuralTargetHardness,
-        strength = Recovery.DEFAULTS.structuralTargetStrength,
+        radiusM = structuralRadius,
+        hardness = targetHardness,
+        strength = targetStrength,
         source = "RECOVERY",
-        probeRadiusM = Recovery.DEFAULTS.structuralProbeRadiusM,
+        probeRadiusM = probeRadius,
         recoveryPreProbe = beforeProbe,
         onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
             Recovery.pendingStamps[key] = nil
@@ -1113,6 +1211,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
             Recovery.stats.callbacks = Recovery.stats.callbacks + 1
             Recovery.stats.targetPlaneApplied =
                 Recovery.stats.targetPlaneApplied + 1
+            profileStat(params.toolProfileId, "targetApplied", 1)
 
             local afterResidual = geometry ~= nil
                 and tonumber(geometry.centerResidualAfterM) or nil
@@ -1124,7 +1223,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 local post = writer:measureRecoveryAt(
                     point.x,
                     point.z,
-                    Recovery.DEFAULTS.structuralProbeRadiusM
+                    probeRadius
                 )
                 if post ~= nil then
                     afterResidual = tonumber(post.centerResidualM)
@@ -1146,7 +1245,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 targetY,
                 planeAx,
                 planeAz,
-                Recovery.DEFAULTS.structuralRadiusM,
+                structuralRadius,
                 tolerance,
                 callbackNowMs
             )
@@ -1234,20 +1333,19 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 params.targetNoops = (tonumber(params.targetNoops) or 0) + 1
 
                 if params.targetNoops >= Recovery.DEFAULTS.structuralMaxNoops
-                    and targetAmount >= Recovery.DEFAULTS.structuralTargetAmountMax
-                        - 0.000001 then
+                    and targetAmount >= targetAmountMax - 0.000001 then
                     Recovery.stats.structuralStalled =
                         Recovery.stats.structuralStalled + 1
                     return
                 end
 
                 params.targetAmount = math.min(
-                    Recovery.DEFAULTS.structuralTargetAmountMax,
+                    targetAmountMax,
                     targetAmount * Recovery.DEFAULTS.structuralTargetNoopGrowth
                 )
             end
 
-            if pulseIndex >= Recovery.DEFAULTS.maxStructuralPulses then
+            if pulseIndex >= maxStructuralPulses then
                 Recovery.stats.structuralStalled =
                     Recovery.stats.structuralStalled + 1
                 return
@@ -1570,7 +1668,12 @@ function Recovery.update(dt)
     compactDeferredQueue()
 end
 
-local function recoverWorkedArea(vehicle, workArea, processedArea)
+local function recoverWorkedArea(
+    vehicle,
+    workArea,
+    processedArea,
+    toolProfile
+)
     if not enabled() or (tonumber(processedArea) or 0) <= 0 then return end
 
     local runtime = RealismExtensionsTerrainRuntime
@@ -1596,10 +1699,28 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
     Recovery.stats.maxWorkAreaDepthM =
         math.max(Recovery.stats.maxWorkAreaDepthM, g.depthM)
 
-    local radius = Recovery.DEFAULTS.structuralRadiusM
+    local profile = toolProfile
+        or resolveToolProfile(vehicle, "CULTIVATOR")
+    local radius = math.max(
+        0.10,
+        tonumber(profile.targetRadiusM)
+            or Recovery.DEFAULTS.structuralRadiusM
+    )
     local baseParams = {
         radius = radius,
-        probeRadius = Recovery.DEFAULTS.structuralProbeRadiusM
+        probeRadius = tonumber(profile.targetProbeRadiusM)
+            or Recovery.DEFAULTS.structuralProbeRadiusM,
+        targetAmountBase = tonumber(profile.targetAmount)
+            or Recovery.DEFAULTS.structuralTargetAmount,
+        targetAmountMax = tonumber(profile.targetAmountMax)
+            or Recovery.DEFAULTS.structuralTargetAmountMax,
+        targetStrength = tonumber(profile.targetStrength)
+            or Recovery.DEFAULTS.structuralTargetStrength,
+        targetHardness = tonumber(profile.targetHardness)
+            or Recovery.DEFAULTS.structuralTargetHardness,
+        maxStructuralPulses = tonumber(profile.maxStructuralPulses)
+            or Recovery.DEFAULTS.maxStructuralPulses,
+        toolProfileId = tostring(profile.id or "CULTIVATOR")
     }
 
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
@@ -1609,10 +1730,14 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
         runtime.history,
         g,
         radius,
-        nowMs
+        nowMs,
+        profile.targetSpacingFactor,
+        profile.maxBrushesPerWorkArea
     )
     Recovery.stats.coveragePoints =
         Recovery.stats.coveragePoints + #points
+    profileStat(profile, "workAreas", 1)
+    profileStat(profile, "intentPoints", #points)
 
     for _, point in ipairs(points) do
         local key = stampKey(point.x, point.z)
@@ -1627,7 +1752,13 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
                 radius = baseParams.radius,
                 probeRadius = baseParams.probeRadius,
                 causalAuthorized = true,
-                targetAmount = Recovery.DEFAULTS.structuralTargetAmount,
+                targetAmount = baseParams.targetAmountBase,
+                targetAmountBase = baseParams.targetAmountBase,
+                targetAmountMax = baseParams.targetAmountMax,
+                targetStrength = baseParams.targetStrength,
+                targetHardness = baseParams.targetHardness,
+                maxStructuralPulses = baseParams.maxStructuralPulses,
+                toolProfileId = baseParams.toolProfileId,
                 targetNoops = 0
             }
             if scheduleDeferred(
@@ -1635,39 +1766,67 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
             ) then
                 Recovery.stats.structuralScheduled =
                     Recovery.stats.structuralScheduled + 1
+                profileStat(profile, "targetScheduled", 1)
             end
         end
     end
 end
 
-function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
+local function processTillageArea(
+    vehicle,
+    superFunc,
+    workArea,
+    dt,
+    operationKind
+)
     Recovery.stats.workAreaCalls = Recovery.stats.workAreaCalls + 1
 
-    -- GIANTS separates changed agricultural area (realArea) from total
-    -- processed work area (area). realArea legitimately becomes zero when a
-    -- cultivator passes over ground that is already cultivated. That must NOT
-    -- mean the implement stopped physically working.
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     local workApi = RealismExtensionsTerrainWorkContext
-    local pre = workApi ~= nil
-        and workApi.captureCultivatorPre(vehicle, nowMs) or nil
+    local pre = nil
+    if workApi ~= nil then
+        if operationKind == "PLOW"
+            and type(workApi.capturePlowPre) == "function" then
+            pre = workApi.capturePlowPre(vehicle, nowMs)
+        elseif type(workApi.captureCultivatorPre) == "function" then
+            pre = workApi.captureCultivatorPre(vehicle, nowMs)
+        end
+    end
+
     local preWorking = pre ~= nil and pre.potentiallyWorking == true
 
-    -- processCultivatorArea itself is only invoked for an active work area.
-    -- Mark before superFunc so wheel sampling later in the same frame cannot
-    -- reopen persistent ruts merely because the density-map state is unchanged.
     if preWorking then
         markActiveCombination(vehicle, nowMs)
         Recovery.stats.preSuperActiveMarks =
             Recovery.stats.preSuperActiveMarks + 1
     end
 
-    local realArea, area = superFunc(vehicle, workArea, dt)
+    local changedArea, processedArea = superFunc(vehicle, workArea, dt)
 
-    local operation = workApi ~= nil
-        and workApi.captureCultivatorPost(
-            vehicle, workArea, realArea, area, nowMs, pre
-        ) or nil
+    local operation = nil
+    if workApi ~= nil then
+        if operationKind == "PLOW"
+            and type(workApi.capturePlowPost) == "function" then
+            operation = workApi.capturePlowPost(
+                vehicle,
+                workArea,
+                changedArea,
+                processedArea,
+                nowMs,
+                pre
+            )
+        elseif type(workApi.captureCultivatorPost) == "function" then
+            operation = workApi.captureCultivatorPost(
+                vehicle,
+                workArea,
+                changedArea,
+                processedArea,
+                nowMs,
+                pre
+            )
+        end
+    end
+
     local physicallyWorking = operation ~= nil
         and operation.physicallyWorking == true
 
@@ -1681,12 +1840,12 @@ function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
             Recovery.stats.changedAreaUnits + changedUnits
         Recovery.stats.processedAreaUnits =
             Recovery.stats.processedAreaUnits + processedUnits
+
         if changedUnits <= 0 and processedUnits > 0 then
             Recovery.stats.repeatAreaUnits =
                 Recovery.stats.repeatAreaUnits + processedUnits
         end
 
-        -- Refresh if the pre-super speed state was unavailable/stale.
         if not preWorking then
             markActiveCombination(vehicle, nowMs)
         end
@@ -1700,25 +1859,52 @@ function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
         end
 
         if operation.processedArea > 0 then
-            Recovery.stats.workedAreaCalls = Recovery.stats.workedAreaCalls + 1
+            Recovery.stats.workedAreaCalls =
+                Recovery.stats.workedAreaCalls + 1
             Recovery.stats.areaPositiveCalls =
                 Recovery.stats.areaPositiveCalls + 1
 
             local perfStarted = RealismExtensionsTerrainPerformance ~= nil
                 and RealismExtensionsTerrainPerformance.begin() or nil
 
-            -- Use total processed area, not changed area. Repeated passes must
-            -- continue smoothing even when the vanilla field state no longer
-            -- changes.
-            recoverWorkedArea(vehicle, workArea, operation.processedArea)
+            recoverWorkedArea(
+                vehicle,
+                workArea,
+                operation.processedArea,
+                operation.toolProfile
+                    or resolveToolProfile(vehicle, operationKind)
+            )
 
             if RealismExtensionsTerrainPerformance ~= nil then
-                RealismExtensionsTerrainPerformance.finish("recovery", perfStarted)
+                RealismExtensionsTerrainPerformance.finish(
+                    "recovery",
+                    perfStarted
+                )
             end
         end
     end
 
-    return realArea, area
+    return changedArea, processedArea
+end
+
+function Recovery.processCultivatorArea(vehicle, superFunc, workArea, dt)
+    return processTillageArea(
+        vehicle,
+        superFunc,
+        workArea,
+        dt,
+        "CULTIVATOR"
+    )
+end
+
+function Recovery.processPlowArea(vehicle, superFunc, workArea, dt)
+    return processTillageArea(
+        vehicle,
+        superFunc,
+        workArea,
+        dt,
+        "PLOW"
+    )
 end
 
 function Recovery.getDiagnostics()
@@ -1732,14 +1918,30 @@ function Recovery.getDiagnostics()
 end
 
 function Recovery.prerequisitesPresent(specializations)
-    return Cultivator ~= nil
+    local hasCultivator = Cultivator ~= nil
         and SpecializationUtil.hasSpecialization(Cultivator, specializations)
+    local hasPlow = Plow ~= nil
+        and SpecializationUtil.hasSpecialization(Plow, specializations)
+    return hasCultivator or hasPlow
 end
 
 function Recovery.registerOverwrittenFunctions(vehicleType)
-    SpecializationUtil.registerOverwrittenFunction(
-        vehicleType,
-        "processCultivatorArea",
-        Recovery.processCultivatorArea
-    )
+    local byName = vehicleType ~= nil
+        and vehicleType.specializationsByName or nil
+
+    if type(byName) == "table" and byName["cultivator"] ~= nil then
+        SpecializationUtil.registerOverwrittenFunction(
+            vehicleType,
+            "processCultivatorArea",
+            Recovery.processCultivatorArea
+        )
+    end
+
+    if type(byName) == "table" and byName["plow"] ~= nil then
+        SpecializationUtil.registerOverwrittenFunction(
+            vehicleType,
+            "processPlowArea",
+            Recovery.processPlowArea
+        )
+    end
 end

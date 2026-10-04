@@ -1,7 +1,7 @@
 -- TerrainRecovery specialization bootstrap.
--- Attach only to vehicle types that actually expose Cultivator behavior.
--- Direct-planting/sowing-only implements are intentionally excluded unless
--- their vehicle type also carries the Cultivator specialization.
+-- Attach to tillage vehicle types that expose Cultivator and/or Plow behavior.
+-- Direct-planting/sowing-only implements remain excluded unless the same type
+-- also owns one of those tillage specializations.
 
 local MOD_NAME = g_currentModName
 local MOD_DIRECTORY = g_currentModDirectory
@@ -34,9 +34,9 @@ local function installSpecialization(typeManager)
 
     for typeName, typeDef in pairs(types) do
         local byName = typeDef ~= nil and typeDef.specializationsByName or nil
-        if type(byName) == "table"
-            and byName["cultivator"] ~= nil
-            and byName[FULL_NAME] == nil then
+        local hasTillage = type(byName) == "table"
+            and (byName["cultivator"] ~= nil or byName["plow"] ~= nil)
+        if hasTillage and byName[FULL_NAME] == nil then
             typeManager:addSpecialization(typeName, FULL_NAME)
         end
     end

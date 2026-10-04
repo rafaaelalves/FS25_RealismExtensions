@@ -220,7 +220,7 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v31R6 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
+                        "TerrainRecovery v32R7 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.intentCandidateCells or 0,
@@ -341,6 +341,37 @@ function RealismExtensionsCore:update(dt)
                         writerStats.recoveryRaiseJobs or 0,
                         writerStats.recoverySmoothJobs or 0
                     ))
+
+                    local toolParts = {}
+                    local toolOrder = {
+                        "CULTIVATOR",
+                        "SHALLOW_DISC",
+                        "POWER_HARROW",
+                        "SUBSOILER",
+                        "PLOW",
+                        "PLOW_PACKER"
+                    }
+                    local toolStats = r.toolProfiles or {}
+                    for _, id in ipairs(toolOrder) do
+                        local t = toolStats[id]
+                        if t ~= nil then
+                            toolParts[#toolParts + 1] = string.format(
+                                "%s=%d/%d/%d/%d",
+                                id,
+                                t.workAreas or 0,
+                                t.intentPoints or 0,
+                                t.targetScheduled or 0,
+                                t.targetApplied or 0
+                            )
+                        end
+                    end
+                    if #toolParts > 0 then
+                        RealismExtensionsDiagnostics.verbose(
+                            "TerrainRecoveryTools | "
+                            .. "profile=workAreas/intentPoints/scheduled/applied "
+                            .. table.concat(toolParts, " ")
+                        )
+                    end
 
                     if diagConfig.causalWindows ~= false then
                         RealismExtensionsDiagnostics.verbose(string.format(

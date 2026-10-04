@@ -8,6 +8,7 @@ local targetFraction=0.80
 local forceTargetNoop=false
 local targetCalls=0
 local seenTargetAmounts={}
+local expectedProfileId="CULTIVATOR"
 
 local function hkey(x,z) return string.format("%.2f:%.2f",x,z) end
 local function seedHistory(list)
@@ -94,10 +95,16 @@ function writer:enqueue(brush)
     assert(math.abs(brush.targetY-10)<0.000001)
     assert(math.abs(brush.targetPlaneAx-0.015)<0.000001)
     assert(math.abs(brush.targetPlaneAz+0.010)<0.000001)
-    assert(brush.targetAmount>=0.75 and brush.targetAmount<=1.000001)
-    assert(math.abs(brush.radiusM-0.40)<0.000001)
-    assert(math.abs(brush.hardness-0.20)<0.000001)
-    assert(math.abs(brush.strength-0.35)<0.000001)
+
+    local expected=RealismExtensionsTillageRecoveryProfiles.get(
+        expectedProfileId
+    )
+    assert(brush.targetAmount>=expected.targetAmount-0.000001)
+    assert(brush.targetAmount<=expected.targetAmountMax+0.000001)
+    assert(math.abs(brush.radiusM-expected.targetRadiusM)<0.000001)
+    assert(math.abs(brush.hardness-expected.targetHardness)<0.000001)
+    assert(math.abs(brush.strength-expected.targetStrength)<0.000001)
+    assert(math.abs(brush.probeRadiusM-expected.targetProbeRadiusM)<0.000001)
     assert(brush.recoveryPreProbe~=nil)
     assert(brush.recoveryPreProbe.centerResidualM~=nil)
     pending[#pending+1]=brush
@@ -160,17 +167,25 @@ getWorldTranslation=function(node)
     error("unexpected node")
 end
 Cultivator={}
+Plow={}
 SpecializationUtil={
     hasSpecialization=function() return true end,
     registerOverwrittenFunction=function() end
 }
+dofile("scripts/terrain/TillageRecoveryProfiles.lua")
 dofile("scripts/terrain/TerrainWorkContext.lua")
 dofile("scripts/terrain/TerrainRecovery.lua")
 
 local Recovery=RealismExtensionsTerrainRecovery
 local rootVehicle={}
 local vehicle={
-    spec_cultivator={useDeepMode=false,isEnabled=true,isWorking=false},
+    spec_cultivator={
+        useDeepMode=true,
+        isSubsoiler=false,
+        isPowerHarrow=false,
+        isEnabled=true,
+        isWorking=false
+    },
     getRootVehicle=function(self) return rootVehicle end,
     getLastSpeed=function(self) return 8 end
 }
@@ -218,6 +233,8 @@ assert(d.targetPatchCellsExamined>=2)
 assert(d.targetPatchCellsConverged>=2)
 assert(d.targetPatchRecoveredDepthM>=0.139)
 assert(d.targetPatchSampleFailures==0)
+assert(d.toolProfiles.CULTIVATOR~=nil)
+assert(d.toolProfiles.CULTIVATOR.targetApplied==targetCalls)
 
 -- 2. An initial positive mound with stale rut history is not touched. Positive
 -- correction is only allowed after a target sequence started from a causal rut.
@@ -283,7 +300,30 @@ g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
 assert(Recovery.getDiagnostics().intentCandidateCells==0)
 
--- 6. Inactive work area remains inert.
+-- 6. Tool capability survives deferred scheduling and reaches TARGET.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.040}})
+Recovery.resetRuntimeState()
+g_currentMission.time=g_currentMission.time+1000
+expectedProfileId="SUBSOILER"
+vehicle.spec_cultivator.isSubsoiler=true
+vehicle.spec_cultivator.isPowerHarrow=false
+vehicle.spec_cultivator.useDeepMode=true
+targetFraction=0.90
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+pump()
+d=Recovery.getDiagnostics()
+local subProfile=RealismExtensionsTillageRecoveryProfiles.get("SUBSOILER")
+assert(targetCalls>=1)
+assert(math.abs(seenTargetAmounts[1]-subProfile.targetAmount)<0.000001)
+assert(d.toolProfiles.SUBSOILER~=nil)
+assert(d.toolProfiles.SUBSOILER.targetScheduled>=1)
+assert(d.toolProfiles.SUBSOILER.targetApplied==targetCalls)
+
+-- Restore the proven R6 baseline for the remaining generic checks.
+vehicle.spec_cultivator.isSubsoiler=false
+expectedProfileId="CULTIVATOR"
+
+-- 7. Inactive work area remains inert.
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.020}})
 Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
@@ -291,4 +331,4 @@ Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
 assert(perfBegins==perfFinishes)
 
-print("terrain_recovery_r6_target_plane_patch_harness: OK")
+print("terrain_recovery_r7_tillage_profiles_harness: OK")
