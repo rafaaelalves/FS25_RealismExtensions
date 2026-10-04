@@ -1,4 +1,4 @@
-# RMS integration and patch opportunities — pass 1
+# RMS integration and patch opportunities
 
 Baseline: RMS `0.10.0.0`.
 
@@ -154,3 +154,69 @@ The default preference is upstream correction because RMS is public GPL source a
 - Does Dynamic PTO integration need a formal RMS PTO state API instead of runtime wrapping?
 - Which RMS mechanical states are useful to RE terrain/crop/surface systems without creating inappropriate mechanical coupling?
 - Are any global RMS motor/physics overwrites bypassed by MR, Courseplay, AutoDrive or other active stack members beyond the overlaps RC already repairs?
+
+## Additional upstream patch candidates from focused passes
+
+### P10 — retain differential-lock request across speed release
+Keep `diffLockRequested` true while the effective lock is automatically disengaged above the release speed. This makes the implementation match its own tooltip and existing two-state model.
+
+### P11 — reset Enhanced Vehicle cache across mission lifecycle
+Clear the cached settings/deadline on map load/delete or backward clock movement.
+
+### P12 — clean external-power links on vehicle deletion
+Call the reciprocal disconnect path from RMS vehicle deletion and when a stored partner is found invalid/deleted.
+
+### P13 — make SpeedMeter HUD override restoration exception-safe
+Guarantee restoration of temporary `getDamageAmount` methods and HUD visibility even if the delegated draw fails.
+
+### P14 — prevent leasing wrapper stacking
+Install `SellVehicleEvent.run` and `ShopController.sell` wrappers once rather than on every `Mission00.load`.
+
+### P15 — initialize weather state at map load
+Populate `RMS_Main.currentWeather` immediately instead of waiting for a randomized 30-second metadata update.
+
+## Confirmed cross-mod opportunity — RMS + Reifen
+
+The Reifen 1.2.2.67 FORCE-WEAR cache is now source-confirmed stale across RMS topology changes.
+
+Preferred ownership order:
+1. RMS owns the live differential topology.
+2. Reifen owns tire/track wear.
+3. Reifen rebuilds its drive-share cache when topology revision/signature changes.
+4. RC should normalize/expose final drivetrain state only when needed by consumers; it should not become a second drivetrain solver.
+
+If an upstream Reifen fix is unavailable, an RC bridge can be considered, but it should be explicitly scoped and exact-version gated rather than hidden inside `MRRMS`.
+
+## RMS public provider opportunity
+
+The audit found enough repeated private-state interest to justify proposing a small RMS-side read-only API before adding more RC private-table adapters.
+
+High-value contract surface:
+```text
+getMechanicalState(vehicle)
+getSystemCondition(vehicle, system)
+getSystemStress(vehicle, system)
+getDrivetrainState(vehicle)
+getEffectiveDrivenWheels(vehicle)
+getDrivetrainTopologyRevision(vehicle)
+getThermalState(vehicle)
+getElectricalState(vehicle)
+```
+
+The API should expose normalized values and identities, not mutable internal tables.
+
+Especially valuable is a monotonically changing `topologyRevision` (or stable topology signature) whenever RMS rebuilds/restores the differential graph. Reifen, MR/RC and future consumers can invalidate caches cheaply without polling private structures.
+
+## What RE should copy conceptually, not functionally
+
+- condition / stress / service as separate dimensions;
+- factor-stat attribution for explaining degradation;
+- causal/applicability-weighted breakdown selection;
+- split rates chosen by semantic need;
+- server-owned persistent randomness;
+- semantic dirty-state groups;
+- atomic stock/money/resource transactions;
+- capability-driven vehicle applicability;
+- explicit legacy-save migration.
+
+These patterns are reusable architecture ideas. RMS mechanical simulation itself remains external ownership.
