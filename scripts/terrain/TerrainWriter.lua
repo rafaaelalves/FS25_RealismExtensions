@@ -454,8 +454,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     stats.callbackDisplacedVolumeM3 + callbackVolume
                 stats.callbackMaxDisplacedVolumeM3 =
                     math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
-                if (self.mode == "SMOOTH" or self.mode == "TARGET")
-                    and self.source == "RECOVERY" then
+                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
                     stats.recoverySmoothJobs = stats.recoverySmoothJobs + 1
                 elseif self.mode == "TARGET" and self.source == "RECOVERY" then
                     stats.recoveryTargetJobs = stats.recoveryTargetJobs + 1
