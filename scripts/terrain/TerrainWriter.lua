@@ -67,6 +67,12 @@ function Writer.new(options)
             recoverySmoothMaxDeltaM = 0,
             recoveryMachineSmoothJobs = 0,
             recoveryMachineSmoothBrushes = 0,
+            recoveryTargetJobs = 0,
+            recoveryTargetBrushes = 0,
+            recoveryTargetRaisedSamples = 0,
+            recoveryTargetLoweredSamples = 0,
+            recoveryTargetAbsDeltaM = 0,
+            recoveryTargetMaxDeltaM = 0,
             unclassifiedRaisedVolumeM3 = 0,
             unclassifiedRaiseJobs = 0
         }
@@ -86,6 +92,8 @@ function Writer:enqueue(brush)
         amount = brush ~= nil and tonumber(brush.raiseHeightM or brush.depthM) or nil
     elseif mode == "SMOOTH" then
         amount = brush ~= nil and tonumber(brush.smoothAmountM or brush.depthM) or nil
+    elseif mode == "TARGET" then
+        amount = brush ~= nil and tonumber(brush.maxStepM or brush.depthM) or nil
     end
 
     if type(brush) ~= "table"
@@ -95,7 +103,10 @@ function Writer:enqueue(brush)
         or type(brush.radiusM) ~= "number"
         or amount < self.options.minDepthM
         or brush.radiusM <= 0
-        or (mode ~= "LOWER" and mode ~= "RAISE" and mode ~= "SMOOTH") then
+        or (mode ~= "LOWER" and mode ~= "RAISE"
+            and mode ~= "SMOOTH" and mode ~= "TARGET")
+        or (mode == "TARGET"
+            and type(brush.targetY) ~= "number") then
         self.stats.droppedInvalid = self.stats.droppedInvalid + 1
         return false
     end
@@ -116,6 +127,9 @@ function Writer:enqueue(brush)
         targetVolumeM3 = tonumber(brush.targetVolumeM3),
         source = brush.source,
         probeRadiusM = tonumber(brush.probeRadiusM),
+        targetY = tonumber(brush.targetY),
+        targetPlaneAx = tonumber(brush.targetPlaneAx) or 0,
+        targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
         onApplied = brush.onApplied
     }
     self.stats.enqueued = self.stats.enqueued + 1
@@ -307,8 +321,43 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local machineRecoverySmooth = mode == "SMOOTH"
         and brushes ~= nil and brushes[1] ~= nil
         and brushes[1].source == "RECOVERY"
+    local machineRecoveryTarget = mode == "TARGET"
+        and brushes ~= nil and #brushes == 1
+        and brushes[1].source == "RECOVERY"
 
-    if machineRecoverySmooth then
+    if machineRecoveryTarget then
+        local brush = brushes[1]
+        if type(deformation.enableSetDeformationMode) ~= "function"
+            or type(deformation.setHeightTarget) ~= "function" then
+            deformation:delete()
+            return false, "terrain target mode unavailable"
+        end
+
+        local targetY = tonumber(brush.targetY)
+        if targetY == nil then
+            deformation:delete()
+            return false, "terrain target height unavailable"
+        end
+
+        local ax = tonumber(brush.targetPlaneAx) or 0
+        local az = tonumber(brush.targetPlaneAz) or 0
+        local norm = math.sqrt(ax * ax + 1 + az * az)
+        local nx, ny, nz = -ax / norm, 1 / norm, -az / norm
+        local d = (-targetY + ax * brush.x + az * brush.z) / norm
+        local verticalSpan = math.max(
+            0.001,
+            (math.abs(ax) + math.abs(az)) * brush.radiusM
+        )
+
+        deformation:setAdditiveHeightChangeAmount(amount)
+        deformation:setHeightTarget(
+            targetY - verticalSpan,
+            targetY + verticalSpan,
+            nx, ny, nz, d
+        )
+        deformation:enableSetDeformationMode()
+        configureDeformationConstraints(deformation)
+    elseif machineRecoverySmooth then
         -- Machine smoothing follows TerraFarm's machine-work path rather than
         -- Construction landscaping. A vehicle is physically occupying the
         -- deformation area, so dynamic/blocking constraints must not veto the
@@ -337,13 +386,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     local heightSamples = nil
     local roughnessSamples = nil
-    if mode == "SMOOTH" or expensiveGeometryDiagnosticsEnabled() then
+    if mode == "SMOOTH" or mode == "TARGET"
+        or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
             heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
         end
     end
-    if mode == "SMOOTH" and brushes ~= nil
+    if (mode == "SMOOTH" or mode == "TARGET") and brushes ~= nil
         and brushes[1] ~= nil and brushes[1].source == "RECOVERY" then
         roughnessSamples = {}
         for i, brush in ipairs(brushes) do
@@ -353,7 +403,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     for _, brush in ipairs(brushes) do
         local terrainBrush = TerrainDeformation.NO_TERRAIN_BRUSH
-        if machineRecoverySmooth then
+        if machineRecoverySmooth or machineRecoveryTarget then
             -- TerraFarm machine input smoothing uses -1 here; keep the machine
         -- terrain path separate from Construction landscaping semantics.
             terrainBrush = -1
@@ -404,8 +454,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     stats.callbackDisplacedVolumeM3 + callbackVolume
                 stats.callbackMaxDisplacedVolumeM3 =
                     math.max(stats.callbackMaxDisplacedVolumeM3, callbackVolume)
-                if self.mode == "SMOOTH" and self.source == "RECOVERY" then
+                if (self.mode == "SMOOTH" or self.mode == "TARGET")
+                    and self.source == "RECOVERY" then
                     stats.recoverySmoothJobs = stats.recoverySmoothJobs + 1
+                elseif self.mode == "TARGET" and self.source == "RECOVERY" then
+                    stats.recoveryTargetJobs = stats.recoveryTargetJobs + 1
+                    stats.recoveryTargetBrushes =
+                        stats.recoveryTargetBrushes + #(self.brushes or {})
                 elseif self.mode == "RAISE" then
                     if self.source == "MASS_TRANSPORT" then
                         stats.massTransportRaisedVolumeM3 =
@@ -539,6 +594,20 @@ function Writer:_submitBatch(depthM, brushes, mode)
                                 stats.recoverySmoothLoweredSamples + 1
                         end
                     end
+                    if self.mode == "TARGET" and self.source == "RECOVERY" then
+                        local absDelta = math.abs(deltaY)
+                        stats.recoveryTargetAbsDeltaM =
+                            stats.recoveryTargetAbsDeltaM + absDelta
+                        stats.recoveryTargetMaxDeltaM =
+                            math.max(stats.recoveryTargetMaxDeltaM, absDelta)
+                        if deltaY > 0.00005 then
+                            stats.recoveryTargetRaisedSamples =
+                                stats.recoveryTargetRaisedSamples + 1
+                        elseif deltaY < -0.00005 then
+                            stats.recoveryTargetLoweredSamples =
+                                stats.recoveryTargetLoweredSamples + 1
+                        end
+                    end
 
                     if math.abs(lowering) <= 0.00005 then
                         stats.geometryZeroChangeSamples =
@@ -577,7 +646,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             boundaryInlierBefore = beforeProbe.boundaryInlierRatio,
                             boundaryInlierAfter = afterProbe.boundaryInlierRatio,
                             centerBeforeY = beforeProbe.centerY,
-                            centerAfterY = afterProbe.centerY
+                            centerAfterY = afterProbe.centerY,
+                            referenceBeforeY = beforeProbe.referenceCenterY,
+                            referenceAfterY = afterProbe.referenceCenterY,
+                            planeAxBefore = beforeProbe.planeAx,
+                            planeAzBefore = beforeProbe.planeAz,
+                            planeAxAfter = afterProbe.planeAx,
+                            planeAzAfter = afterProbe.planeAz
                         }
                     end
                 end
@@ -608,7 +683,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
-    if machineRecoverySmooth then
+    if machineRecoverySmooth or machineRecoveryTarget then
         -- TerraFarm machine landscaping applies directly with preview=false.
         -- This deliberately avoids Construction's dynamic-object validation
         -- semantics, which made nearly every under-machine smoothing job a
@@ -617,10 +692,12 @@ function Writer:_submitBatch(depthM, brushes, mode)
             deformation:delete()
             return false, "machine smoothing apply unavailable"
         end
-        self.stats.recoveryMachineSmoothJobs =
-            self.stats.recoveryMachineSmoothJobs + 1
-        self.stats.recoveryMachineSmoothBrushes =
-            self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
+        if machineRecoverySmooth then
+            self.stats.recoveryMachineSmoothJobs =
+                self.stats.recoveryMachineSmoothJobs + 1
+            self.stats.recoveryMachineSmoothBrushes =
+                self.stats.recoveryMachineSmoothBrushes + #(brushes or {})
+        end
         local ok, err = pcall(
             deformation.apply,
             deformation,
@@ -677,6 +754,11 @@ function Writer:flush()
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
             .. ":" .. tostring(bucket)
+        if brush.mode == "TARGET" then
+            groupKey = groupKey
+                .. ":" .. string.format("%.3f", brush.x)
+                .. ":" .. string.format("%.3f", brush.z)
+        end
         groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
         local groupInfo = groups[groupKey]
         local group = groupInfo.brushes
@@ -691,7 +773,7 @@ function Writer:flush()
 
     local groupKeys = {}
     for key in pairs(groups) do groupKeys[#groupKeys + 1] = key end
-    local modeOrder = { LOWER=1, SMOOTH=2, RAISE=3 }
+    local modeOrder = { LOWER=1, TARGET=2, SMOOTH=3, RAISE=4 }
     table.sort(groupKeys, function(a, b)
         local ga, gb = groups[a], groups[b]
         if ga.mode ~= gb.mode then
@@ -719,7 +801,7 @@ function Writer:flush()
             end
 
             local batch = {}
-            local batchLimit = perJob
+            local batchLimit = mode == "TARGET" and 1 or perJob
             for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]
