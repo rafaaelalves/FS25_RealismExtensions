@@ -204,46 +204,68 @@ end
 
 local function sampleRoughnessProbe(terrain, brush)
     if brush == nil then return nil end
-    local r = math.max(0.05, tonumber(brush.probeRadiusM) or tonumber(brush.radiusM) * 0.75)
+    local r = math.max(
+        0.05,
+        tonumber(brush.probeRadiusM)
+            or tonumber(brush.radiusM) * 0.75
+    )
     local offsets = {
-        {0,0}, {r,0}, {-r,0}, {0,r}, {0,-r},
-        {r*0.7071,r*0.7071}, {-r*0.7071,r*0.7071},
-        {r*0.7071,-r*0.7071}, {-r*0.7071,-r*0.7071}
+        {0,0,false},
+        {r,0,true}, {-r,0,true}, {0,r,true}, {0,-r,true},
+        {r*0.7071,r*0.7071,true},
+        {-r*0.7071,r*0.7071,true},
+        {r*0.7071,-r*0.7071,true},
+        {-r*0.7071,-r*0.7071,true}
     }
+
     local samples = {}
-    local sumY, sumDxY, sumDzY, sumDx2, sumDz2 = 0,0,0,0,0
     for i,o in ipairs(offsets) do
-        local y = sampleTerrainHeight(terrain, brush.x + o[1], brush.z + o[2])
+        local y = sampleTerrainHeight(
+            terrain,
+            brush.x + o[1],
+            brush.z + o[2]
+        )
         if type(y) ~= "number" then return nil end
-        samples[i] = {dx=o[1], dz=o[2], y=y}
-        sumY = sumY + y
-        sumDxY = sumDxY + o[1] * y
-        sumDzY = sumDzY + o[2] * y
-        sumDx2 = sumDx2 + o[1] * o[1]
-        sumDz2 = sumDz2 + o[2] * o[2]
+        samples[i] = {
+            dx = o[1],
+            dz = o[2],
+            y = y,
+            boundary = o[3] == true,
+            center = i == 1
+        }
     end
-    local mean = sumY / #samples
-    local ax = sumDx2 > 0 and sumDxY / sumDx2 or 0
-    local az = sumDz2 > 0 and sumDzY / sumDz2 or 0
-    local ss = 0
-    local minResidual = math.huge
-    local maxResidual = -math.huge
-    local centerResidual = 0
-    for i,s in ipairs(samples) do
-        local plane = mean + ax * s.dx + az * s.dz
-        local e = s.y - plane
-        if i == 1 then centerResidual = e end
-        minResidual = math.min(minResidual, e)
-        maxResidual = math.max(maxResidual, e)
-        ss = ss + e * e
+
+    local estimator = RealismExtensionsRecoverySurfaceEstimator
+    if estimator ~= nil and type(estimator.measure) == "function" then
+        local measured = estimator.measure(samples)
+        if measured ~= nil then
+            measured.centerY = samples[1].y
+            return measured
+        end
+    end
+
+    local minY,maxY,sumY = math.huge,-math.huge,0
+    for _,s in ipairs(samples) do
+        minY=math.min(minY,s.y)
+        maxY=math.max(maxY,s.y)
+        sumY=sumY+s.y
+    end
+    local mean=sumY/#samples
+    local ss=0
+    for _,s in ipairs(samples) do
+        local e=s.y-mean
+        ss=ss+e*e
     end
     return {
-        centerY = samples[1].y,
-        centerResidualM = centerResidual,
-        roughnessM = math.sqrt(ss / #samples),
-        reliefRangeM = math.max(0, maxResidual - minResidual),
-        valleyDepthM = math.max(0, -minResidual),
-        peakHeightM = math.max(0, maxResidual)
+        centerY=samples[1].y,
+        centerResidualM=samples[1].y-mean,
+        centerDeficitM=math.max(0,mean-samples[1].y),
+        roughnessM=math.sqrt(ss/#samples),
+        reliefRangeM=math.max(0,maxY-minY),
+        valleyDepthM=math.max(0,mean-minY),
+        peakHeightM=math.max(0,maxY-mean),
+        meanY=mean,
+        boundaryInlierRatio=0
     }
 end
 
@@ -546,8 +568,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             valleyAfterM = afterProbe.valleyDepthM,
                             peakBeforeM = beforeProbe.peakHeightM,
                             peakAfterM = afterProbe.peakHeightM,
+                            centerDeficitBeforeM = beforeProbe.centerDeficitM,
+                            centerDeficitAfterM = afterProbe.centerDeficitM,
                             centerResidualBeforeM = beforeProbe.centerResidualM,
                             centerResidualAfterM = afterProbe.centerResidualM,
+                            meanBeforeY = beforeProbe.meanY,
+                            meanAfterY = afterProbe.meanY,
+                            boundaryInlierBefore = beforeProbe.boundaryInlierRatio,
+                            boundaryInlierAfter = afterProbe.boundaryInlierRatio,
                             centerBeforeY = beforeProbe.centerY,
                             centerAfterY = afterProbe.centerY
                         }
