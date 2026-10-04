@@ -478,3 +478,73 @@ Preferred intent:
 5. broad slopes/player landscaping remain baseline unless RE history marks recoverable deformation.
 
 Do not implement absolute original-height restoration.
+
+
+## Implementation checkpoint — Strategy H1 history-guided native smoothing
+
+Status: **implemented / automated harness green / runtime pending**
+
+This step changes recovery **intent selection**, not the physical terrain actuator.
+
+### What changed
+
+Recovery no longer creates a uniform grid of smoothing brushes across every physically processed cultivator work area.
+
+Instead:
+1. query `SpatialHistory:getRecoveryCandidatesParallelogram()`;
+2. accept only cells whose persisted RE `rutDepthM` exceeds the recovery-intent floor;
+3. spatially cluster nearby candidate cells at native-smoothing scale;
+4. retain the deepest candidate in each cluster;
+5. sort by rut debt and cap the number of brushes;
+6. use the selected history cell itself as the GIANTS SMOOTH center.
+
+The actuator remains:
+- GIANTS TerrainDeformation native smoothing;
+- 0.05 m amount;
+- 2.0 m radius;
+- 0.20 hardness;
+- 0.50 strength.
+
+### Why this is safer
+
+A cultivator passing over:
+- intentional landscaping;
+- natural broad slope;
+- a field region never deformed by RE
+
+does **not** authorize RE to smooth it merely because it lies beneath the work area.
+
+SpatialHistory is the ownership/intention signal.
+
+Current terrain geometry remains the physical truth and the native Smooth primitive remains the actuator.
+
+This still does not freeze or restore an original terrain height.
+
+### Deferred integration
+
+A deferred patch is now revalidated against SpatialHistory before execution.
+
+If its rut debt disappeared while the request was waiting for a loaded wheel to leave:
+- the request is discarded;
+- no stale smoothing occurs;
+- `intentDeferredGone` records the event.
+
+### Automated gates
+
+Harness now proves:
+- history debt produces smoothing candidates;
+- no history debt produces zero smoothing even when the cultivator is physically working;
+- loaded-contact deferred recovery still completes after contact clears;
+- stale deferred recovery is discarded if its rut debt vanishes;
+- repeat-pass/stamp behavior remains bounded.
+
+### Runtime questions
+
+Next runtime must answer:
+- how much full-width brush count falls relative to v23;
+- whether the visible wheel channels receive enough repeated native smoothing;
+- whether `intentEmptyWorkAreas` grows as expected on already-clean field;
+- whether the reduced brush count naturally removes the expensive geometry-probe cost;
+- whether history-guided centers improve convergence compared with blind full-width coverage.
+
+Do not introduce explicit RAISE/LOWER or original-height restoration until this phase is measured.
