@@ -829,14 +829,15 @@ function Recovery.update(dt)
                 local remainingRut = h ~= nil
                     and math.max(0, tonumber(h.rutDepthM) or 0) or 0
 
-                if remainingRut < Recovery.DEFAULTS.minHistoryIntentRutM then
+                -- SpatialHistory authorizes the initial repair location.
+                -- Once a CONVERGENCE sequence has started, physical center
+                -- deficit is authoritative for completion: logical debt may
+                -- reach zero before the actual heightfield channel is flat.
+                if not isConvergence
+                    and remainingRut < Recovery.DEFAULTS.minHistoryIntentRutM then
                     removeDeferred(entry)
                     Recovery.stats.intentDeferredGone =
                         Recovery.stats.intentDeferredGone + 1
-                    if isConvergence then
-                        Recovery.stats.convergenceCompleted =
-                            Recovery.stats.convergenceCompleted + 1
-                    end
                 else
                     local blocked = queryLoadedContact(
                         entry.x,
@@ -896,7 +897,8 @@ local function recoverWorkedArea(vehicle, workArea, processedArea)
 
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil or runtime.history == nil or runtime.writer == nil
-        or runtime.history.applyRecoveryCircle == nil then
+        or type(runtime.history.getRecoveryCandidatesParallelogram) ~= "function"
+        or type(runtime.history.applyRecoveryAt) ~= "function" then
         return
     end
 
