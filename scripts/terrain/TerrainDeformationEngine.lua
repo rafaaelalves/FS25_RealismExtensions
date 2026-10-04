@@ -9,6 +9,7 @@ Engine.DEFAULTS = {
     pathSpacingFactor = 0.45,
     minPathSpacingM = 0.10,
     maxSamplesPerWheelTick = 6,
+    loadedContactRefreshIntervalMs = 1000,
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.003,
@@ -48,6 +49,13 @@ local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     for k, v in pairs(response.nextHistory or {}) do h[k] = v end
     h.rutDepthM = math.max(previousDepth or 0, (previousDepth or 0) + appliedDepth)
     return h
+end
+
+local function loadedContactGuardEnabled()
+    return RealismExtensionsLoadedContactRegistry ~= nil
+        and RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainRecovery == true
 end
 
 local function diagnosticsEnabled()
@@ -449,7 +457,11 @@ function Engine.processWheel(vehicle, wheel, dt)
     local spec = vehicle[Engine.SPEC_FIELD]
     local state = spec.states[wheel]
     if state == nil then
-        state = { elapsedMs = Engine.DEFAULTS.sampleIntervalMs }
+        state = {
+            elapsedMs = Engine.DEFAULTS.sampleIntervalMs,
+            loadedContactKnown = false,
+            loadedContactRefreshElapsedMs = 0
+        }
         spec.states[wheel] = state
     end
 
@@ -463,6 +475,20 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     local active, bodySpeedKph, wheelSpeedMps =
         cheapActivityGate(vehicle, wheel, physics, state)
+
+    local forcedLoadedContactRefresh = false
+    if not active and loadedContactGuardEnabled()
+        and state.loadedContactKnown == true then
+        state.loadedContactRefreshElapsedMs =
+            (state.loadedContactRefreshElapsedMs or 0) + elapsedMs
+        if state.loadedContactRefreshElapsedMs
+            >= Engine.DEFAULTS.loadedContactRefreshIntervalMs then
+            active = true
+            forcedLoadedContactRefresh = true
+            diagCount("loadedContactRefreshes", 1)
+        end
+    end
+
     if not active then
         diagCount("activityGateSkips", 1)
         return
@@ -484,6 +510,8 @@ function Engine.processWheel(vehicle, wheel, dt)
         if RealismExtensionsLoadedContactRegistry ~= nil then
             RealismExtensionsLoadedContactRegistry.remove(wheel)
         end
+        state.loadedContactKnown = false
+        state.loadedContactRefreshElapsedMs = 0
         diagCount("contextUnavailable", 1)
         state.lastX, state.lastZ = nil, nil
         return
@@ -492,11 +520,18 @@ function Engine.processWheel(vehicle, wheel, dt)
         if RealismExtensionsLoadedContactRegistry ~= nil then
             RealismExtensionsLoadedContactRegistry.remove(wheel)
         end
+        state.loadedContactKnown = false
+        state.loadedContactRefreshElapsedMs = 0
         diagCount("notGrounded", 1)
         state.lastX, state.lastZ = nil, nil
         return
     end
     if type(context.worldX) ~= "number" or type(context.worldZ) ~= "number" then
+        if RealismExtensionsLoadedContactRegistry ~= nil then
+            RealismExtensionsLoadedContactRegistry.remove(wheel)
+        end
+        state.loadedContactKnown = false
+        state.loadedContactRefreshElapsedMs = 0
         diagCount("missingContactPosition", 1)
         state.lastX, state.lastZ = nil, nil
         return
@@ -510,6 +545,8 @@ function Engine.processWheel(vehicle, wheel, dt)
         if RealismExtensionsLoadedContactRegistry ~= nil then
             RealismExtensionsLoadedContactRegistry.remove(wheel)
         end
+        state.loadedContactKnown = false
+        state.loadedContactRefreshElapsedMs = 0
         diagCount("footprintRejects", 1)
         state.lastX, state.lastZ = context.worldX, context.worldZ
         return
@@ -528,14 +565,17 @@ function Engine.processWheel(vehicle, wheel, dt)
     local wheelLoadN = tonumber(footprint.wheelLoadN or context.wheelLoadN)
     local inflationBar = tonumber(footprint.inflationPressureBar or context.tirePressureBar)
 
-    if RealismExtensionsLoadedContactRegistry ~= nil then
+    if loadedContactGuardEnabled() then
         local contactWidthM = math.max(0, supportWidthM or 0)
         local contactLengthM = math.max(0, tonumber(footprint.footprintLengthM) or 0)
         local contactRadiusM = 0.5 * math.sqrt(
             contactWidthM * contactWidthM + contactLengthM * contactLengthM
         )
         if contactRadiusM <= 0 then
-            contactRadiusM = math.max(0.10, tonumber(context.structuralRadiusM) or 0.10) * 0.35
+            contactRadiusM = math.max(
+                0.10,
+                tonumber(context.structuralRadiusM) or 0.10
+            ) * 0.35
         end
         local recorded = RealismExtensionsLoadedContactRegistry.record(
             wheel,
@@ -546,10 +586,21 @@ function Engine.processWheel(vehicle, wheel, dt)
             wheelLoadN or 0,
             g_currentMission ~= nil and g_currentMission.time or 0
         )
+        state.loadedContactKnown = recorded == true
+        state.loadedContactRefreshElapsedMs = 0
         if recorded then
             diagCount("loadedContactRecords", 1)
             diagMax("maxLoadedContactRadiusM", contactRadiusM)
+            if forcedLoadedContactRefresh then
+                diagCount("loadedContactRefreshSuccess", 1)
+            end
+        elseif forcedLoadedContactRefresh then
+            diagCount("loadedContactRefreshReleased", 1)
         end
+    elseif state.loadedContactKnown == true then
+        RealismExtensionsLoadedContactRegistry.remove(wheel)
+        state.loadedContactKnown = false
+        state.loadedContactRefreshElapsedMs = 0
     end
 
     diagMax("maxSupportWidthM", supportWidthM)
