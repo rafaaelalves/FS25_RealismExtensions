@@ -33,6 +33,7 @@
         <sourceFile filename="scripts/tracks/NativeTireTrackAdapter.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackJournal.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackChunkStore.lua"/>
+        <sourceFile filename="scripts/tracks/VisualTrackRuntime.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
 </modDesc>
