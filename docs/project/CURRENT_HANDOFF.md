@@ -349,3 +349,23 @@ Design document:
 `docs/research/terrain-recovery-design-study.md`.
 
 Do **not** implement frozen original-height restoration.
+
+
+### Recovery implementation checkpoint after over-blocking test
+
+Implemented on the canonical `feat/terrain-recovery` line:
+
+- blocked smoothing patches now enter a bounded deferred queue instead of relying on a future Cultivator callback;
+- queue uses spatial coalescing, 200 ms retry, 5 s TTL, 2048-entry cap and 16 checks/update;
+- deferred patches revalidate loaded contacts before writing;
+- harness proves eventual completion after contact clears without another work-area callback;
+- added pure `RecoverySurfaceEstimator` using a robust outer-boundary plane;
+- estimator measures center deficit, valley depth, peak height, relief range, roughness and mean elevation;
+- uniform field lowering is intentionally separated from rut-relief reduction;
+- TerrainWriter now reports these metrics around recovery brushes.
+
+No physical smoothing constants changed.
+
+Current physical strategy remains GIANTS native SMOOTH until runtime determines whether fair coverage + deferred completion removes the surviving wheel channels.
+
+Latest integrated recovery/measurement code is green in CI; the earlier tracks-only artifact remains the required build for the current createTrack test.
