@@ -186,6 +186,11 @@ function RealismExtensionsCore:update(dt)
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsTerrainRuntime ~= nil then
+        if RealismExtensionsTerrainRecovery ~= nil
+            and type(RealismExtensionsTerrainRecovery.update) == "function" then
+            RealismExtensionsTerrainRecovery.update(dt)
+        end
+
         local brushes, jobs = RealismExtensionsTerrainRuntime.flush()
 
         if RealismExtensionsConfig.diagnostics ~= nil
@@ -215,7 +220,7 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v22 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
+                        "TerrainRecovery v23 | calls=%d worked=%d coverage=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.coveragePoints or 0,
@@ -233,6 +238,14 @@ function RealismExtensionsCore:update(dt)
                         r.centerLowered or 0,
                         r.historyRecoveredCells or 0,
                         r.historyRecoveredDepthM or 0,
+                        r.deferredCreated or 0,
+                        r.deferredApplied or 0,
+                        r.deferredStillBlocked or 0,
+                        r.deferredExpired or 0,
+                        r.deferredSuperseded or 0,
+                        r.deferredRejected or 0,
+                        r.deferredCount or 0,
+                        r.deferredQueuePeak or 0,
                         r.protectedCellsMarked or 0,
                         r.workAreaGeometrySamples or 0,
                         r.minWorkAreaWidthM or 0,
