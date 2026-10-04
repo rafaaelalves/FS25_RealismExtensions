@@ -49,6 +49,7 @@ jobs:
           lua5.4 tests/terrain_work_context_harness.lua
           lua5.4 tests/loaded_contact_registry_harness.lua
           lua5.4 tests/native_tire_track_adapter_harness.lua
+          lua5.4 tests/native_tire_track_bootstrap_harness.lua
           lua5.4 tests/visual_track_journal_harness.lua
           lua5.4 tests/visual_track_chunk_store_harness.lua
           lua5.4 tests/visual_track_runtime_harness.lua
