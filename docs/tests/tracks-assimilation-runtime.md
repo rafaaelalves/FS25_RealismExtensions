@@ -367,3 +367,71 @@ Post-test action:
 - enable VisualTrackCapture for the next combined runtime session.
 
 The missing NPC marks in this build are therefore **not** evidence that an already-implemented RE AI policy failed; that phase had remained gated on purpose.
+
+
+---
+
+## Runtime result — 2026-10-04 capture + deferred-recovery session
+
+Tested artifact:
+- branch: `feat/terrain-recovery`;
+- commit: `ef47be75f31205e831647e39b984e991bae46b4d`;
+- run: `37204117798`.
+
+The same game process loaded the save twice. The early native adapter bootstrap installed cleanly once per mission and retained zero pointer drift / observer errors.
+
+### AI visual policy — STRUCTURALLY PASS, visual confirmation external
+
+RC reported `AITracks=-`, so the external True AI Tracks mod was not active.
+
+RE policy diagnostics reached:
+- `AIImplement=true`;
+- `AIJobVehicle=true`;
+- ~19k policy calls;
+- lower/native chain allowed nearly every call;
+- no RE script error was observed.
+
+This proves the RE policy is live and preserving the lower `getAllowTireTracks` result.
+
+The log alone cannot prove that the rendered NPC marks were visually present; that remains a user-observation gate.
+
+### VisualTrackCapture — FAIL: observer lifecycle is still late
+
+Native adapter probe:
+- `create=30`;
+- tens of thousands of point calls;
+- thousands of cut calls;
+- `maxArgs=2/15/1`;
+- `observerErrors=0`;
+- `drift=0`.
+
+Journal/capture at the same time:
+- `create=0`;
+- `accepted=0`;
+- `retained=0`;
+- all point/cut events rejected because no logical track had been created.
+
+Representative end-of-first-session relation:
+- point calls: 35,941;
+- cut calls: 2,375;
+- journal rejects: 38,286;
+- native creates missed by journal: 30.
+
+The arithmetic is exact:
+`35941 + 2375 - 30 = 38286`.
+
+Root cause:
+- NativeTireTrackAdapter installs in early `TireTracks:onPreLoad`;
+- VisualTrackRuntime observer was still initialized later from `Core:update()`;
+- therefore the adapter saw native creates but the journal observer did not.
+
+Fix:
+- initialize VisualTrackRuntime from the same early bootstrap immediately after adapter installation and before original `TireTracks:onPreLoad` continues;
+- retain Core initialization as fallback;
+- harness now requires capture to be active before original onPreLoad.
+
+### External errors
+
+No RE stack error was found.
+
+The recurring shutdown `delete(nil)` stack remains owned by `FS25_manualAttach/src/core/DetectionHandler.lua`, as in earlier sessions.
