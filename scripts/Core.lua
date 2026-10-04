@@ -453,16 +453,23 @@ function RealismExtensionsCore:update(dt)
                     and RealismExtensionsConfig.modules.VisualTrackCapture == true then
                     local v = RealismExtensionsVisualTrackRuntime.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "VisualTrackCapture | active=%s create=%d points=%d accepted=%d simplified=%d cuts=%d retained=%d rejected=%d pruned=%d",
+                        "VisualTrackCapture | active=%s create=%d reuse=%d points=%d accepted=%d deferred=%d cuts=%d gapCuts=%d nonTerrain=%d finalized=%d retained=%d chunks=%d chunkFragments=%d chunkPoints=%d rejected=%d sinkErrors=%d",
                         tostring(v.active),
                         v.creates or 0,
+                        v.nativeIdReuses or 0,
                         v.pointsSeen or 0,
                         v.pointsAccepted or 0,
-                        v.pointsSimplified or 0,
+                        v.pointsDeferred or 0,
                         v.cuts or 0,
+                        v.gapCuts or 0,
+                        v.nonTerrainSkipped or 0,
+                        v.fragmentsFinalized or 0,
                         v.retainedPoints or 0,
+                        v.chunkCount or 0,
+                        v.chunkFragments or 0,
+                        v.chunkPointReferences or 0,
                         v.rejectedCalls or 0,
-                        v.prunedPoints or 0
+                        v.sinkErrors or 0
                     ))
                 end
 
