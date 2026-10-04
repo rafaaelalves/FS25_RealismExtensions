@@ -553,7 +553,6 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("footprintAccepted", 1)
-    Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
 
     -- Footprint telemetry is intentionally source-state focused. It lets the
     -- next runtime test prove how MR/Mud represent duals before RE invents any
@@ -602,6 +601,17 @@ function Engine.processWheel(vehicle, wheel, dt)
         state.loadedContactKnown = false
         state.loadedContactRefreshElapsedMs = 0
     end
+
+    if forcedLoadedContactRefresh then
+        -- Safety refresh owns no terrain consequence. Refresh the contact
+        -- anchor so a later movement does not interpolate a synthetic path
+        -- from an old parked position, then leave before TerrainResponse.
+        state.lastX, state.lastZ = context.worldX, context.worldZ
+        diagCount("loadedContactRefreshOnly", 1)
+        return
+    end
+
+    Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
 
     diagMax("maxSupportWidthM", supportWidthM)
     diagMax("maxBaseTireWidthM", baseWidthM)
