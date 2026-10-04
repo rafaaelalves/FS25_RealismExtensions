@@ -16,6 +16,7 @@ RealismExtensionsConfig = {
         TerrainDeformation = true,
         TerrainRecovery = true,
         SoilMassTransport = false,
-        NativeTireTrackProbe = true
+        NativeTireTrackProbe = true,
+        VisualTrackCapture = false
     }
 }
