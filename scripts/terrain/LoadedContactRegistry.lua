@@ -12,6 +12,7 @@ Registry.DEFAULTS = {
 Registry.entriesByWheel = Registry.entriesByWheel
     or setmetatable({}, { __mode = "k" })
 Registry.cells = Registry.cells or {}
+Registry.maxRecordedRadiusM = Registry.maxRecordedRadiusM or 0
 
 local function validNumber(v)
     return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -50,6 +51,7 @@ end
 function Registry.clear()
     Registry.entriesByWheel = setmetatable({}, { __mode = "k" })
     Registry.cells = {}
+    Registry.maxRecordedRadiusM = 0
 end
 
 function Registry.remove(wheel)
@@ -92,6 +94,10 @@ function Registry.record(wheel, owner, x, z, radiusM, loadN, nowMs)
 
     Registry.entriesByWheel[wheel] = entry
     bucket[wheel] = entry
+    Registry.maxRecordedRadiusM = math.max(
+        tonumber(Registry.maxRecordedRadiusM) or 0,
+        radiusM
+    )
     return true
 end
 
@@ -106,7 +112,8 @@ function Registry.overlapsCircle(x, z, radiusM, nowMs, options)
         0,
         tonumber(options.guardMarginM) or Registry.DEFAULTS.guardMarginM
     )
-    local searchRadius = radiusM + margin + 2.5
+    local searchRadius = radiusM + margin
+        + math.max(0, tonumber(Registry.maxRecordedRadiusM) or 0)
     local minIx, maxIx = cellCoord(x - searchRadius), cellCoord(x + searchRadius)
     local minIz, maxIz = cellCoord(z - searchRadius), cellCoord(z + searchRadius)
 
