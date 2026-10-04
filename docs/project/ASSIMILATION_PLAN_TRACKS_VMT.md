@@ -55,12 +55,28 @@ This does **not** mean the three external capabilities are already retired. It m
 - After the game confirms the official 2/15/1 native contract in the real target stack, capture can be enabled without changing hook ownership.
 - Current automated head is green after the architecture review/refactor.
 
-### Intentionally NOT implemented before runtime proof
+### Post-bootstrap runtime implementation
 
-1. AI visual tire-track policy.
-   - GIANTS documentation proves vanilla TireTracks owns distance/segment-quality limits and AI specializations add the not-getIsAIActive suppression.
-   - We still will not implement a blanket return-true; the final hook must remove only the AI suppression without bypassing other owners in the actual specialization chain.
-2. Native replay/render of restored persistent tracks.
+The 2026-10-04 early-bootstrap runtime confirmed:
+- native contract `2/15/1`;
+- `createTrack>0`;
+- adapter integrity with zero observer errors/drift;
+- helper visual marks absent while True AI Tracks was inactive.
+
+Therefore the previously gated AI visual policy is now implemented.
+
+`AIVisualTrackPolicy` replaces only the AI-specialization suppression layer:
+- it returns the lower `superFunc(self)` result;
+- native TireTracks distance/quality limits remain authoritative;
+- it does **not** use blanket `return true`;
+- it adds no mission-wide vehicle scan;
+- it adds no AI-specific physical deformation path.
+
+VisualTrackCapture is also enabled for the next runtime because the native 2/15/1 contract gate passed.
+
+### Still intentionally deferred
+
+1. Native replay/render of restored persistent tracks.
 3. Savegame sidecar for visual tracks.
 4. Visual aging/weather/tillage invalidation.
 5. Multiplayer spatial replication / late join.
