@@ -24,7 +24,10 @@ RealismExtensionsTerrainRuntime = {
             brush.onApplied(1,-0.002,1.0,0.998,0,{
                 roughnessBeforeM=0.020,
                 roughnessAfterM=0.012,
-                roughnessDeltaM=0.008
+                roughnessDeltaM=0.008,
+                reliefBeforeM=0.060,
+                reliefAfterM=0.035,
+                reliefDeltaM=0.025
             })
             return true
         end
@@ -77,6 +80,8 @@ local firstCount=#enqueued
 local d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.coveragePoints >= firstCount)
 assert(d.roughnessImproved == firstCount)
+assert(d.reliefImproved == firstCount)
+assert(d.reliefVerified == firstCount)
 assert(d.centerLowered == firstCount)
 assert(d.historyRecoveredCells > 0 and d.historyRecoveredDepthM > 0)
 assert(d.protectedCellsMarked > 0)
@@ -118,7 +123,10 @@ RealismExtensionsTerrainRuntime.writer.enqueue=function(self,brush)
     brush.onApplied(1,-0.001,1.0,0.999,0,{
         roughnessBeforeM=0.012,
         roughnessAfterM=0.015,
-        roughnessDeltaM=-0.003
+        roughnessDeltaM=-0.003,
+        reliefBeforeM=0.030,
+        reliefAfterM=0.040,
+        reliefDeltaM=-0.010
     })
     return true
 end
@@ -137,8 +145,9 @@ RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,wor
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
 
--- A loaded wheel blocks smoothing, but the blocked location must remain
--- eligible immediately after the contact disappears.
+-- A loaded wheel blocks smoothing, but the worked patch becomes a bounded
+-- deferred request. It must complete after the contact clears even if no new
+-- Cultivator work-area callback ever visits that patch.
 RealismExtensionsTerrainRecovery.resetRuntimeState()
 g_currentMission.time=20000
 local blockRecovery=true
@@ -157,11 +166,28 @@ d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.loadedContactQueries>0)
 assert(d.loadedContactSkips>0)
 assert(d.loadedContactMaxLoadN>=32000)
+assert(d.deferredCreated>0)
+assert(d.deferredCount>0)
 
-blockRecovery=false
-g_currentMission.time=20001
+-- Repeated overlapping callbacks coalesce into the same spatial request.
+local createdBefore=d.deferredCreated
 RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.deferredCreated==createdBefore)
+assert(d.deferredCoalesced>0)
+
+-- Clearing the wheel is not enough until the bounded retry cadence elapses.
+blockRecovery=false
+g_currentMission.time=20100
+RealismExtensionsTerrainRecovery.update(16)
+assert(#enqueued==beforeLoadedGuard)
+
+g_currentMission.time=20250
+RealismExtensionsTerrainRecovery.update(16)
 assert(#enqueued>beforeLoadedGuard)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.deferredApplied>0)
+assert(d.deferredCount==0)
 
 -- Runtime reset must clear temporary map/session state without removing API.
 RealismExtensionsLoadedContactRegistry=nil
