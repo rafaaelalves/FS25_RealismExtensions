@@ -53,13 +53,15 @@ function Store:_getOrCreate(ix,iz)
     return chunk
 end
 
-local function makeChunkFragment(trackIndex,fragmentIndex,track)
+local function makeChunkFragment(track,sourceFragment,origin)
     return {
-        trackIndex=trackIndex,
-        fragmentIndex=fragmentIndex,
+        logicalTrackId=track.logicalTrackId,
+        fragmentSequence=sourceFragment.sequence,
         widthM=tonumber(track.widthM),
         atlasIndex=tonumber(track.atlasIndex),
-        createdAtMs=tonumber(track.createdAtMs) or 0,
+        createdSessionTimeMs=tonumber(track.createdSessionTimeMs) or 0,
+        origin=origin or "CURRENT_SESSION",
+        closeReason=sourceFragment.closeReason,
         points={}
     }
 end
@@ -73,7 +75,7 @@ function Store:_appendFragment(chunk,fragment)
     return true
 end
 
-function Store:addFragment(trackIndex,fragmentIndex,track,sourceFragment)
+function Store:addFragment(track,sourceFragment,origin)
     if type(track)~="table" or type(sourceFragment)~="table" then return false end
     local points=sourceFragment.points
     if type(points)~="table" or #points==0 then return false end
@@ -91,7 +93,7 @@ function Store:addFragment(trackIndex,fragmentIndex,track,sourceFragment)
                     self:_appendFragment(currentChunk,currentFragment)
                 end
                 currentChunk=chunk
-                currentFragment=makeChunkFragment(trackIndex,fragmentIndex,track)
+                currentFragment=makeChunkFragment(track,sourceFragment,origin)
 
                 -- Duplicate one boundary point from the previous chunk so a
                 -- renderer can reconnect the polyline without scanning a
@@ -122,15 +124,21 @@ function Store:rebuildFromJournalSnapshot(snapshot,options)
     end
 
     local includeOpen=options.includeOpen==true
-    for ti,track in ipairs(snapshot.tracks) do
-        for fi,fragment in ipairs(track.fragments or {}) do
+    for _,track in ipairs(snapshot.tracks) do
+        for _,fragment in ipairs(track.fragments or {}) do
             if fragment.closed==true or includeOpen then
-                self:addFragment(ti,fi,track,fragment)
+                self:addFragment(track,fragment,options.origin or "IMPORTED")
             end
         end
     end
 
     return true,nil
+end
+
+
+function Store:onFragmentClosed(track,fragment,reason)
+    if type(fragment)~="table" or fragment.closed~=true then return false end
+    return self:addFragment(track,fragment,"CURRENT_SESSION")
 end
 
 function Store:getChunk(ix,iz)
