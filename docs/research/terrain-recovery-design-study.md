@@ -548,3 +548,106 @@ Next runtime must answer:
 - whether history-guided centers improve convergence compared with blind full-width coverage.
 
 Do not introduce explicit RAISE/LOWER or original-height restoration until this phase is measured.
+
+
+## Postmortem — why v23 looked healthy but did not remove the visible rut
+
+Runtime build:
+- `ef47be75f31205e831647e39b984e991bae46b4d`;
+- user observed multiple cultivator passes over deep RE wheel channels with no convincing visual removal;
+- manual Landscaping SOFTEN could remove the same class of terrain defect.
+
+This is now treated as an architectural falsification of the **v23 full-width recovery model**, not as a tuning failure.
+
+### Root cause 1 — work-area coverage was not causal geometry
+
+v23 generated a generic smoothing grid over the cultivator parallelogram.
+
+That proved the physical work-area/lifecycle path, but the brush center was not guaranteed to coincide with the wheel cell that created the rut.
+
+The runtime symptom is strong:
+- 3,338 recovery callbacks;
+- center raised only 77 times;
+- center lowered 2,858 times.
+
+Native smoothing was often operating on shoulders/general relief instead of the channel minimum.
+
+Strategy H1 fixed selection by sourcing brush centers from exact `SpatialHistory` rut cells.
+
+### Root cause 2 — logical recovery was reconciled against the wrong observable
+
+v23 reduced logical `rutDepthM` whenever regional RMS roughness improved.
+
+It then called `applyRecoveryCircle()` over the full 2 m smoothing radius.
+
+This was unsound:
+- smoothing may lower shoulders;
+- RMS roughness can improve;
+- the wheel-channel center may remain materially below its local reference plane;
+- unrelated rut-history cells inside the radius can still be erased.
+
+The v23 runtime reported ~1.121 m of aggregate logical history recovery even though the user still saw the physical channels.
+
+**Rule removed:** roughness improvement is not proof of rut recovery.
+
+### Root cause 3 — machine smoothing did not reproduce manual temporal convergence
+
+Manual Landscaping SOFTEN is a repeated operation while the user holds/drags the brush.
+
+v23/H1 initially treated an agricultural callback largely as a sparse sequence of isolated smoothing pulses.
+
+Even with correct GIANTS parameters, one pulse is not equivalent to holding the manual tool over a deep channel.
+
+### H2 — causal-center feedback + bounded convergence
+
+H2 keeps the good parts:
+- work-area authorization;
+- loaded-contact safety;
+- deferred eventual execution;
+- SpatialHistory causal ownership;
+- GIANTS native `SMOOTH` as the actuator.
+
+But changes the control law:
+
+1. `SpatialHistory` selects an exact RE-owned rut cell.
+2. `RecoverySurfaceEstimator` measures the local reference surface.
+3. Success is measured by **center deficit reduction**, not regional roughness.
+4. Logical history is reconciled only with `applyRecoveryAt()` on that exact cell.
+5. If the center is still more than 3 mm below its local reference, the same authorized repair may schedule another native-smooth pulse.
+6. Pulses are bounded by count/time and stop on material worsening.
+7. Once convergence starts, physical center deficit owns completion even if modeled logical debt reaches zero first.
+
+Current development defaults:
+- convergence retry: 150 ms;
+- maximum pulses: 8;
+- convergence TTL: 3 s;
+- physical completion tolerance: 3 mm.
+
+The numerical limits are runtime-tuning candidates; the ownership and completion semantics are the important architectural change.
+
+### Regression proof
+
+The automated H2 harness explicitly proves:
+- roughness can improve while center deficit stays unchanged, and logical rut debt remains untouched;
+- worsening center deficit does not erase history or create an unbounded retry loop;
+- convergence can continue after logical debt reaches zero;
+- three synthetic native-smooth pulses can converge a 30 mm physical deficit to 2 mm;
+- no RE history means no terrain smoothing;
+- loaded-contact deferred execution remains bounded;
+- stale blocked first-pulse requests are discarded if ownership debt disappears before execution.
+
+### What happens if H2 still fails in-game?
+
+Do **not** respond by increasing generic smooth strength/radius indefinitely.
+
+If centered, repeated native `SMOOTH` still fails to close fresh RE wheel channels, Strategy S/H is physically insufficient for this geometry.
+
+Advance to **Strategy R1: current-surface target recovery**:
+- use the robust boundary plane already produced by `RecoverySurfaceEstimator`;
+- derive a local target from the current surrounding surface, never map-start/original height;
+- constrain the operation to exact history-owned rut corridors;
+- use TerrainDeformation set/target mode to move the causal deficit toward that plane;
+- cap displacement by attributable rut debt plus a small physical tolerance;
+- retain the surrounding slope as the reference, so intentional broad landscaping is preserved.
+
+TerraFarm's modern evolution toward target/grade semantics for deterministic raise/lower operations is supporting precedent for this fallback, but R1 must remain RE-specific and ownership-bounded.
