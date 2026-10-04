@@ -26,7 +26,7 @@ Status vocabulary:
 | PTO-to-MR/RMS composition | RC | EXTERNAL/BRIDGE | retain compatibility boundary even after PTO absorption |
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
-| player geometric wheel ruts | FarmKit capability currently suppressed | PLANNED | TerrainDeformation module |
+| player geometric wheel ruts | RE TerrainDeformation; FarmKit capability suppressed | PLANNED | keep RE physical owner; integrate VMT lessons for monotonic rut writes, sink handoff, stable contact anchoring and loaded-wheel recovery guards |
 | persistent visual tire tracks | Persistent Tracks demonstrates feasibility; RE has no owner yet | CANDIDATE_ABSORB | reimplement as native-track journal + spatial streamer, integrated with TerrainDeformation/recovery; do not copy unlicensed source |
 | AI/implement terrain tracks/deformation | True AI Tracks | CANDIDATE_ABSORB | exact-source audit confirms strong full functional-absorption target for TerrainDeformation |
 | lateral tire scrub deformation | no active owner | PLANNED | TerrainDeformation |
@@ -48,7 +48,7 @@ Status vocabulary:
 | straw refeed | FarmKit | EVALUATE | unique; future bridge to RealisticHarvesting before replacement |
 | planner / PF field material overview | FarmKit | EVALUATE | useful but not a first-wave realism-physics feature |
 | persistent surface contamination / dirt color | RealDirtColor + Mud visual state | CANDIDATE_ABSORB | plan clean-room SurfaceContamination using authoritative contact state and GIANTS dirtColor backend |
-| tyre-pressure / CTIS state | fragmented / 4x4 hack writes radius | EVALUATE | separate future capability; never fight radius ownership directly |
+| tyre-pressure / CTIS state | MudSystemPhysics currently owns target-stack pressure state | DO_NOT_DUPLICATE | keep Mud owner unless a concrete capability gap appears; use VMT only as research reference |
 | unified realism HUD | fragmented | PLANNED | only after normalized authoritative state exists |
 
 ## Absorption rule
