@@ -456,3 +456,34 @@ Expected healthy capture:
 - finalized fragments/chunks/chunk point references become non-zero during normal driving/cuts.
 
 Once that gate passes, the tracks assimilation feature can be closed.
+
+
+## Runtime closure — PASS
+
+2026-10-04 final runtime verification on build
+`88b87ac75698e39c6f619dc45d622269c9d0b733`:
+
+- vanilla helper/NPC tyre marks visibly present;
+- `TireTrackProbe.integrity=true`;
+- `observerErrors=0`;
+- `drift=0`;
+- `captureBootstrap=1`;
+- `captureFailures=0`;
+- native create/point/cut callbacks observed;
+- `VisualTrackCapture.create > 0`;
+- accepted points, finalized fragments and persistent chunks all non-zero;
+- no journal rejects or sink errors.
+
+Representative late-session counters:
+- create=30;
+- points=138288;
+- accepted=44620;
+- finalized=331;
+- chunks=8;
+- chunkFragments=530;
+- chunkPoints=43097;
+- rejected=0;
+- sinkErrors=0.
+
+**Result:** visual helper policy and early capture lifecycle are both runtime-proven.
+The tracks assimilation runtime gate is CLOSED.
