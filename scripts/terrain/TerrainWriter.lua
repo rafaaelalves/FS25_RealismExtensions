@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 12
+Writer.VERSION = 13
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -31,6 +31,9 @@ function Writer.new(options)
     local self = {
         options = mergeOptions(options),
         queue = {},
+        queueHead = 1,
+        queueTail = 0,
+        queueCount = 0,
         stats = {
             enqueued = 0,
             submittedBrushes = 0,
@@ -47,6 +50,10 @@ function Writer.new(options)
             geometryShallowSamples = 0,
             maxRequestedDepthM = 0,
             maxObservedLoweringM = 0,
+            targetIntensitySamples = 0,
+            targetIntensitySum = 0,
+            targetIntensityMax = 0,
+            recoveryPreProbeReused = 0,
             callbackSuccessJobs = 0,
             callbackDisplacedVolumeM3 = 0,
             callbackMaxDisplacedVolumeM3 = 0,
@@ -92,8 +99,29 @@ function Writer.new(options)
     return setmetatable(self, { __index = Writer })
 end
 
+local function popQueue(self)
+    if (self.queueCount or 0) <= 0 then return nil end
+    local index = self.queueHead
+    local brush = self.queue[index]
+    self.queue[index] = nil
+    self.queueHead = index + 1
+    self.queueCount = self.queueCount - 1
+
+    if self.queueCount <= 0 then
+        self.queue = {}
+        self.queueHead = 1
+        self.queueTail = 0
+        self.queueCount = 0
+    end
+    return brush
+end
+
+function Writer:getQueueSize()
+    return math.max(0, tonumber(self.queueCount) or 0)
+end
+
 function Writer:enqueue(brush)
-    if #self.queue >= math.max(1, math.floor(self.options.maxQueuedBrushes)) then
+    if self:getQueueSize() >= math.max(1, math.floor(self.options.maxQueuedBrushes)) then
         self.stats.droppedOverflow = self.stats.droppedOverflow + 1
         return false
     end
@@ -136,7 +164,8 @@ function Writer:enqueue(brush)
         return false
     end
 
-    self.queue[#self.queue + 1] = {
+    self.queueTail = (self.queueTail or 0) + 1
+    self.queue[self.queueTail] = {
         x = brush.x,
         z = brush.z,
         depthM = amount,
@@ -155,8 +184,10 @@ function Writer:enqueue(brush)
         targetY = tonumber(brush.targetY),
         targetPlaneAx = tonumber(brush.targetPlaneAx) or 0,
         targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
+        recoveryPreProbe = brush.recoveryPreProbe,
         onApplied = brush.onApplied
     }
+    self.queueCount = (self.queueCount or 0) + 1
     self.stats.enqueued = self.stats.enqueued + 1
     return true
 end
@@ -314,6 +345,16 @@ local function sampleRoughnessProbe(terrain, brush)
     }
 end
 
+function Writer:sampleHeightAt(x, z)
+    local mission = g_currentMission
+    local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
+    if terrain == nil or terrain == 0
+        or type(x) ~= "number" or type(z) ~= "number" then
+        return nil
+    end
+    return sampleTerrainHeight(terrain, x, z)
+end
+
 function Writer:measureRecoveryAt(x, z, probeRadiusM)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
@@ -440,19 +481,31 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
     local heightSamples = nil
     local roughnessSamples = nil
+    local recoveryGeometryMode =
+        (mode == "SMOOTH" or mode == "TARGET" or mode == "RAISE")
+        and brushes ~= nil and brushes[1] ~= nil
+        and brushes[1].source == "RECOVERY"
+
     if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
         heightSamples = {}
         for i, brush in ipairs(brushes) do
-            heightSamples[i] = sampleTerrainHeight(terrain, brush.x, brush.z)
+            local pre = recoveryGeometryMode and brush.recoveryPreProbe or nil
+            heightSamples[i] = pre ~= nil and pre.centerY
+                or sampleTerrainHeight(terrain, brush.x, brush.z)
         end
     end
-    if (mode == "SMOOTH" or mode == "TARGET" or mode == "RAISE")
-        and brushes ~= nil and brushes[1] ~= nil
-        and brushes[1].source == "RECOVERY" then
+    if recoveryGeometryMode then
         roughnessSamples = {}
         for i, brush in ipairs(brushes) do
-            roughnessSamples[i] = sampleRoughnessProbe(terrain, brush)
+            local pre = brush.recoveryPreProbe
+            if pre ~= nil then
+                roughnessSamples[i] = pre
+                self.stats.recoveryPreProbeReused =
+                    self.stats.recoveryPreProbeReused + 1
+            else
+                roughnessSamples[i] = sampleRoughnessProbe(terrain, brush)
+            end
         end
     end
 
@@ -612,18 +665,45 @@ function Writer:_submitBatch(depthM, brushes, mode)
                 end
             end
             for i, brush in ipairs(self.brushes or {}) do
-                local beforeY = self.heightSamples ~= nil and self.heightSamples[i] or nil
-                local afterY = beforeY ~= nil and sampleTerrainHeight(self.terrain, brush.x, brush.z) or nil
+                local beforeProbe = self.roughnessSamples ~= nil
+                    and self.roughnessSamples[i] or nil
+                local afterProbe = beforeProbe ~= nil
+                    and sampleRoughnessProbe(self.terrain, brush) or nil
+
+                local beforeY = self.heightSamples ~= nil
+                    and self.heightSamples[i] or nil
+                if beforeY == nil and beforeProbe ~= nil then
+                    beforeY = beforeProbe.centerY
+                end
+                local afterY = afterProbe ~= nil and afterProbe.centerY or nil
+                if afterY == nil and beforeY ~= nil then
+                    afterY = sampleTerrainHeight(
+                        self.terrain,
+                        brush.x,
+                        brush.z
+                    )
+                end
+
                 local deltaY = nil
                 if beforeY ~= nil and afterY ~= nil then
                     deltaY = afterY - beforeY
                     local requested = self.depthM or 0
                     local lowering = -deltaY
                     stats.geometrySamples = stats.geometrySamples + 1
-                    stats.geometryRequestedDepthM =
-                        stats.geometryRequestedDepthM + requested
-                    stats.maxRequestedDepthM =
-                        math.max(stats.maxRequestedDepthM, requested)
+
+                    if self.mode == "TARGET" then
+                        stats.targetIntensitySamples =
+                            stats.targetIntensitySamples + 1
+                        stats.targetIntensitySum =
+                            stats.targetIntensitySum + requested
+                        stats.targetIntensityMax =
+                            math.max(stats.targetIntensityMax, requested)
+                    else
+                        stats.geometryRequestedDepthM =
+                            stats.geometryRequestedDepthM + requested
+                        stats.maxRequestedDepthM =
+                            math.max(stats.maxRequestedDepthM, requested)
+                    end
 
                     if lowering > 0 then
                         stats.geometryObservedLoweringM =
@@ -637,7 +717,8 @@ function Writer:_submitBatch(depthM, brushes, mode)
 
                     if self.mode == "SMOOTH" and self.source == "RECOVERY" then
                         local absDelta = math.abs(deltaY)
-                        stats.recoverySmoothSamples = stats.recoverySmoothSamples + 1
+                        stats.recoverySmoothSamples =
+                            stats.recoverySmoothSamples + 1
                         stats.recoverySmoothAbsDeltaM =
                             stats.recoverySmoothAbsDeltaM + absDelta
                         stats.recoverySmoothMaxDeltaM =
@@ -649,8 +730,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             stats.recoverySmoothLoweredSamples =
                                 stats.recoverySmoothLoweredSamples + 1
                         end
-                    end
-                    if self.mode == "TARGET" and self.source == "RECOVERY" then
+                    elseif self.mode == "TARGET" and self.source == "RECOVERY" then
                         local absDelta = math.abs(deltaY)
                         stats.recoveryTargetAbsDeltaM =
                             stats.recoveryTargetAbsDeltaM + absDelta
@@ -663,8 +743,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             stats.recoveryTargetLoweredSamples =
                                 stats.recoveryTargetLoweredSamples + 1
                         end
-                    end
-                    if self.mode == "RAISE" and self.source == "RECOVERY" then
+                    elseif self.mode == "RAISE" and self.source == "RECOVERY" then
                         local absDelta = math.abs(deltaY)
                         stats.recoveryRaiseSamples =
                             stats.recoveryRaiseSamples + 1
@@ -685,53 +764,58 @@ function Writer:_submitBatch(depthM, brushes, mode)
                         stats.geometryZeroChangeSamples =
                             stats.geometryZeroChangeSamples + 1
                     elseif self.mode ~= "SMOOTH"
-                        and requested > 0 and lowering < requested * 0.25 then
+                        and self.mode ~= "TARGET"
+                        and requested > 0
+                        and lowering < requested * 0.25 then
                         stats.geometryShallowSamples =
                             stats.geometryShallowSamples + 1
                     end
                 end
 
                 local recoveryGeometry = nil
-                if (self.mode == "SMOOTH" or self.mode == "TARGET"
-                    or self.mode == "RAISE")
-                    and self.source == "RECOVERY" then
-                    local beforeProbe = self.roughnessSamples ~= nil
-                        and self.roughnessSamples[i] or nil
-                    local afterProbe = beforeProbe ~= nil
-                        and sampleRoughnessProbe(self.terrain, brush) or nil
-                    if beforeProbe ~= nil and afterProbe ~= nil then
-                        recoveryGeometry = {
-                            roughnessBeforeM = beforeProbe.roughnessM,
-                            roughnessAfterM = afterProbe.roughnessM,
-                            roughnessDeltaM = beforeProbe.roughnessM - afterProbe.roughnessM,
-                            reliefBeforeM = beforeProbe.reliefRangeM,
-                            reliefAfterM = afterProbe.reliefRangeM,
-                            reliefDeltaM = beforeProbe.reliefRangeM - afterProbe.reliefRangeM,
-                            valleyBeforeM = beforeProbe.valleyDepthM,
-                            valleyAfterM = afterProbe.valleyDepthM,
-                            peakBeforeM = beforeProbe.peakHeightM,
-                            peakAfterM = afterProbe.peakHeightM,
-                            centerDeficitBeforeM = beforeProbe.centerDeficitM,
-                            centerDeficitAfterM = afterProbe.centerDeficitM,
-                            centerResidualBeforeM = beforeProbe.centerResidualM,
-                            centerResidualAfterM = afterProbe.centerResidualM,
-                            meanBeforeY = beforeProbe.meanY,
-                            meanAfterY = afterProbe.meanY,
-                            boundaryInlierBefore = beforeProbe.boundaryInlierRatio,
-                            boundaryInlierAfter = afterProbe.boundaryInlierRatio,
-                            centerBeforeY = beforeProbe.centerY,
-                            centerAfterY = afterProbe.centerY,
-                            referenceBeforeY = beforeProbe.referenceCenterY,
-                            referenceAfterY = afterProbe.referenceCenterY,
-                            planeAxBefore = beforeProbe.planeAx,
-                            planeAzBefore = beforeProbe.planeAz,
-                            planeAxAfter = afterProbe.planeAx,
-                            planeAzAfter = afterProbe.planeAz
-                        }
-                    end
+                if beforeProbe ~= nil and afterProbe ~= nil then
+                    recoveryGeometry = {
+                        roughnessBeforeM = beforeProbe.roughnessM,
+                        roughnessAfterM = afterProbe.roughnessM,
+                        roughnessDeltaM =
+                            beforeProbe.roughnessM - afterProbe.roughnessM,
+                        reliefBeforeM = beforeProbe.reliefRangeM,
+                        reliefAfterM = afterProbe.reliefRangeM,
+                        reliefDeltaM =
+                            beforeProbe.reliefRangeM - afterProbe.reliefRangeM,
+                        valleyBeforeM = beforeProbe.valleyDepthM,
+                        valleyAfterM = afterProbe.valleyDepthM,
+                        peakBeforeM = beforeProbe.peakHeightM,
+                        peakAfterM = afterProbe.peakHeightM,
+                        centerDeficitBeforeM = beforeProbe.centerDeficitM,
+                        centerDeficitAfterM = afterProbe.centerDeficitM,
+                        centerResidualBeforeM = beforeProbe.centerResidualM,
+                        centerResidualAfterM = afterProbe.centerResidualM,
+                        meanBeforeY = beforeProbe.meanY,
+                        meanAfterY = afterProbe.meanY,
+                        boundaryInlierBefore = beforeProbe.boundaryInlierRatio,
+                        boundaryInlierAfter = afterProbe.boundaryInlierRatio,
+                        centerBeforeY = beforeProbe.centerY,
+                        centerAfterY = afterProbe.centerY,
+                        referenceBeforeY = beforeProbe.referenceCenterY,
+                        referenceAfterY = afterProbe.referenceCenterY,
+                        planeAxBefore = beforeProbe.planeAx,
+                        planeAzBefore = beforeProbe.planeAz,
+                        planeAxAfter = afterProbe.planeAx,
+                        planeAzAfter = afterProbe.planeAz
+                    }
                 end
+
                 if type(brush.onApplied) == "function" then
-                    pcall(brush.onApplied, state, deltaY, beforeY, afterY, callbackVolume, recoveryGeometry)
+                    pcall(
+                        brush.onApplied,
+                        state,
+                        deltaY,
+                        beforeY,
+                        afterY,
+                        callbackVolume,
+                        recoveryGeometry
+                    )
                 end
             end
         end
@@ -820,7 +904,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
 end
 
 function Writer:flush()
-    if #self.queue == 0 then return 0, 0 end
+    if self:getQueueSize() == 0 then return 0, 0 end
     local perfStarted = RealismExtensionsTerrainPerformance ~= nil
         and RealismExtensionsTerrainPerformance.begin() or nil
 
@@ -832,8 +916,8 @@ function Writer:flush()
     local groups = {}
     local consumed = 0
 
-    while consumed < brushBudget and #self.queue > 0 do
-        local brush = table.remove(self.queue, 1)
+    while consumed < brushBudget and self:getQueueSize() > 0 do
+        local brush = popQueue(self)
         local bucket = depthBucket(brush.depthM, bucketM)
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
@@ -909,12 +993,24 @@ function Writer:flush()
         end
     end
 
-    -- Requeue work that exceeded the job budget ahead of newly queued work.
+    -- Requeue budget-deferred work ahead of any work enqueued by direct
+    -- TerrainDeformation callbacks. This compaction happens only when the job
+    -- budget is exceeded; ordinary dequeue is O(1).
     if #leftovers > 0 then
         local nextQueue = {}
-        for _, brush in ipairs(leftovers) do nextQueue[#nextQueue + 1] = brush end
-        for _, brush in ipairs(self.queue) do nextQueue[#nextQueue + 1] = brush end
+        for _, brush in ipairs(leftovers) do
+            nextQueue[#nextQueue + 1] = brush
+        end
+        for index = self.queueHead, self.queueTail do
+            local brush = self.queue[index]
+            if brush ~= nil then
+                nextQueue[#nextQueue + 1] = brush
+            end
+        end
         self.queue = nextQueue
+        self.queueHead = 1
+        self.queueTail = #nextQueue
+        self.queueCount = #nextQueue
     end
 
     if RealismExtensionsTerrainPerformance ~= nil then
@@ -925,4 +1021,7 @@ end
 
 function Writer:clear()
     self.queue = {}
+    self.queueHead = 1
+    self.queueTail = 0
+    self.queueCount = 0
 end

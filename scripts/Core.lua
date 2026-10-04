@@ -220,7 +220,7 @@ function RealismExtensionsCore:update(dt)
 
                 if RealismExtensionsTerrainRecovery ~= nil then
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecovery v30R5 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
+                        "TerrainRecovery v31R6 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,
                         r.workedAreaCalls or 0,
                         r.intentCandidateCells or 0,
@@ -300,7 +300,7 @@ function RealismExtensionsCore:update(dt)
                     ))
 
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainRecoveryTarget | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d targetApplied=%d targetComplete=%d noOp=%d improved=%d worsened=%d initialPositiveSkip=%d lowConfidence=%d signCross=%d residualReduce=%.4fm residualWorsen=%.4fm maxAbs=%.4f->%.4fm centerRaise=%.4fm centerLower=%.4fm amountMax=%.3f inFlight=%d timeouts=%d targetJobs=%d targetBrushes=%d targetRaised=%d targetLowered=%d targetAbsDelta=%.4fm targetMaxDelta=%.4fm machineTargetJobs=%d machineTargetBrushes=%d raiseJobs=%d smoothJobs=%d",
+                        "TerrainRecoveryTarget | scheduled=%d applied=%d complete=%d stalled=%d ownershipExhausted=%d targetApplied=%d targetComplete=%d noOp=%d improved=%d worsened=%d initialPositiveSkip=%d lowConfidence=%d signCross=%d residualReduce=%.4fm residualWorsen=%.4fm maxAbs=%.4f->%.4fm centerRaise=%.4fm centerLower=%.4fm amountMax=%.3f patch=%d/%d retained=%d sampleFail=%d patchDepth=%.4fm patchMaxResidual=%.4fm inFlight=%d timeouts=%d targetJobs=%d targetBrushes=%d targetRaised=%d targetLowered=%d targetAbsDelta=%.4fm targetMaxDelta=%.4fm machineTargetJobs=%d machineTargetBrushes=%d preProbeReuse=%d raiseJobs=%d smoothJobs=%d",
                         r.structuralScheduled or 0,
                         r.structuralApplied or 0,
                         r.structuralCompleted or 0,
@@ -321,6 +321,12 @@ function RealismExtensionsCore:update(dt)
                         r.targetPlaneCenterRaisedM or 0,
                         r.targetPlaneCenterLoweredM or 0,
                         r.targetPlaneAmountMax or 0,
+                        r.targetPatchCellsExamined or 0,
+                        r.targetPatchCellsConverged or 0,
+                        r.targetPatchCellsRetained or 0,
+                        r.targetPatchSampleFailures or 0,
+                        r.targetPatchRecoveredDepthM or 0,
+                        r.targetPatchMaxResidualM or 0,
                         r.structuralInFlight or 0,
                         r.structuralInFlightTimeouts or 0,
                         writerStats.recoveryTargetJobs or 0,
@@ -331,6 +337,7 @@ function RealismExtensionsCore:update(dt)
                         writerStats.recoveryTargetMaxDeltaM or 0,
                         writerStats.recoveryMachineTargetJobs or 0,
                         writerStats.recoveryMachineTargetBrushes or 0,
+                        writerStats.recoveryPreProbeReused or 0,
                         writerStats.recoveryRaiseJobs or 0,
                         writerStats.recoverySmoothJobs or 0
                     ))
@@ -359,7 +366,7 @@ function RealismExtensionsCore:update(dt)
                     local p = RealismExtensionsTerrainPerformance.snapshot()
                     local vu, fl, cb, rc = p.vehicleUpdate, p.flush, p.callback, p.recovery
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flush=%d avg=%.4fms max=%.3fms total=%.1fms callback=%d avg=%.4fms max=%.3fms total=%.1fms recovery=%d avg=%.4fms max=%.3fms total=%.1fms",
+                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flushInclusive=%d avg=%.4fms max=%.3fms total=%.1fms callbackNested=%d avg=%.4fms max=%.3fms total=%.1fms recovery=%d avg=%.4fms max=%.3fms total=%.1fms",
                         tostring(p.timerAvailable),
                         vu.samples or 0, vu.avgMs or 0, vu.maxMs or 0, vu.totalMs or 0,
                         fl.samples or 0, fl.avgMs or 0, fl.maxMs or 0, fl.totalMs or 0,
@@ -369,7 +376,7 @@ function RealismExtensionsCore:update(dt)
                 end
 
                 RealismExtensionsDiagnostics.verbose(string.format(
-                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d activeCultivatorRutSkips=%d cultivationProtected=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
+                    "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d activeCultivatorRutSkips=%d cultivationProtected=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d retired=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d additiveDepth=%.3f observedLoweringProbe=%.3f maxAdditive=%.3f maxLoweringProbe=%.3f targetIntensity=%d/%.3f/max%.3f preProbeReuse=%d modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
                     d.wheelsAttached or 0,
                     d.vehicleUpdateCalls or 0,
@@ -391,7 +398,10 @@ function RealismExtensionsCore:update(dt)
                     d.belowBrushThreshold or 0,
                     d.brushesAccepted or 0,
                     history ~= nil and (history.count or 0) or 0,
-                    writer ~= nil and #(writer.queue or {}) or 0,
+                    history ~= nil and (history.retiredCount or 0) or 0,
+                    writer ~= nil and type(writer.getQueueSize) == "function"
+                        and writer:getQueueSize()
+                        or 0,
                     writerStats.enqueued or 0,
                     writerStats.coalescedBrushes or 0,
                     writerStats.submittedBrushes or 0,
@@ -409,6 +419,10 @@ function RealismExtensionsCore:update(dt)
                     writerStats.geometryObservedLoweringM or 0,
                     writerStats.maxRequestedDepthM or 0,
                     writerStats.maxObservedLoweringM or 0,
+                    writerStats.targetIntensitySamples or 0,
+                    writerStats.targetIntensitySum or 0,
+                    writerStats.targetIntensityMax or 0,
+                    writerStats.recoveryPreProbeReused or 0,
                     d.maxRutDepthM or 0,
                     d.maxRutCapacityM or 0,
                     d.maxStaticRutCapacityM or 0,

@@ -1,7 +1,26 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 4
+History.VERSION = 5
+
+local ACTIVE_DEBT_FIELDS = {
+    "rutDepthM",
+    "longitudinalShearDistanceM",
+    "lateralShearDistanceM",
+    "slipExcavationDistanceM",
+    "deformationExposure"
+}
+
+local function isDormantHistory(history, epsilon)
+    if type(history) ~= "table" then return true end
+    local eps = math.max(0, tonumber(epsilon) or 0.000001)
+    for _, field in ipairs(ACTIVE_DEBT_FIELDS) do
+        if math.abs(tonumber(history[field]) or 0) > eps then
+            return false
+        end
+    end
+    return true
+end
 
 function History.new(options)
     options = options or {}
@@ -13,7 +32,8 @@ function History.new(options)
         count = 0,
         touchCounter = 0,
         lruHead = nil,
-        lruTail = nil
+        lruTail = nil,
+        retiredCount = 0
     }
     return setmetatable(self, { __index = History })
 end
@@ -62,6 +82,37 @@ local function touchCell(self, key, cell)
     self.lruTail = key
 end
 
+local function retireCell(self, key, cell)
+    if cell == nil or self.cells[key] ~= cell then return false end
+    unlink(self, key, cell)
+    self.cells[key] = nil
+    self.count = math.max(0, self.count - 1)
+    self.retiredCount = (self.retiredCount or 0) + 1
+    return true
+end
+
+local function touchOrRetire(self, key, cell, epsilon)
+    if cell == nil then return false end
+    if isDormantHistory(cell.history, epsilon) then
+        return retireCell(self, key, cell)
+    end
+    self.touchCounter = self.touchCounter + 1
+    cell.touch = self.touchCounter
+    touchCell(self, key, cell)
+    return false
+end
+
+function History:isDormantAt(x, z, epsilon)
+    local key = self:getKey(x, z)
+    local cell = self.cells[key]
+    return cell == nil or isDormantHistory(cell.history, epsilon)
+end
+
+function History:removeAt(x, z)
+    local key = self:getKey(x, z)
+    return retireCell(self, key, self.cells[key])
+end
+
 function History:get(x, z)
     local key = self:getKey(x, z)
     local cell = self.cells[key]
@@ -82,6 +133,17 @@ end
 function History:commit(x, z, value)
     local key, ix, iz = self:getKey(x, z)
     local cell = self.cells[key]
+    local history = copyHistory(value)
+
+    -- passCount is useful metadata while a physical state is alive, but it is
+    -- not terrain debt by itself. Never create/retain LRU tombstones that have
+    -- no rut/shear/exposure ownership left.
+    if isDormantHistory(history, 0.000001) then
+        if cell ~= nil then
+            retireCell(self, key, cell)
+        end
+        return nil
+    end
 
     self.touchCounter = self.touchCounter + 1
 
@@ -92,7 +154,7 @@ function History:commit(x, z, value)
     end
 
     cell.touch = self.touchCounter
-    cell.history = copyHistory(value)
+    cell.history = history
     touchCell(self, key, cell)
 
     if self.count > self.maxCells then
@@ -184,6 +246,47 @@ function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, opti
     return out
 end
 
+function History:getRecoveryCellsCircle(x, z, radiusM, options)
+    options = options or {}
+    local radius = math.max(0, tonumber(radiusM) or 0)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local maxCells = math.max(
+        1,
+        math.floor(tonumber(options.maxCells) or 128)
+    )
+    if radius <= 0 then return {} end
+
+    local minIx, minIz = self:getCellCoordinates(x - radius, z - radius)
+    local maxIx, maxIz = self:getCellCoordinates(x + radius, z + radius)
+    local radiusSq = radius * radius
+    local out = {}
+
+    for ix = minIx, maxIx do
+        if #out >= maxCells then break end
+        for iz = minIz, maxIz do
+            if #out >= maxCells then break end
+            local cx, cz = ix * self.cellSizeM, iz * self.cellSizeM
+            local dx, dz = cx - x, cz - z
+            if dx * dx + dz * dz <= radiusSq then
+                local key = tostring(ix) .. ":" .. tostring(iz)
+                local cell = self.cells[key]
+                local h = cell ~= nil and cell.history or nil
+                local rut = h ~= nil
+                    and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if rut >= minRutM then
+                    out[#out + 1] = {
+                        key = key,
+                        x = cx,
+                        z = cz,
+                        rutDepthM = rut
+                    }
+                end
+            end
+        end
+    end
+    return out
+end
+
 function History:applyRecoveryAt(x, z, raiseM, options)
     options = options or {}
     local key = self:getKey(x, z)
@@ -211,9 +314,12 @@ function History:applyRecoveryAt(x, z, raiseM, options)
         (tonumber(h.deformationExposure) or 0) * ratio
     h._lastRecoveryMs = tonumber(options.nowMs) or 0
 
-    self.touchCounter = self.touchCounter + 1
-    cell.touch = self.touchCounter
-    touchCell(self, key, cell)
+    touchOrRetire(
+        self,
+        key,
+        cell,
+        tonumber(options.retireEpsilon) or 0.000001
+    )
     return applied
 end
 
@@ -255,9 +361,12 @@ function History:applyRecoveryCircle(x, z, radiusM, amountM, fraction, options)
                         h.deformationExposure =
                             (tonumber(h.deformationExposure) or 0) * ratio
                         h._lastRecoveryMs = tonumber(options.nowMs) or 0
-                        self.touchCounter = self.touchCounter + 1
-                        cell.touch = self.touchCounter
-                        touchCell(self, key, cell)
+                        touchOrRetire(
+                            self,
+                            key,
+                            cell,
+                            tonumber(options.retireEpsilon) or 0.000001
+                        )
                         recoveredCells = recoveredCells + 1
                         recoveredDepth = recoveredDepth + applied
                     end
@@ -322,6 +431,12 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
                         h.deformationExposure =
                             (tonumber(h.deformationExposure) or 0) * ratio
                         h._lastRecoveryMs = nowMs
+                        touchOrRetire(
+                            self,
+                            key,
+                            cell,
+                            tonumber(options.retireEpsilon) or 0.000001
+                        )
                         recoveredCells = recoveredCells + 1
                         recoveredDepthM = recoveredDepthM + appliedRaiseM
                     end
@@ -350,12 +465,11 @@ function History:exportSnapshot()
 
     for _, cell in pairs(self.cells) do
         local values = {}
-        local material = false
+        local material = not isDormantHistory(cell.history, 0.000001)
         for _, field in ipairs(PERSISTED_FIELDS) do
             local value = cell.history ~= nil and tonumber(cell.history[field]) or nil
             if value ~= nil then
                 values[field] = value
-                if math.abs(value) > 0.000001 then material = true end
             end
         end
 
@@ -403,16 +517,18 @@ function History:importSnapshot(snapshot)
                 if value ~= nil then history[field] = value end
             end
 
-            self.touchCounter = self.touchCounter + 1
-            local cell = {
-                ix = ix,
-                iz = iz,
-                touch = self.touchCounter,
-                history = history
-            }
-            self.cells[key] = cell
-            self.count = self.count + 1
-            touchCell(self, key, cell)
+            if not isDormantHistory(history, 0.000001) then
+                self.touchCounter = self.touchCounter + 1
+                local cell = {
+                    ix = ix,
+                    iz = iz,
+                    touch = self.touchCounter,
+                    history = history
+                }
+                self.cells[key] = cell
+                self.count = self.count + 1
+                touchCell(self, key, cell)
+            end
         end
     end
 
@@ -426,4 +542,5 @@ function History:clear()
     self.touchCounter = 0
     self.lruHead = nil
     self.lruTail = nil
+    self.retiredCount = 0
 end

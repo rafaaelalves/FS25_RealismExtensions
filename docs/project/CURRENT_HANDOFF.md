@@ -635,3 +635,44 @@ Calibration should follow the refactor, not precede it:
 - investigate hit-rate/coverage after patch reconciliation;
 - R3's old `targetSpacingFactor=2.10` was chosen to prevent additive RAISE overlap. With bounded TARGET this anti-overlap constraint may now be obsolete, but spacing/radius should be tuned only after neighboring history cells are physically verified and reconciled;
 - if throughput still limits large fields after no-op debt is removed, consider a small bounded set of non-overlapping independent TARGET patches per frame rather than the current single global structural in-flight slot.
+
+
+## R6 consolidation refactor — patch ownership, lifecycle and throughput hygiene
+
+R6 intentionally preserves the R5 physical contract. No recovery tuning constants, target-plane semantics or ownership rules were loosened to obtain speed.
+
+Implementation invariants:
+1. TARGET remains the only structural actuator in the current runtime path.
+2. One globally serialized structural TARGET remains in flight; concurrency tuning is deferred until waste is removed and runtime proves a need.
+3. The preflight local-plane probe is passed into TerrainWriter and reused as the callback's before-geometry, eliminating one duplicate 17-sample ring per TARGET.
+4. A successful/near-converged TARGET reconciles the full physical brush patch, but only per-cell after verification:
+   - enumerate only SpatialHistory cells with causal rut debt inside the TARGET radius;
+   - sample each cell's current terrain Y;
+   - compare against the exact same fitted target plane;
+   - clear that cell's logical debt only when |residual| <= structuralToleranceM;
+   - retain every cell still physically outside tolerance.
+5. SpatialHistory v5 has explicit retirement. A cell is removed from the live LRU once rut/shear/slip-excavation/exposure debt is physically zero. `passCount` alone is metadata, not ownership, and cannot keep/create a tombstone.
+6. Snapshot import/export ignores dormant/pass-count-only cells so stale bookkeeping cannot consume the 50k live-history budget.
+7. TerrainWriter v13 replaces front-array `table.remove(queue,1)` with head/tail/count dequeue. Ordinary pops are O(1); queue compaction happens only when job-budget leftovers must be placed ahead of callback-enqueued work.
+8. TARGET actuator amount is now reported as dimensionless intensity, not metres. Generic additive-depth counters exclude TARGET.
+9. Performance telemetry explicitly labels `flushInclusive` and `callbackNested` to prevent double-counting direct TerrainDeformation callback time.
+
+New R6 diagnostics:
+- `patch=examined/converged`
+- `retained=`
+- `sampleFail=`
+- `patchDepth=`
+- `patchMaxResidual=`
+- `preProbeReuse=`
+- `retired=`
+- `targetIntensity=count/sum/max`
+- writer queue size comes from `getQueueSize()`.
+
+Expected runtime improvement versus R5:
+- substantially fewer stale/no-op TARGETs on later passes;
+- one TARGET can retire several neighboring causal cells that it physically repaired;
+- `initialPositiveSkip` should fall because already repaired neighboring debt is removed immediately;
+- live history count should fall as ground is recovered instead of remaining pinned near 50,000;
+- CPU should remain in the same or lower range despite patch verification because one 16-point before-probe is removed per TARGET and stale future TARGETs are avoided.
+
+R6 is a consolidation checkpoint. Do not tune radius/spacing/parallelism until its runtime log confirms patch reconciliation is reducing no-op work without altering the R5 visual result.

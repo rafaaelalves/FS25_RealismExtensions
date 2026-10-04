@@ -1,4 +1,4 @@
--- TerrainRecovery R5 bounded local target-plane harness.
+-- TerrainRecovery R6 target-plane patch reconciliation harness.
 RealismExtensionsConfig = {
     modules = {TerrainDeformation=true,TerrainRecovery=true,SoilMassTransport=false}
 }
@@ -38,6 +38,24 @@ function historyApi:getRecoveryCandidatesParallelogram(xs,zs,xw,zw,xh,zh,options
     return out
 end
 function historyApi:get(x,z) return cells[hkey(x,z)] end
+function historyApi:getRecoveryCellsCircle(x,z,radius,options)
+    local out={}
+    local radiusSq=radius*radius
+    for key,h in pairs(cells) do
+        local dx,dz=h.x-x,h.z-z
+        if dx*dx+dz*dz<=radiusSq
+            and (h.rutDepthM or 0)>=(options.minRutM or 0) then
+            out[#out+1]={
+                key=key,x=h.x,z=h.z,rutDepthM=h.rutDepthM
+            }
+        end
+    end
+    table.sort(out,function(a,b)
+        if a.x~=b.x then return a.x<b.x end
+        return a.z<b.z
+    end)
+    return out
+end
 function historyApi:applyRecoveryAt(x,z,amount,options)
     local h=cells[hkey(x,z)]
     if h==nil then return 0 end
@@ -67,6 +85,9 @@ function writer:measureRecoveryAt(x,z,probeRadius)
         planeAz=-0.010
     }
 end
+function writer:sampleHeightAt(x,z)
+    return 10+(residuals[hkey(x,z)] or 0)
+end
 function writer:enqueue(brush)
     assert(brush.source=="RECOVERY")
     assert(brush.mode=="TARGET")
@@ -77,6 +98,8 @@ function writer:enqueue(brush)
     assert(math.abs(brush.radiusM-0.40)<0.000001)
     assert(math.abs(brush.hardness-0.20)<0.000001)
     assert(math.abs(brush.strength-0.35)<0.000001)
+    assert(brush.recoveryPreProbe~=nil)
+    assert(brush.recoveryPreProbe.centerResidualM~=nil)
     pending[#pending+1]=brush
     seenTargetAmounts[#seenTargetAmounts+1]=brush.targetAmount
     return true
@@ -87,13 +110,21 @@ local function applyNext()
     local brush=table.remove(pending,1)
     local key=hkey(brush.x,brush.z)
     local before=residuals[key] or 0
-    local delta=0
+
     if not forceTargetNoop then
-        -- Set-target semantics: move toward zero residual and never cross it.
-        delta=-before*targetFraction
+        -- Simulate a real brush footprint: every represented causal cell inside
+        -- the TARGET radius moves toward the same local target plane.
+        for cellKey,h in pairs(cells) do
+            local dx,dz=h.x-brush.x,h.z-brush.z
+            if dx*dx+dz*dz<=brush.radiusM*brush.radiusM then
+                local current=residuals[cellKey] or 0
+                residuals[cellKey]=current-current*targetFraction
+            end
+        end
     end
-    local after=before+delta
-    residuals[key]=after
+
+    local after=residuals[key] or before
+    local delta=after-before
     targetCalls=targetCalls+1
     brush.onApplied(1,delta,10+before,10+after,0.01,{
         centerDeficitBeforeM=math.max(0,-before),
@@ -109,6 +140,8 @@ local function applyNext()
         peakAfterM=math.max(0,after),
         planeAxAfter=0.015,planeAzAfter=-0.010
     })
+end
+
 end
 
 RealismExtensionsTerrainRuntime={history=historyApi,writer=writer}
@@ -164,9 +197,12 @@ end
 
 -- 1. Deep causal rut converges to the current local sloped reference plane
 -- using TARGET only; no additive raise/smooth state is required.
-seedHistory({{x=0.40,z=0.40,rutDepthM=0.090}})
+seedHistory({
+    {x=0.40,z=0.40,rutDepthM=0.090},
+    {x=0.40,z=0.60,rutDepthM=0.050}
+})
 Recovery.resetRuntimeState()
-targetFraction=0.80
+targetFraction=0.90
 forceTargetNoop=false
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
 pump()
@@ -179,6 +215,11 @@ assert(d.targetPlaneWorsened==0)
 assert(d.targetPlaneMaxAbsAfterM < d.targetPlaneMaxAbsBeforeM)
 assert(math.abs(residuals[hkey(0.40,0.40)] or 0)<=0.004001)
 assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
+assert((historyApi:get(0.40,0.60).rutDepthM or 0)<0.003)
+assert(d.targetPatchCellsExamined>=2)
+assert(d.targetPatchCellsConverged>=2)
+assert(d.targetPatchRecoveredDepthM>=0.139)
+assert(d.targetPatchSampleFailures==0)
 
 -- 2. An initial positive mound with stale rut history is not touched. Positive
 -- correction is only allowed after a target sequence started from a causal rut.
@@ -252,4 +293,4 @@ Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
 assert(perfBegins==perfFinishes)
 
-print("terrain_recovery_r5_target_plane_harness: OK")
+print("terrain_recovery_r6_target_plane_patch_harness: OK")

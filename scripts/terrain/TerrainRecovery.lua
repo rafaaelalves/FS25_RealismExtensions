@@ -1,7 +1,7 @@
 RealismExtensionsTerrainRecovery = RealismExtensionsTerrainRecovery or {}
 local Recovery = RealismExtensionsTerrainRecovery
 
-Recovery.VERSION = 17
+Recovery.VERSION = 18
 Recovery.DEFAULTS = {
     -- Cultivation repair is a surface-conditioning pass, not a point repair.
     -- Cover the actual GIANTS work-area footprint uniformly and let native
@@ -46,6 +46,7 @@ Recovery.DEFAULTS = {
     structuralTargetStrength = 0.35,
     structuralTargetHardness = 0.20,
     structuralMaxNoops = 2,
+    structuralPatchMaxCells = 64,
 
     structuralRetryMs = 80,
     structuralTtlMs = 8000,
@@ -169,6 +170,12 @@ local function newStats()
         targetPlaneCenterRaisedM = 0,
         targetPlaneCenterLoweredM = 0,
         targetPlaneAmountMax = 0,
+        targetPatchCellsExamined = 0,
+        targetPatchCellsConverged = 0,
+        targetPatchCellsRetained = 0,
+        targetPatchSampleFailures = 0,
+        targetPatchRecoveredDepthM = 0,
+        targetPatchMaxResidualM = 0,
         structuralOvershootCount = 0,
         structuralOvershootM = 0,
         structuralMaxOvershootM = 0,
@@ -823,6 +830,104 @@ local function recordRecoveredDepth(applied)
     end
 end
 
+local function targetPlaneHeightAt(point, targetY, planeAx, planeAz, x, z)
+    return targetY
+        + planeAx * (x - point.x)
+        + planeAz * (z - point.z)
+end
+
+local function reconcileTargetPatch(
+    runtime,
+    point,
+    targetY,
+    planeAx,
+    planeAz,
+    radiusM,
+    toleranceM,
+    nowMs
+)
+    local history = runtime ~= nil and runtime.history or nil
+    local writer = runtime ~= nil and runtime.writer or nil
+    if history == nil or writer == nil
+        or type(history.getRecoveryCellsCircle) ~= "function"
+        or type(history.applyRecoveryAt) ~= "function"
+        or type(writer.sampleHeightAt) ~= "function" then
+        return 0, 0
+    end
+
+    local cells = history:getRecoveryCellsCircle(
+        point.x,
+        point.z,
+        radiusM,
+        {
+            minRutM = Recovery.DEFAULTS.minHistoryRutM,
+            maxCells = Recovery.DEFAULTS.structuralPatchMaxCells
+        }
+    ) or {}
+
+    Recovery.stats.targetPatchCellsExamined =
+        Recovery.stats.targetPatchCellsExamined + #cells
+
+    local recoveredCells = 0
+    local recoveredDepthM = 0
+
+    for _, cell in ipairs(cells) do
+        local terrainY = writer:sampleHeightAt(cell.x, cell.z)
+        if type(terrainY) ~= "number" then
+            Recovery.stats.targetPatchSampleFailures =
+                Recovery.stats.targetPatchSampleFailures + 1
+        else
+            local expectedY = targetPlaneHeightAt(
+                point,
+                targetY,
+                planeAx,
+                planeAz,
+                cell.x,
+                cell.z
+            )
+            local residual = terrainY - expectedY
+            local absResidual = math.abs(residual)
+            Recovery.stats.targetPatchMaxResidualM = math.max(
+                Recovery.stats.targetPatchMaxResidualM,
+                absResidual
+            )
+
+            if absResidual <= toleranceM then
+                local h = type(history.get) == "function"
+                    and history:get(cell.x, cell.z) or nil
+                local debt = h ~= nil
+                    and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if debt >= Recovery.DEFAULTS.minHistoryRutM then
+                    local applied = history:applyRecoveryAt(
+                        cell.x,
+                        cell.z,
+                        debt,
+                        {
+                            minRutM = Recovery.DEFAULTS.minHistoryRutM,
+                            nowMs = nowMs
+                        }
+                    ) or 0
+                    if applied > 0 then
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepthM = recoveredDepthM + applied
+                        recordRecoveredDepth(applied)
+                    end
+                end
+            else
+                Recovery.stats.targetPatchCellsRetained =
+                    Recovery.stats.targetPatchCellsRetained + 1
+            end
+        end
+    end
+
+    Recovery.stats.targetPatchCellsConverged =
+        Recovery.stats.targetPatchCellsConverged + recoveredCells
+    Recovery.stats.targetPatchRecoveredDepthM =
+        Recovery.stats.targetPatchRecoveredDepthM + recoveredDepthM
+
+    return recoveredCells, recoveredDepthM
+end
+
 enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pulseIndex)
     pulseIndex = math.max(1, math.floor(tonumber(pulseIndex) or 1))
     params = params or {}
@@ -890,7 +995,25 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     end
 
     if beforeAbs <= tolerance then
-        recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
+        local targetY = tonumber(beforeProbe.referenceCenterY)
+        local planeAx = tonumber(beforeProbe.planeAx)
+        local planeAz = tonumber(beforeProbe.planeAz)
+        local patchCells = 0
+        if targetY ~= nil and planeAx ~= nil and planeAz ~= nil then
+            patchCells = select(1, reconcileTargetPatch(
+                runtime,
+                point,
+                targetY,
+                planeAx,
+                planeAz,
+                Recovery.DEFAULTS.structuralRadiusM,
+                tolerance,
+                nowMs
+            ))
+        end
+        if patchCells == 0 then
+            recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
+        end
         Recovery.stats.targetPlaneCompleted =
             Recovery.stats.targetPlaneCompleted + 1
         Recovery.stats.structuralCompleted =
@@ -905,6 +1028,24 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     -- legacy/player-authored mounds safe. Once a causal target sequence starts
     -- from a rut, however, later sign changes remain part of that same repair.
     if pulseIndex == 1 and beforeResidual > tolerance then
+        local targetY = tonumber(beforeProbe.referenceCenterY)
+        local planeAx = tonumber(beforeProbe.planeAx)
+        local planeAz = tonumber(beforeProbe.planeAz)
+        if targetY ~= nil and planeAx ~= nil and planeAz ~= nil then
+            reconcileTargetPatch(
+                runtime,
+                point,
+                targetY,
+                planeAx,
+                planeAz,
+                Recovery.DEFAULTS.structuralRadiusM,
+                tolerance,
+                nowMs
+            )
+        end
+        -- The selected center itself is physically above the fitted plane.
+        -- Clearing only its stale logical rut debt changes no terrain and
+        -- prevents this player-authored/current mound from being re-selected.
         recordRecoveredDepth(clearRecoveryDebt(history, point, nowMs))
         Recovery.stats.targetPlaneInitialPositiveSkips =
             Recovery.stats.targetPlaneInitialPositiveSkips + 1
@@ -961,6 +1102,7 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         strength = Recovery.DEFAULTS.structuralTargetStrength,
         source = "RECOVERY",
         probeRadiusM = Recovery.DEFAULTS.structuralProbeRadiusM,
+        recoveryPreProbe = beforeProbe,
         onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
             Recovery.pendingStamps[key] = nil
             if Recovery.structuralInFlightKey == key then
@@ -995,6 +1137,19 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                     Recovery.stats.structuralStalled + 1
                 return
             end
+
+            local callbackNowMs = g_currentMission ~= nil
+                and g_currentMission.time or nowMs
+            reconcileTargetPatch(
+                runtime,
+                point,
+                targetY,
+                planeAx,
+                planeAz,
+                Recovery.DEFAULTS.structuralRadiusM,
+                tolerance,
+                callbackNowMs
+            )
 
             local afterAbs = math.abs(afterResidual)
             Recovery.stats.targetPlaneMaxAbsAfterM = math.max(
@@ -1039,12 +1194,17 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 Recovery.stats.targetPlaneResidualReductionM =
                     Recovery.stats.targetPlaneResidualReductionM
                     + math.max(0, residualImprovement)
-                recordRecoveredDepth(clearRecoveryDebt(
-                    history,
-                    point,
-                    g_currentMission ~= nil
-                        and g_currentMission.time or nowMs
-                ))
+                local center = type(history.get) == "function"
+                    and history:get(point.x, point.z) or nil
+                local centerDebt = center ~= nil
+                    and math.max(0, tonumber(center.rutDepthM) or 0) or 0
+                if centerDebt >= Recovery.DEFAULTS.minHistoryRutM then
+                    recordRecoveredDepth(clearRecoveryDebt(
+                        history,
+                        point,
+                        callbackNowMs
+                    ))
+                end
                 Recovery.stats.targetPlaneCompleted =
                     Recovery.stats.targetPlaneCompleted + 1
                 Recovery.stats.structuralCompleted =
