@@ -767,3 +767,63 @@ Validation rule:
 - do not demand an exhaustive manual matrix. Use ordinary gameplay plus `TerrainActors` / existing recovery telemetry. Add directed tests only when runtime exposes a missing class or pathology.
 
 Detailed design: `docs/research/terrain-ai-and-maintenance-policy-study.md`.
+
+
+## R9 periodic neighbor/municipal terrain maintenance
+
+The maintenance executor is now implemented as an **event-driven, amortized system**, not a per-frame world scanner.
+
+Trigger model:
+- subscribe to GIANTS `MessageType.PERIOD_CHANGED`;
+- one period change ages only existing active SpatialHistory cells;
+- fresh wheel interaction resets that cell's `maintenanceAgePeriods` to 0;
+- age is persisted in the terrain sidecar so save/reload does not reset maintenance eligibility.
+
+Why PERIOD_CHANGED:
+- GIANTS itself uses PERIOD_CHANGED for persistent age progression (e.g. hand tools and persistent game systems);
+- FieldManager's `FINISHED_GROWTH_PERIOD` was reviewed, but is intentionally not used as the primary maintenance trigger: it is tied to crop-growth update cadence and can run more often than the desired low-frequency land-maintenance abstraction;
+- monthly/period maintenance gives stable bounded cost and matches the intended "neighbors/public service eventually maintain their land" gameplay layer.
+
+Responsibility rules remain fail-closed:
+- player-owned: no passive maintenance;
+- another owned farm: no passive maintenance;
+- NPC field: NEIGHBOR;
+- public/non-buyable/no-farmland: MUNICIPAL;
+- unowned buyable / unknown: none.
+
+Eligibility:
+- NEIGHBOR: causal RE rut debt aged at least 1 period;
+- MUNICIPAL: causal RE rut debt aged at least 2 periods;
+- municipal work additionally requires all sampled points in the patch to remain municipal and terrain paint to resolve to GRAVEL or DIRT;
+- public MUD is deliberately not auto-maintained because without an explicit road mask it could be swamp/wetland rather than infrastructure;
+- any ownership boundary crossing rejects the patch.
+
+Performance design:
+- no map scan;
+- PERIOD_CHANGED scans only active SpatialHistory cells (bounded by the existing 50k history cap);
+- classification is cached per farmland id during the monthly scan;
+- eligible cells are spatially bucketed, selecting the oldest/deepest representative per bucket;
+- queue is capped per period (256 NEIGHBOR + 128 MUNICIPAL patches);
+- neighbor and municipal tasks are interleaved;
+- one maintenance task at most is started per ordinary update and it yields whenever active recovery or TerrainWriter already owns work;
+- loaded wheel contact defers a task rather than mutating terrain beneath a vehicle;
+- TARGET uses the same current-local-plane safety model already proven by R5/R6 recovery;
+- a task verifies and retires only physically converged SpatialHistory cells;
+- unfinished debt survives into the next period.
+
+Default gameplay semantics:
+- neighbor radius 0.45 m, up to 3 TARGET pulses;
+- municipal radius 0.30 m, up to 2 TARGET pulses;
+- municipality intentionally acts more slowly and only on public dirt/gravel;
+- the system never restores map-start height.
+
+Expected memory/performance benefit:
+- maintenance physically resolves and retires old RE debt outside player-owned land;
+- therefore old NPC/public rut cells stop occupying the live SpatialHistory LRU and stop being persisted/reconsidered forever;
+- normal per-frame cost is almost zero when the maintenance queue is empty;
+- the only O(history) pass is PERIOD_CHANGED, not frame/update cadence.
+
+New telemetry:
+`TerrainMaintenance v1 | periods=... scanned=... eligible=neighbor/municipal buckets=... queued=... started=... target=... complete=... neighbor=... municipal=... stale=... blocked=... boundaryReject=... surfaceReject=... patch=examined/recovered depth=... pending=... inFlight=...`
+
+This completes the originally planned neighbor/municipal responsibility loop. Runtime observation can now happen through normal gameplay; no exhaustive manual test matrix is required.

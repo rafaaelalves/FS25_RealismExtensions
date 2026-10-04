@@ -1,7 +1,7 @@
 RealismExtensionsTerrainWriter = RealismExtensionsTerrainWriter or {}
 local Writer = RealismExtensionsTerrainWriter
 
-Writer.VERSION = 13
+Writer.VERSION = 14
 
 Writer.DEFAULTS = {
     maxBrushesPerFrame = 24,
@@ -54,6 +54,7 @@ function Writer.new(options)
             targetIntensitySum = 0,
             targetIntensityMax = 0,
             recoveryPreProbeReused = 0,
+            maintenancePreProbeReused = 0,
             callbackSuccessJobs = 0,
             callbackDisplacedVolumeM3 = 0,
             callbackMaxDisplacedVolumeM3 = 0,
@@ -484,7 +485,10 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local recoveryGeometryMode =
         (mode == "SMOOTH" or mode == "TARGET" or mode == "RAISE")
         and brushes ~= nil and brushes[1] ~= nil
-        and brushes[1].source == "RECOVERY"
+        and (
+            brushes[1].source == "RECOVERY"
+            or brushes[1].source == "MAINTENANCE"
+        )
 
     if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
@@ -501,8 +505,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
             local pre = brush.recoveryPreProbe
             if pre ~= nil then
                 roughnessSamples[i] = pre
-                self.stats.recoveryPreProbeReused =
-                    self.stats.recoveryPreProbeReused + 1
+                if brush.source == "MAINTENANCE" then
+                    self.stats.maintenancePreProbeReused =
+                        self.stats.maintenancePreProbeReused + 1
+                else
+                    self.stats.recoveryPreProbeReused =
+                        self.stats.recoveryPreProbeReused + 1
+                end
             else
                 roughnessSamples[i] = sampleRoughnessProbe(terrain, brush)
             end

@@ -75,3 +75,18 @@ assert(c.class=="PUBLIC_WORLD")
 assert(c.maintainer=="MUNICIPAL")
 
 print("terrain_maintenance_policy_harness: OK")
+
+
+-- R9 policy helpers are cache-friendly and fail closed at responsibility
+-- boundaries.
+g_farmlandManager.currentId=3
+assert(P.classifyFarmlandId(3).maintainer=="NEIGHBOR")
+assert(P.circleHasMaintainer(0,0,0.4,"NEIGHBOR")==true)
+
+-- Crossing from NPC field into public terrain invalidates a neighbor patch.
+g_farmlandManager.getFarmlandIdAtWorldPosition=function(self,x,z)
+    return x < 0.2 and 3 or 0
+end
+assert(P.circleHasMaintainer(0,0,0.4,"NEIGHBOR")==false)
+
+print("terrain_maintenance_policy_r9_helpers_harness: OK")

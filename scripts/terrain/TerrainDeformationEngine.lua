@@ -48,6 +48,11 @@ local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     local h = {}
     for k, v in pairs(response.nextHistory or {}) do h[k] = v end
     h.rutDepthM = math.max(previousDepth or 0, (previousDepth or 0) + appliedDepth)
+
+    -- Any fresh wheel interaction makes this terrain debt new again for
+    -- event-driven neighbor/municipal maintenance. The counter advances only
+    -- on PERIOD_CHANGED and is persisted with SpatialHistory.
+    h.maintenanceAgePeriods = 0
     return h
 end
 

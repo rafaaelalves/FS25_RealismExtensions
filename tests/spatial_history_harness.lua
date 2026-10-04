@@ -153,3 +153,29 @@ local cooled = ah:getRecoveryCandidatesParallelogram(
 )
 assert(#cooled == 1)
 print("spatial_history_async_recovery_harness: OK")
+
+
+-- Monthly maintenance aging is event-driven and persisted independently from
+-- per-frame terrain sampling.
+local mh=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
+mh:commit(0.0,0.0,{rutDepthM=0.030,deformationExposure=1.0,maintenanceAgePeriods=0})
+mh:commit(0.2,0.0,{rutDepthM=0.020,deformationExposure=1.0,maintenanceAgePeriods=2})
+local seen=0
+local scanned=mh:advanceMaintenancePeriod(function(key,x,z,h)
+    seen=seen+1
+    assert(h.maintenanceAgePeriods>=1)
+end)
+assert(scanned==2 and seen==2)
+assert(mh:get(0.0,0.0).maintenanceAgePeriods==1)
+assert(mh:get(0.2,0.0).maintenanceAgePeriods==3)
+
+-- Generic commits preserve age unless the deformation engine explicitly
+-- resets it for new traffic.
+mh:commit(0.2,0.0,{rutDepthM=0.025,deformationExposure=1.2})
+assert(mh:get(0.2,0.0).maintenanceAgePeriods==3)
+local ms=mh:exportSnapshot()
+local mr=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
+local mok,mreason=mr:importSnapshot(ms)
+assert(mok==true,mreason)
+assert(mr:get(0.2,0.0).maintenanceAgePeriods==3)
+print("spatial_history_maintenance_age_harness: OK")

@@ -102,6 +102,33 @@ RealismExtensionsTerrainRecovery = {
     getDiagnostics = function() return recoveryDiag end
 }
 
+RealismExtensionsTerrainMaintenance = {
+    getDiagnostics = function()
+        return {
+            periods=1,
+            historyScanned=500,
+            eligibleNeighborCells=20,
+            eligibleMunicipalCells=10,
+            neighborBuckets=5,
+            municipalBuckets=3,
+            queuedNeighbor=5,
+            queuedMunicipal=3,
+            tasksStarted=4,
+            targetApplied=3,
+            completed=2,
+            neighborCompleted=1,
+            municipalCompleted=1,
+            staleDebtCleared=1,
+            patchCellsExamined=20,
+            patchCellsRecovered=8,
+            patchRecoveredDepthM=0.120,
+            pending=4,
+            inFlight=1,
+            maxQueue=8
+        }
+    end
+}
+
 dofile("scripts/Core.lua")
 
 local ok, err = pcall(function()
@@ -138,6 +165,9 @@ local joined = table.concat(Logging.lines, "\n")
 assert(joined:find("TerrainWindow 5000ms", 1, true) ~= nil)
 assert(joined:find("RutWriters runtime", 1, true) ~= nil)
 assert(joined:find("TerrainActors |", 1, true) ~= nil)
+assert(joined:find("TerrainMaintenance v1 |", 1, true) ~= nil)
+assert(joined:find("eligible=20/10", 1, true) ~= nil)
+assert(joined:find("patch=20/8", 1, true) ~= nil)
 assert(joined:find("AI_FIELD=2/1/0.003", 1, true) ~= nil)
 assert(joined:find("suppressedTurn=2", 1, true) ~= nil)
 assert(joined:find("suppressedSpin=1", 1, true) ~= nil)

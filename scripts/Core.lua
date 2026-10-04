@@ -113,6 +113,11 @@ function RealismExtensionsCore:loadMap()
         end
     end
 
+    if RealismExtensionsTerrainMaintenance ~= nil
+        and type(RealismExtensionsTerrainMaintenance.initialize) == "function" then
+        RealismExtensionsTerrainMaintenance.initialize()
+    end
+
     RealismExtensionsDiagnostics.info(
         "v" .. tostring(RealismExtensionsConfig.version)
         .. " loaded; TerrainDeformation="
@@ -189,6 +194,11 @@ function RealismExtensionsCore:update(dt)
         if RealismExtensionsTerrainRecovery ~= nil
             and type(RealismExtensionsTerrainRecovery.update) == "function" then
             RealismExtensionsTerrainRecovery.update(dt)
+        end
+
+        if RealismExtensionsTerrainMaintenance ~= nil
+            and type(RealismExtensionsTerrainMaintenance.update) == "function" then
+            RealismExtensionsTerrainMaintenance.update(dt)
         end
 
         local brushes, jobs = RealismExtensionsTerrainRuntime.flush()
@@ -501,6 +511,48 @@ function RealismExtensionsCore:update(dt)
                     )
                 end
 
+                if RealismExtensionsTerrainMaintenance ~= nil
+                    and type(RealismExtensionsTerrainMaintenance.getDiagnostics)
+                        == "function" then
+                    local m = RealismExtensionsTerrainMaintenance.getDiagnostics()
+                    if (m.periods or 0) > 0
+                        or (m.pending or 0) > 0
+                        or (m.targetApplied or 0) > 0 then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainMaintenance v1 | periods=%d scanned=%d eligible=%d/%d buckets=%d/%d queued=%d/%d started=%d target=%d complete=%d neighbor=%d municipal=%d stale=%d blocked=%d/%d boundaryReject=%d surfaceReject=%d ownershipChanged=%d historyGone=%d probeFail=%d targetReject=%d callbackFail=%d patch=%d/%d depth=%.3fm pending=%d inFlight=%d maxQueue=%d",
+                            m.periods or 0,
+                            m.historyScanned or 0,
+                            m.eligibleNeighborCells or 0,
+                            m.eligibleMunicipalCells or 0,
+                            m.neighborBuckets or 0,
+                            m.municipalBuckets or 0,
+                            m.queuedNeighbor or 0,
+                            m.queuedMunicipal or 0,
+                            m.tasksStarted or 0,
+                            m.targetApplied or 0,
+                            m.completed or 0,
+                            m.neighborCompleted or 0,
+                            m.municipalCompleted or 0,
+                            m.staleDebtCleared or 0,
+                            m.blockedContacts or 0,
+                            m.blockedExpired or 0,
+                            m.boundaryRejected or 0,
+                            m.surfaceRejected or 0,
+                            m.ownershipChanged or 0,
+                            m.historyGone or 0,
+                            m.probeFailed or 0,
+                            m.targetRejected or 0,
+                            m.callbackFailed or 0,
+                            m.patchCellsExamined or 0,
+                            m.patchCellsRecovered or 0,
+                            m.patchRecoveredDepthM or 0,
+                            m.pending or 0,
+                            m.inFlight or 0,
+                            m.maxQueue or 0
+                        ))
+                    end
+                end
+
                 local categories = {
                     "FIELD_SOFT", "FIELD", "FIELD_FIRM",
                     "MUD", "DIRT_WET", "DIRT_COMPACTED",
@@ -718,6 +770,11 @@ function RealismExtensionsCore:deleteMap()
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
         RealismExtensionsTerrainRecovery.resetRuntimeState()
+    end
+
+    if RealismExtensionsTerrainMaintenance ~= nil
+        and type(RealismExtensionsTerrainMaintenance.shutdown) == "function" then
+        RealismExtensionsTerrainMaintenance.shutdown()
     end
 
     if RealismExtensionsTerrainRuntime ~= nil then

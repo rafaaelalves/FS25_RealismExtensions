@@ -15,6 +15,7 @@ RealismExtensionsConfig = {
     modules = {
         TerrainDeformation = true,
         TerrainRecovery = true,
+        TerrainMaintenance = true,
         SoilMassTransport = false,
         NativeTireTrackProbe = true,
         AIVisualTireTracks = true,

@@ -2,7 +2,7 @@ RealismExtensionsTerrainMaintenancePolicy =
     RealismExtensionsTerrainMaintenancePolicy or {}
 local Policy = RealismExtensionsTerrainMaintenancePolicy
 
-Policy.VERSION = 1
+Policy.VERSION = 2
 
 Policy.CLASS = {
     PLAYER_PRIVATE = "PLAYER_PRIVATE",
@@ -57,25 +57,24 @@ local function fieldIsNpcManaged(field)
     return false
 end
 
-function Policy.classifyAt(x, z, localFarmId)
+function Policy.classifyFarmlandId(farmlandId, localFarmId)
     local manager = g_farmlandManager
     if manager == nil
-        or type(manager.getFarmlandIdAtWorldPosition) ~= "function"
         or type(manager.getFarmlandOwner) ~= "function" then
         return {
             class = Policy.CLASS.UNKNOWN,
-            maintainer = Policy.MAINTAINER.NONE
+            maintainer = Policy.MAINTAINER.NONE,
+            farmlandId = farmlandId
         }
     end
 
-    local farmlandId = manager:getFarmlandIdAtWorldPosition(x, z)
     local noOwner = FarmlandManager ~= nil
         and FarmlandManager.NO_OWNER_FARM_ID or 0
     local notBuyable = FarmlandManager ~= nil
         and FarmlandManager.NOT_BUYABLE_FARM_ID or nil
 
-    -- GIANTS may represent no valid/buyable farmland as nil or the reserved
-    -- non-buyable id depending on call path/map data.
+    -- GIANTS returns 0 when no valid/buyable farmland exists. Some paths also
+    -- expose the reserved NOT_BUYABLE id explicitly.
     if farmlandId == nil
         or farmlandId == noOwner
         or (notBuyable ~= nil and farmlandId == notBuyable) then
@@ -120,14 +119,61 @@ function Policy.classifyAt(x, z, localFarmId)
     end
 
     -- A buyable but currently unowned forest/lot is not automatically public
-    -- infrastructure. Leave it untouched until an explicit ownership/event
-    -- source says otherwise.
+    -- infrastructure.
     return {
         class = Policy.CLASS.UNOWNED_BUYABLE,
         maintainer = Policy.MAINTAINER.NONE,
         farmlandId = farmlandId,
         ownerFarmId = noOwner
     }
+end
+
+function Policy.classifyAt(x, z, localFarmId)
+    local manager = g_farmlandManager
+    if manager == nil
+        or type(manager.getFarmlandIdAtWorldPosition) ~= "function" then
+        return {
+            class = Policy.CLASS.UNKNOWN,
+            maintainer = Policy.MAINTAINER.NONE
+        }
+    end
+
+    return Policy.classifyFarmlandId(
+        manager:getFarmlandIdAtWorldPosition(x, z),
+        localFarmId
+    )
+end
+
+function Policy.getFarmlandIdAt(x, z)
+    local manager = g_farmlandManager
+    if manager == nil
+        or type(manager.getFarmlandIdAtWorldPosition) ~= "function" then
+        return nil
+    end
+    return manager:getFarmlandIdAtWorldPosition(x, z)
+end
+
+function Policy.circleHasMaintainer(x, z, radiusM, maintainer, localFarmId)
+    local radius = math.max(0, tonumber(radiusM) or 0)
+    local samples = {
+        {0, 0},
+        {radius, 0}, {-radius, 0},
+        {0, radius}, {0, -radius},
+        {radius * 0.7071, radius * 0.7071},
+        {-radius * 0.7071, radius * 0.7071},
+        {radius * 0.7071, -radius * 0.7071},
+        {-radius * 0.7071, -radius * 0.7071}
+    }
+
+    for _, offset in ipairs(samples) do
+        local c = Policy.classifyAt(
+            x + offset[1],
+            z + offset[2],
+            localFarmId
+        )
+        if c.maintainer ~= maintainer then return false end
+    end
+    return true
 end
 
 function Policy.isPassiveMaintenanceEligible(classification)

@@ -1,7 +1,7 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 5
+History.VERSION = 6
 
 local ACTIVE_DEBT_FIELDS = {
     "rutDepthM",
@@ -134,6 +134,15 @@ function History:commit(x, z, value)
     local key, ix, iz = self:getKey(x, z)
     local cell = self.cells[key]
     local history = copyHistory(value)
+    if history.maintenanceAgePeriods == nil then
+        local previous = cell ~= nil and cell.history or nil
+        history.maintenanceAgePeriods = previous ~= nil
+            and math.max(
+                0,
+                math.floor(tonumber(previous.maintenanceAgePeriods) or 0)
+            )
+            or 0
+    end
 
     -- passCount is useful metadata while a physical state is alive, but it is
     -- not terrain debt by itself. Never create/retain LRU tombstones that have
@@ -191,6 +200,50 @@ function History:prune(targetCount)
 end
 
 
+
+function History:advanceMaintenancePeriod(callback)
+    local scanned = 0
+    for key, cell in pairs(self.cells) do
+        local h = cell ~= nil and cell.history or nil
+        if h ~= nil and not isDormantHistory(h, 0.000001) then
+            h.maintenanceAgePeriods = math.min(
+                255,
+                math.max(
+                    0,
+                    math.floor(tonumber(h.maintenanceAgePeriods) or 0)
+                ) + 1
+            )
+            scanned = scanned + 1
+            if type(callback) == "function" then
+                callback(
+                    key,
+                    cell.ix * self.cellSizeM,
+                    cell.iz * self.cellSizeM,
+                    h
+                )
+            end
+        end
+    end
+    return scanned
+end
+
+function History:forEachActiveCell(callback)
+    if type(callback) ~= "function" then return 0 end
+    local scanned = 0
+    for key, cell in pairs(self.cells) do
+        local h = cell ~= nil and cell.history or nil
+        if h ~= nil and not isDormantHistory(h, 0.000001) then
+            scanned = scanned + 1
+            callback(
+                key,
+                cell.ix * self.cellSizeM,
+                cell.iz * self.cellSizeM,
+                h
+            )
+        end
+    end
+    return scanned
+end
 
 local function pointInParallelogram(px, pz, xs, zs, xw, zw, xh, zh)
     local ux, uz = xw - xs, zw - zs
@@ -453,7 +506,8 @@ local PERSISTED_FIELDS = {
     "lateralShearDistanceM",
     "slipExcavationDistanceM",
     "deformationExposure",
-    "passCount"
+    "passCount",
+    "maintenanceAgePeriods"
 }
 
 function History:exportSnapshot()

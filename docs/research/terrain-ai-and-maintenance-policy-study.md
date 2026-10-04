@@ -145,3 +145,74 @@ Manual directed testing is reserved for:
 - a class that runtime telemetry proves is not being detected.
 
 The project should not require the user to test every cultivator, plow, subsoiler and helper combination manually.
+
+
+## Implemented periodic maintenance architecture
+
+Passive maintenance is now implemented.
+
+### Calendar trigger
+
+The executor subscribes to `MessageType.PERIOD_CHANGED`. This event is used by GIANTS for persistent period-based aging and provides the desired low-frequency maintenance cadence.
+
+`FINISHED_GROWTH_PERIOD` was investigated because FieldManager subscribes to it for NPC field lifecycle updates. It was not selected as the main trigger because maintenance is a land-responsibility abstraction rather than a crop-growth operation, and tying it to growth updates would create a less predictable cadence.
+
+### Persistent age
+
+SpatialHistory v6 adds:
+`maintenanceAgePeriods`.
+
+Rules:
+- new/fresh wheel interaction sets it to 0;
+- PERIOD_CHANGED increments it once, bounded to 255;
+- save/load persists it;
+- recovery/retirement removes it naturally with the cell.
+
+This avoids per-frame timestamps and makes save/reload behavior deterministic.
+
+### Queue construction
+
+On PERIOD_CHANGED:
+1. iterate only active history cells;
+2. increment maintenance age;
+3. ignore cells below min causal rut debt;
+4. classify territory, caching the result by farmland id;
+5. enforce 1-period neighbor / 2-period municipal minimum age;
+6. spatially bucket eligible cells;
+7. keep the oldest/deepest representative per bucket;
+8. cap at 256 neighbor + 128 municipal patch seeds;
+9. interleave both classes into a bounded queue.
+
+No terrain sampling, target fitting or TerrainDeformation object is created during this scan.
+
+### Execution
+
+Ordinary update starts at most one task when:
+- server-authoritative;
+- recovery is not structurally in-flight;
+- TerrainWriter has no pending work;
+- no loaded-contact wheel overlaps the patch.
+
+Each task revalidates:
+- history still exists;
+- age still qualifies;
+- responsibility did not change;
+- full patch remains under the same maintainer;
+- municipal surface is DIRT/GRAVEL.
+
+Then it uses the same robust local target-plane estimator and bounded TARGET semantics as agricultural recovery.
+
+### Memory lifecycle
+
+Successful maintenance calls the same verified patch reconciliation used by the recovery architecture:
+- inspect only causal history cells inside the patch;
+- compare actual height with the fitted current target plane;
+- clear logical debt only within tolerance;
+- SpatialHistory retirement removes dormant cells from the LRU and persistence snapshot.
+
+Thus maintenance is also history garbage collection backed by physical convergence, not a metadata-only cleanup.
+
+### Conservative municipal scope
+
+Without an explicit road network mask, only public GRAVEL/DIRT terrain paint is eligible.
+HARD terrain normally produces no rut debt; MUD is excluded because it may represent natural wetland rather than maintained public infrastructure.
