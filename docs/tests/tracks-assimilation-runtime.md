@@ -39,7 +39,8 @@ After enough movement:
 - `cut` may increase when leaving valid contact/visual range;
 - `maxArgs=2/15/1` after create/point/cut have all occurred;
 - `observerErrors=0`;
-- `drift=0`.
+- `drift=0`;
+- signature sampling remains bounded after the initial contract samples while call counters continue increasing.
 
 The exact point signature should correspond to FS25 TireTracks:
 ```
@@ -146,7 +147,9 @@ TerrainRecoveryContactGuard | queries=... blocked=... maxBlockingLoadN=...
 
 Success:
 - `blocked > 0` in the overlap case;
+- leave one loaded wheel stationary long enough to cross the contact refresh interval and confirm it remains protected;
 - no visible terrain raise/jump under that loaded wheel;
+- stationary contact refresh must not create/deepen a persistent rut by itself;
 - after the wheel moves and the tool continues/repeats the area, recovery becomes eligible again;
 - no permanent recovery hole caused by consuming a blocked stamp.
 
