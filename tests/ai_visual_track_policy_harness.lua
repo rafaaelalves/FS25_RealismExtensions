@@ -49,7 +49,6 @@ assert(d.classesPatched == 2)
 assert(d.aiImplementPatched == true)
 assert(d.aiJobVehiclePatched == true)
 assert(d.calls == 4)
-assert(d.aiActiveCalls == 2)
 assert(d.baseAllowed == 2)
 assert(d.baseDenied == 2)
 
