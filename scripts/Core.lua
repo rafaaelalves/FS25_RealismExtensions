@@ -505,12 +505,11 @@ function RealismExtensionsCore:update(dt)
                     and type(RealismExtensionsAIVisualTrackPolicy.getDiagnostics) == "function" then
                     local a = RealismExtensionsAIVisualTrackPolicy.getDiagnostics()
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "AIVisualTracks | enabled=%s AIImplement=%s AIJobVehicle=%s calls=%d aiActive=%d baseAllowed=%d baseDenied=%d",
+                        "AIVisualTracks | enabled=%s AIImplement=%s AIJobVehicle=%s calls=%d baseAllowed=%d baseDenied=%d",
                         tostring(a.enabled),
                         tostring(a.aiImplementPatched),
                         tostring(a.aiJobVehiclePatched),
                         a.calls or 0,
-                        a.aiActiveCalls or 0,
                         a.baseAllowed or 0,
                         a.baseDenied or 0
                     ))
