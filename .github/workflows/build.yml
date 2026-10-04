@@ -35,29 +35,12 @@ jobs:
 
       - name: Run harnesses
         run: |
-          lua5.4 tests/state_contract_harness.lua
-          lua5.4 tests/footprint_model_harness.lua
-          lua5.4 tests/surface_response_harness.lua
-          lua5.4 tests/terrain_response_model_harness.lua
-          lua5.4 tests/spatial_history_harness.lua
-          lua5.4 tests/terrain_persistence_harness.lua
-          lua5.4 tests/soil_mass_transport_model_harness.lua
-          lua5.4 tests/recovery_surface_estimator_harness.lua
-          lua5.4 tests/terrain_writer_harness.lua
-          lua5.4 tests/terrain_deformation_engine_harness.lua
-          lua5.4 tests/terrain_deformation_registration_harness.lua
-          lua5.4 tests/terrain_recovery_registration_harness.lua
-          lua5.4 tests/terrain_work_context_harness.lua
-          lua5.4 tests/loaded_contact_registry_harness.lua
-          lua5.4 tests/native_tire_track_adapter_harness.lua
-          lua5.4 tests/native_tire_track_bootstrap_harness.lua
-          lua5.4 tests/ai_visual_track_policy_harness.lua
-          lua5.4 tests/visual_track_journal_harness.lua
-          lua5.4 tests/visual_track_chunk_store_harness.lua
-          lua5.4 tests/visual_track_runtime_harness.lua
-          lua5.4 tests/terrain_telemetry_harness.lua
-          lua5.4 tests/terrain_recovery_harness.lua
-          lua5.4 tests/core_diagnostics_harness.lua
+          set -euo pipefail
+          while IFS= read -r harness; do
+            echo "::group::$harness"
+            lua5.4 "$harness"
+            echo "::endgroup::"
+          done < <(find tests -maxdepth 1 -type f -name '*_harness.lua' | sort)
 
       - name: Validate modDesc XML
         run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('modDesc.xml')"
