@@ -390,3 +390,33 @@ The previous full-width v23 runtime remains the evidence baseline:
 - full geometry probing was expensive at v23 brush volume.
 
 Next runtime should use the latest green Strategy H1 artifact and compare intent/brush/performance counters against v23.
+
+
+### Recovery H2 — causal-center convergence
+
+The latest user-visible v23 test falsified full-width smoothing as a sufficient solution:
+- many callbacks reported lower roughness/relief;
+- the visible RE wheel channels remained;
+- center geometry usually moved down rather than up;
+- logical rut history was being reconciled too broadly from roughness improvement.
+
+H2 fixes the model rather than tuning v23:
+- history cells select exact causal centers;
+- roughness/relief are telemetry only;
+- center-deficit reduction is the physical recovery signal;
+- logical history is reduced only at the exact causal cell;
+- one cultivator authorization can continue bounded native-smooth pulses after the work-area callback moves on;
+- physical center deficit, not remaining logical debt, owns convergence completion.
+
+Automated H2 regression suite is green.
+
+Runtime gate:
+1. create **fresh ruts after loading the H2 build** on a clean patch;
+2. cultivate the fresh ruts before manual landscaping;
+3. inspect visible convergence and v25H2 center-deficit/convergence telemetry;
+4. separately verify an unrelated/clean landscaped area is untouched;
+5. use the same session to close VisualTrackCapture if create/accepted/finalized/chunk counters are healthy.
+
+Important: old v23 ruts are not the best H2 reference because v23 could already have erased/understated their logical history without physically removing them.
+
+If fresh H2-owned ruts still do not close, stop tuning native SMOOTH and implement Strategy R1 target-plane recovery.
