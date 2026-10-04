@@ -226,14 +226,24 @@ local function sampleRoughnessProbe(terrain, brush)
     local ax = sumDx2 > 0 and sumDxY / sumDx2 or 0
     local az = sumDz2 > 0 and sumDzY / sumDz2 or 0
     local ss = 0
-    for _,s in ipairs(samples) do
+    local minResidual = math.huge
+    local maxResidual = -math.huge
+    local centerResidual = 0
+    for i,s in ipairs(samples) do
         local plane = mean + ax * s.dx + az * s.dz
         local e = s.y - plane
+        if i == 1 then centerResidual = e end
+        minResidual = math.min(minResidual, e)
+        maxResidual = math.max(maxResidual, e)
         ss = ss + e * e
     end
     return {
         centerY = samples[1].y,
-        roughnessM = math.sqrt(ss / #samples)
+        centerResidualM = centerResidual,
+        roughnessM = math.sqrt(ss / #samples),
+        reliefRangeM = math.max(0, maxResidual - minResidual),
+        valleyDepthM = math.max(0, -minResidual),
+        peakHeightM = math.max(0, maxResidual)
     }
 end
 
@@ -529,6 +539,15 @@ function Writer:_submitBatch(depthM, brushes, mode)
                             roughnessBeforeM = beforeProbe.roughnessM,
                             roughnessAfterM = afterProbe.roughnessM,
                             roughnessDeltaM = beforeProbe.roughnessM - afterProbe.roughnessM,
+                            reliefBeforeM = beforeProbe.reliefRangeM,
+                            reliefAfterM = afterProbe.reliefRangeM,
+                            reliefDeltaM = beforeProbe.reliefRangeM - afterProbe.reliefRangeM,
+                            valleyBeforeM = beforeProbe.valleyDepthM,
+                            valleyAfterM = afterProbe.valleyDepthM,
+                            peakBeforeM = beforeProbe.peakHeightM,
+                            peakAfterM = afterProbe.peakHeightM,
+                            centerResidualBeforeM = beforeProbe.centerResidualM,
+                            centerResidualAfterM = afterProbe.centerResidualM,
                             centerBeforeY = beforeProbe.centerY,
                             centerAfterY = afterProbe.centerY
                         }
