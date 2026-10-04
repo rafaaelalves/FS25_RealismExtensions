@@ -1,7 +1,7 @@
 RealismExtensionsTerrainResponseModel = RealismExtensionsTerrainResponseModel or {}
 local Model = RealismExtensionsTerrainResponseModel
 
-Model.VERSION = 2
+Model.VERSION = 4
 
 Model.DEFAULTS = {
     referencePressurePa = 100000,
@@ -10,6 +10,17 @@ Model.DEFAULTS = {
     drySusceptibilityFloor = 0.06,
     wetnessExponent = 1.65,
     mudPotentialWeight = 0.25,
+
+    -- Mud sink is an instantaneous mobility state, not automatically a
+    -- permanent terrain displacement. Only a wetness/slip-dependent fraction
+    -- is transferred into persistent plastic rut geometry.
+    plasticSinkStartWetness = 0.45,
+    plasticSinkFullWetness = 0.90,
+    plasticSinkMaxTransfer = 0.75,
+    plasticSinkSlipBoost = 0.15,
+    plasticSinkMaxWithSlip = 0.90,
+    plasticSinkSlipStart = 0.15,
+    plasticSinkSlipFull = 0.85,
 
     hardFreezeMultiplier = 0.02,
 
@@ -36,10 +47,15 @@ Model.DEFAULTS = {
     longitudinalSlipDeadband = 0.025,
     lateralSlipDeadband = 0.020,
 
+    -- Incremental exposure weights. These are applied to physical travel /
+    -- relative contact displacement, not once per update sample. This keeps
+    -- rut progression approximately invariant to speed and sampling cadence.
     basePassDrive = 0.10,
     verticalPassWeight = 0.32,
     longitudinalPassWeight = 0.48,
     lateralPassWeight = 0.28,
+    normalPassCharacteristicLengthFactor = 1.0,
+    normalPassCharacteristicMinM = 0.10,
 
     lateralWidthGain = 0.35,
     sinkWidthGain = 0.18,
@@ -128,6 +144,45 @@ local function computeSoilSusceptibility(context, options)
     return clamp(susceptibility, 0, 1), "WETNESS"
 end
 
+local function smoothstep01(value)
+    local t = clamp(tonumber(value) or 0, 0, 1)
+    return t * t * (3 - 2 * t)
+end
+
+local function computePlasticSinkTransfer(context, options)
+    if context.hardFrozen == true then return 0, 0, 0 end
+
+    local wetness = clamp(tonumber(context.physicalGroundWetness) or 0, 0, 1)
+    local wetStart = clamp(tonumber(options.plasticSinkStartWetness) or 0.45, 0, 0.99)
+    local wetFull = clamp(
+        tonumber(options.plasticSinkFullWetness) or 0.90,
+        wetStart + 0.01,
+        1
+    )
+    local wetPlasticity = smoothstep01((wetness - wetStart) / (wetFull - wetStart))
+
+    local slip = math.abs(tonumber(context.longitudinalSlip) or 0)
+    local slipStart = clamp(tonumber(options.plasticSinkSlipStart) or 0.15, 0, 0.99)
+    local slipFull = math.max(
+        slipStart + 0.01,
+        tonumber(options.plasticSinkSlipFull) or 0.85
+    )
+    local slipActivation = smoothstep01((slip - slipStart) / (slipFull - slipStart))
+
+    local baseTransfer = wetPlasticity
+        * math.max(0, tonumber(options.plasticSinkMaxTransfer) or 0.75)
+    local slipBoost = wetPlasticity * slipActivation
+        * math.max(0, tonumber(options.plasticSinkSlipBoost) or 0.15)
+
+    local transfer = clamp(
+        baseTransfer + slipBoost,
+        0,
+        tonumber(options.plasticSinkMaxWithSlip) or 0.90
+    )
+
+    return transfer, wetPlasticity, slipActivation
+end
+
 local function computeShearIncrement(context, dtSeconds, slip, deadband)
     local effectiveSlip = removeDeadband(slip, deadband)
     if effectiveSlip <= 0 then return 0 end
@@ -177,6 +232,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         computeSoilSusceptibility(context, options)
 
     local dtSeconds = math.max(0, tonumber(dtMs) or 0) / 1000
+    local vehicleSpeedMps = math.abs(tonumber(context.speedKph) or 0) / 3.6
+    local normalTravelDistanceM = vehicleSpeedMps * dtSeconds
 
     local longIncrement = computeShearIncrement(
         context,
@@ -284,14 +341,17 @@ function Model.compute(context, footprint, history, dtMs, options)
 
     local sinkDepthM = tonumber(context.sinkDepthM)
     local observedSinkM = validNumber(sinkDepthM) and math.max(0, sinkDepthM) or 0
+    local sinkPlasticTransfer01, wetPlasticity01, sinkSlipActivation01 =
+        computePlasticSinkTransfer(context, options)
+    local persistentSinkM = observedSinkM * sinkPlasticTransfer01
 
-    -- If the active physics owner already says the wheel sank deeper than our
-    -- modeled capacity, geometry must never contradict that authoritative
-    -- state. The RE caps apply only to deformation invented by RE.
+    -- Mud owns instantaneous sink/mobility. RE owns persistent heightfield
+    -- geometry. A transient radius reduction therefore informs plastic rutting
+    -- but is not an automatic permanent lower bound.
     local rutCapacityM = math.max(
         staticRutCapacityM,
         slipRutCapacityM,
-        observedSinkM
+        persistentSinkM
     )
 
     local verticalImprint01 = clamp(
@@ -312,14 +372,56 @@ function Model.compute(context, footprint, history, dtMs, options)
         1
     )
 
-    local passDrive = clamp(
-        options.basePassDrive
-        + options.verticalPassWeight * verticalImprint01
-        + options.longitudinalPassWeight * excavation01
-        + options.lateralPassWeight * scrub01,
-        0,
-        0.95
+    -- Progress is driven by incremental physical exposure, not by how often
+    -- this function happens to be sampled. A slow wheel therefore does not
+    -- create extra "passes" merely because it remains in the same history cell
+    -- for more update ticks.
+    --
+    -- Normal rolling uses body travel relative to the contact-patch length.
+    -- Longitudinal/lateral damage use newly accumulated relative displacement.
+    -- The exponential form composes cleanly when one physical traversal is
+    -- subdivided into many smaller samples.
+    local footprintLengthM = tonumber(footprint.footprintLengthM)
+    if not validPositive(footprintLengthM) then
+        footprintLengthM = math.max(
+            tonumber(options.normalPassCharacteristicMinM) or 0.10,
+            radius * 0.50
+        )
+    end
+    local normalCharacteristicM = math.max(
+        tonumber(options.normalPassCharacteristicMinM) or 0.10,
+        footprintLengthM
+            * math.max(0.05, tonumber(options.normalPassCharacteristicLengthFactor) or 1)
     )
+
+    local normalPassExposure = normalTravelDistanceM / normalCharacteristicM
+    local longitudinalIncrementExposure = longIncrement
+        / math.max(0.001, tonumber(options.longitudinalShearK) or 0.18)
+    local lateralIncrementExposure = latIncrement
+        / math.max(0.001, tonumber(options.lateralShearK) or 0.14)
+
+    local verticalExposureDrive = normalPassExposure * (
+        math.max(0, tonumber(options.basePassDrive) or 0)
+        + math.max(0, tonumber(options.verticalPassWeight) or 0) * verticalImprint01
+    )
+    local longitudinalExposureDrive =
+        math.max(0, tonumber(options.longitudinalPassWeight) or 0)
+        * longitudinalIncrementExposure
+        * susceptibility
+        * math.min(1.25, pressureDrive)
+    local lateralExposureDrive =
+        math.max(0, tonumber(options.lateralPassWeight) or 0)
+        * lateralIncrementExposure
+        * susceptibility
+        * math.min(1.15, pressureDrive)
+
+    local incrementalExposure = math.max(
+        0,
+        verticalExposureDrive
+            + longitudinalExposureDrive
+            + lateralExposureDrive
+    )
+    local passDrive = clamp(1 - math.exp(-incrementalExposure), 0, 0.95)
 
     local previousRutM = clamp(
         tonumber(history.rutDepthM) or 0,
@@ -327,19 +429,36 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutCapacityM
     )
 
-    -- Observed sink is an immediate lower bound. Beyond that, repeated passes
-    -- approach capacity asymptotically via the remaining-depth term.
-    local baseRutM = math.max(previousRutM, observedSinkM)
-    local remainingM = math.max(0, rutCapacityM - baseRutM)
+    -- Store cumulative physical exposure separately from rut depth. Depth is
+    -- then reconstructed from total exposure and the current capacity instead
+    -- of recursively applying one "pass" per sample. This makes equivalent
+    -- travel/slip histories converge to the same result regardless of update
+    -- cadence or how many intermediate samples occurred.
+    local previousExposure = math.max(
+        0,
+        tonumber(history.deformationExposure) or 0
+    )
+    local deformationExposure = previousExposure + incrementalExposure
+    local exposureDrive = clamp(
+        1 - math.exp(-deformationExposure),
+        0,
+        0.999999
+    )
+
+    local modeledBaseM = persistentSinkM
+    local modeledRangeM = math.max(0, rutCapacityM - modeledBaseM)
+    local exposureTargetM = modeledBaseM + modeledRangeM * exposureDrive
+
+    -- Never heal an already-written rut in history when current conditions
+    -- weaken, but only persistent plastic sink becomes an immediate lower bound.
     local nextRutM = clamp(
-        baseRutM + remainingM * passDrive,
+        math.max(previousRutM, persistentSinkM, exposureTargetM),
         0,
         rutCapacityM
     )
 
     local sinkSeverity = clamp(
-        tonumber(context.sinkSeverity)
-            or (validPositive(radius) and observedSinkM / radius or 0),
+        validPositive(radius) and persistentSinkM / radius or 0,
         0,
         1
     )
@@ -355,6 +474,7 @@ function Model.compute(context, footprint, history, dtMs, options)
         longitudinalShearDistanceM = cumulativeLong,
         lateralShearDistanceM = cumulativeLat,
         slipExcavationDistanceM = cumulativeSlipExcavation,
+        deformationExposure = deformationExposure,
         passCount = math.max(0, tonumber(history.passCount) or 0) + 1
     }
 
@@ -370,12 +490,24 @@ function Model.compute(context, footprint, history, dtMs, options)
         longitudinalExcavation01 = excavation01,
         lateralScrub01 = scrub01,
 
+        normalTravelDistanceM = normalTravelDistanceM,
+        normalPassExposure = normalPassExposure,
+        longitudinalIncrementExposure = longitudinalIncrementExposure,
+        lateralIncrementExposure = lateralIncrementExposure,
+        incrementalExposure = incrementalExposure,
+
         longitudinalShearIncrementM = longIncrement,
         lateralShearIncrementM = latIncrement,
         longitudinalShearDistanceM = cumulativeLong,
         lateralShearDistanceM = cumulativeLat,
 
         observedSinkDepthM = observedSinkM,
+        persistentSinkDepthM = persistentSinkM,
+        sinkPlasticTransfer01 = sinkPlasticTransfer01,
+        wetPlasticity01 = wetPlasticity01,
+        sinkSlipActivation01 = sinkSlipActivation01,
+        physicalGroundWetness01 = clamp(tonumber(context.physicalGroundWetness) or 0, 0, 1),
+        longitudinalSlip01 = clamp(math.abs(tonumber(context.longitudinalSlip) or 0), 0, 1),
         staticRutCapacityM = staticRutCapacityM,
         slipRutCapacityM = slipRutCapacityM,
         slipSinkage01 = slipSinkage01,
@@ -388,6 +520,8 @@ function Model.compute(context, footprint, history, dtMs, options)
         rutWidthM = rutWidthM,
 
         passDrive01 = passDrive,
+        deformationExposure = deformationExposure,
+        exposureDrive01 = exposureDrive,
         hardFrozen = context.hardFrozen == true,
 
         nextHistory = nextHistory

@@ -99,6 +99,18 @@ function RealismExtensionsCore:update(dt)
                 local d = runtime.getDiagnostics ~= nil
                     and runtime.getDiagnostics() or {}
 
+                if RealismExtensionsTerrainPerformance ~= nil then
+                    local p = RealismExtensionsTerrainPerformance.snapshot()
+                    local vu, fl, cb = p.vehicleUpdate, p.flush, p.callback
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainPerf | timer=%s vehicleUpdate=%d avg=%.4fms max=%.3fms total=%.1fms flush=%d avg=%.4fms max=%.3fms total=%.1fms callback=%d avg=%.4fms max=%.3fms total=%.1fms",
+                        tostring(p.timerAvailable),
+                        vu.samples or 0, vu.avgMs or 0, vu.maxMs or 0, vu.totalMs or 0,
+                        fl.samples or 0, fl.avgMs or 0, fl.maxMs or 0, fl.totalMs or 0,
+                        cb.samples or 0, cb.avgMs or 0, cb.maxMs or 0, cb.totalMs or 0
+                    ))
+                end
+
                 RealismExtensionsDiagnostics.verbose(string.format(
                     "TerrainDeformation runtime | vehicles=%d wheels=%d vehicleUpdates=%d wheelTicks=%d sampleTicks=%d activitySkips=%d wheelspinCandidates=%d context=%d/%d noGround=%d noSoil=%d noContact=%d footprint=%d/%d samples=%d responseRejects=%d belowThreshold=%d brushesAccepted=%d cells=%d queue=%d enqueued=%d coalesced=%d submittedBrushes=%d submittedJobs=%d failedJobs=%d nativeBrushesAvoided=%d callbackJobs=%d displacedVolume=%.3f maxJobVolume=%.3f volumeMissing=%d geometryProbe=%d shallowProbe=%d zeroProbe=%d requestedDepth=%.3f observedLoweringProbe=%.3f maxRequested=%.3f maxLoweringProbe=%.3f modelRut=%.3f modelCap=%.3f staticCap=%.3f slipCap=%.3f slipMult=%.2f stationaryBrushes=%d stationaryApplied=%.3f stationaryRut=%.3f stationaryCap=%.3f lastFlush=%d/%d",
                     d.vehiclesLoaded or 0,
@@ -176,6 +188,70 @@ function RealismExtensionsCore:update(dt)
                         "SurfaceResponse runtime | seen/brushes/appliedDepthM "
                         .. table.concat(parts, " ")
                     )
+                end
+
+                if (d.footprintAccepted or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "Footprint runtime | contexts=%d wideSupport=%d maxBaseWidth=%.3f maxSupportWidth=%.3f maxWidthRatio=%.2f maxLoadN=%.0f maxArea=%.3f pressurePa=%.0f..%.0f maxInflationBar=%.2f",
+                        d.footprintAccepted or 0,
+                        d.wideSupportContexts or 0,
+                        d.maxBaseTireWidthM or 0,
+                        d.maxSupportWidthM or 0,
+                        d.maxSupportWidthRatio or 0,
+                        d.maxWheelLoadN or 0,
+                        d.maxContactAreaM2 or 0,
+                        d.minGroundPressurePa or 0,
+                        d.maxGroundPressurePa or 0,
+                        d.maxInflationPressureBar or 0
+                    ))
+                end
+
+                if (d.axleCrestSamples or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainClearance runtime | axleSamples=%d maxSpan=%.2f maxCentralCrest=%.3f crest>5cm=%d crest>10cm=%d crest>15cm=%d",
+                        d.axleCrestSamples or 0,
+                        d.maxAxleSpanM or 0,
+                        d.maxCentralTerrainCrestM or 0,
+                        d.centralCrestOver5cm or 0,
+                        d.centralCrestOver10cm or 0,
+                        d.centralCrestOver15cm or 0
+                    ))
+                end
+
+                if (d.samplesProcessed or 0) > 0 then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainPlasticity sample | wet=%.2f slip=%.3f instantSink=%.3f transfer=%.2f persistentSink=%.3f staticCap=%.3f slipCap=%.3f rut=%.3f maxInstant=%.3f maxPersistent=%.3f maxTransfer=%.2f",
+                        d.lastPlasticWetness01 or 0,
+                        d.lastPlasticSlip01 or 0,
+                        d.lastObservedSinkDepthM or 0,
+                        d.lastSinkPlasticTransfer01 or 0,
+                        d.lastPersistentSinkDepthM or 0,
+                        d.lastStaticRutCapacityM or 0,
+                        d.lastSlipRutCapacityM or 0,
+                        d.lastRutDepthM or 0,
+                        d.maxObservedSinkDepthM or 0,
+                        d.maxPersistentSinkDepthM or 0,
+                        d.maxSinkPlasticTransfer or 0
+                    ))
+                end
+
+                if (writerStats.massTransportSourceVolumeM3 or 0) > 0 then
+                    local target = writerStats.massTransportTargetVolumeM3 or 0
+                    local raised = writerStats.massTransportRaisedVolumeM3 or 0
+                    local errorM3 = raised - target
+                    local realization = target > 0 and raised / target or 0
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "SoilMassTransport runtime | source=%.3f targetTransport=%.3f raised=%.3f realization=%.2f compaction=%.3f balanceError=%+.3f berms=%d raiseJobs=%d rejects=%d",
+                        writerStats.massTransportSourceVolumeM3 or 0,
+                        target,
+                        raised,
+                        realization,
+                        writerStats.massTransportCompactionVolumeM3 or 0,
+                        errorM3,
+                        writerStats.massTransportBermsEnqueued or 0,
+                        writerStats.massTransportRaiseJobs or 0,
+                        writerStats.massTransportModelRejects or 0
+                    ))
                 end
             end
         end

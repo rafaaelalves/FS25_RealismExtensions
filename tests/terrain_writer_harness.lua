@@ -62,6 +62,13 @@ g_terrainDeformationQueue = {
     end
 }
 
+RealismExtensionsConfig = {
+    diagnostics = {
+        verbose = true,
+        expensiveGeometry = true
+    }
+}
+dofile("scripts/terrain/SoilMassTransportModel.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
 
 local w = RealismExtensionsTerrainWriter.new({
@@ -107,7 +114,79 @@ assert(w.stats.geometryObservedLoweringM > 0)
 assert(w.stats.geometryRequestedDepthM > 0)
 assert(w.stats.maxObservedLoweringM > 0)
 
+-- Production mode skips expensive before/after terrain-height probes while
+-- preserving native TerrainDeformation callbacks and physics.
+RealismExtensionsConfig.diagnostics.expensiveGeometry = false
+local pw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=2,
+    maxJobsPerFrame=1,
+    maxBrushesPerJob=2,
+    minDepthM=0.0004
+})
+assert(pw:enqueue({x=30,z=30,depthM=0.003,radiusM=0.2}))
+local pb,pj = pw:flush()
+assert(pb == 1 and pj == 1)
+assert(pw.stats.geometrySamples == 0)
+assert(pw.stats.callbackSuccessJobs == 1)
+RealismExtensionsConfig.diagnostics.expensiveGeometry = true
+
 assert(w.stats.callbackSuccessJobs == 3)
 assert(math.abs(w.stats.callbackDisplacedVolumeM3 - 0.375) < 0.000001)
 assert(math.abs(w.stats.callbackMaxDisplacedVolumeM3 - 0.125) < 0.000001)
 assert(w.stats.callbackVolumeMissing == 0)
+
+
+-- Mass transport is a second asynchronous terrain phase: a lowering callback
+-- budgets real displaced volume, then two positive berm brushes are queued.
+local originalQueueJob = g_terrainDeformationQueue.queueJob
+g_terrainDeformationQueue.queueJob = function(self, deformation, preview, callbackName, target)
+    queued[#queued + 1] = deformation
+    for _, brush in ipairs(deformation.brushes) do
+        local key = tostring(brush.x) .. ":" .. tostring(brush.z)
+        heights[key] = (heights[key] or 10) + deformation.depth
+    end
+    local volume = deformation.depth < 0 and 0.10 or 0.018
+    target[callbackName](target, TerrainDeformation.STATE_SUCCESS, volume, nil)
+    return #queued
+end
+
+local mw = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=8,
+    maxJobsPerFrame=4,
+    maxBrushesPerJob=4,
+    depthBucketM=0.0005,
+    minDepthM=0.0004
+})
+assert(mw:enqueue({
+    x=20,z=20,depthM=0.004,radiusM=0.30,hardness=0.35,
+    massTransport={
+        travelDirX=0,travelDirZ=1,
+        wetness01=0.95,deformability01=1.0,
+        longitudinalSlip=0.95,lateralSlip=0,
+        innerBermSide=1
+    }
+}))
+local mb1,mj1 = mw:flush()
+assert(mb1 == 1 and mj1 == 1)
+assert(mw.stats.massTransportSourceVolumeM3 > 0.099)
+assert(mw.stats.massTransportTargetVolumeM3 > 0)
+assert(mw.stats.massTransportTargetVolumeM3 < mw.stats.massTransportSourceVolumeM3)
+assert(mw.stats.massTransportCompactionVolumeM3 > 0)
+assert(math.abs(
+    mw.stats.massTransportSourceVolumeM3
+    - mw.stats.massTransportTargetVolumeM3
+    - mw.stats.massTransportCompactionVolumeM3
+) < 0.000001)
+assert(mw.stats.massTransportBermsEnqueued >= 1 and mw.stats.massTransportBermsEnqueued <= 2)
+assert(#mw.queue == mw.stats.massTransportBermsEnqueued)
+
+local mb2,mj2 = mw:flush()
+assert(mb2 == mw.stats.massTransportBermsEnqueued)
+assert(mj2 >= 1)
+assert(#mw.queue == 0)
+assert(mw.stats.massTransportRaiseJobs >= 1)
+assert(mw.stats.massTransportRaisedVolumeM3 > 0)
+assert(mw.stats.geometryObservedRaisingM > 0)
+
+g_terrainDeformationQueue.queueJob = originalQueueJob
+print("terrain_writer_mass_transport_harness: OK")

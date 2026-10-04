@@ -22,6 +22,27 @@ local function distance2D(x1, z1, x2, z2)
     return math.sqrt(dx * dx + dz * dz)
 end
 
+local function resolveInnerBermSide(vehicle, x, z, travelDirX, travelDirZ)
+    if vehicle == nil or vehicle.rootNode == nil
+        or getWorldTranslation == nil
+        or travelDirX == nil or travelDirZ == nil then
+        return nil
+    end
+
+    local ok, vx, _, vz = pcall(getWorldTranslation, vehicle.rootNode)
+    if not ok or type(vx) ~= "number" or type(vz) ~= "number" then
+        return nil
+    end
+
+    local toCenterX, toCenterZ = vx - x, vz - z
+    local leftX, leftZ = -travelDirZ, travelDirX
+    local dot = toCenterX * leftX + toCenterZ * leftZ
+    if math.abs(dot) < 0.01 then return nil end
+
+    -- +1 is the berm on the travel-left side, -1 travel-right.
+    return dot > 0 and 1 or -1
+end
+
 local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     local h = {}
     for k, v in pairs(response.nextHistory or {}) do h[k] = v end
@@ -51,6 +72,23 @@ local function diagMax(name, value)
     runtime.stats[name] = math.max(tonumber(runtime.stats[name]) or 0, value)
 end
 
+local function diagSet(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    runtime.stats[name] = value
+end
+
+local function diagMin(name, value)
+    if not diagnosticsEnabled() or type(value) ~= "number" then return end
+    local runtime = RealismExtensionsTerrainRuntime
+    if runtime == nil then return end
+    runtime.stats = runtime.stats or {}
+    local current = tonumber(runtime.stats[name])
+    runtime.stats[name] = current == nil and value or math.min(current, value)
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -71,7 +109,9 @@ function Engine:onLoad(savegame)
 
     self[Engine.SPEC_FIELD] = {
         wheels = wheels or {},
-        states = setmetatable({}, { __mode = "k" })
+        states = setmetatable({}, { __mode = "k" }),
+        axleContacts = {},
+        diagnosticEpoch = 0
     }
 
     diagCount("vehiclesLoaded", 1)
@@ -132,7 +172,109 @@ local function shouldSample(state, dt, intervalMs)
     return true, elapsed
 end
 
-function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin)
+local function sampleTerrainHeight(x, z)
+    local mission = g_currentMission
+    local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
+    if terrain == nil or terrain == 0 or getTerrainHeightAtWorldPos == nil then
+        return nil
+    end
+    local ok, y = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
+    if ok and type(y) == "number" then return y end
+    return nil
+end
+
+function Engine.computeCentralTerrainCrest(left, right, heightFn)
+    if type(left) ~= "table" or type(right) ~= "table" then return nil end
+    if type(left.x) ~= "number" or type(left.z) ~= "number"
+        or type(right.x) ~= "number" or type(right.z) ~= "number" then
+        return nil
+    end
+
+    heightFn = heightFn or sampleTerrainHeight
+    local leftY = heightFn(left.x, left.z)
+    local rightY = heightFn(right.x, right.z)
+    local centerX = (left.x + right.x) * 0.5
+    local centerZ = (left.z + right.z) * 0.5
+    local centerY = heightFn(centerX, centerZ)
+    if type(leftY) ~= "number" or type(rightY) ~= "number"
+        or type(centerY) ~= "number" then
+        return nil
+    end
+
+    local expectedPlaneY = (leftY + rightY) * 0.5
+    local dx, dz = right.x - left.x, right.z - left.z
+    return {
+        crestHeightM = centerY - expectedPlaneY,
+        axleSpanM = math.sqrt(dx * dx + dz * dz),
+        centerX = centerX,
+        centerZ = centerZ,
+        centerTerrainY = centerY,
+        leftTerrainY = leftY,
+        rightTerrainY = rightY
+    }
+end
+
+function Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
+    if not diagnosticsEnabled()
+        or RealismExtensionsConfig == nil
+        or RealismExtensionsConfig.diagnostics == nil
+        or RealismExtensionsConfig.diagnostics.expensiveGeometry ~= true
+        or vehicle == nil
+        or physics == nil or context == nil then return end
+
+    local localX = tonumber(physics.positionX)
+    local localZ = tonumber(physics.positionZ)
+    if localX == nil or localZ == nil
+        or type(context.worldX) ~= "number"
+        or type(context.worldZ) ~= "number" then
+        return
+    end
+
+    -- Bucket left/right contacts by axle longitudinal position. 0.25 m is
+    -- narrow enough to keep distinct axles apart while tolerating modded wheel
+    -- placement noise, matching the grouping precedent from SoilCompaction.
+    local axleKey = math.floor(localZ * 4 + 0.5)
+    local spec = vehicle[Engine.SPEC_FIELD]
+    if spec == nil then return end
+    spec.axleContacts = spec.axleContacts or {}
+
+    local axle = spec.axleContacts[axleKey]
+    if axle == nil or axle.epoch ~= spec.diagnosticEpoch then
+        axle = { epoch = spec.diagnosticEpoch }
+        spec.axleContacts[axleKey] = axle
+    end
+
+    local side = localX < 0 and "left" or (localX > 0 and "right" or nil)
+    if side == nil then return end
+
+    axle[side] = {
+        x = context.worldX,
+        z = context.worldZ,
+        supportWidthM = tonumber(context.supportWidthM),
+        baseTireWidthM = tonumber(context.baseTireWidthM)
+    }
+
+    if axle.left == nil or axle.right == nil or axle.measured == true then return end
+    axle.measured = true
+
+    local result = Engine.computeCentralTerrainCrest(axle.left, axle.right)
+    if result == nil then return end
+
+    diagCount("axleCrestSamples", 1)
+    diagMax("maxAxleSpanM", result.axleSpanM)
+    diagMax("maxCentralTerrainCrestM", result.crestHeightM)
+    if result.crestHeightM >= 0.05 then
+        diagCount("centralCrestOver5cm", 1)
+    end
+    if result.crestHeightM >= 0.10 then
+        diagCount("centralCrestOver10cm", 1)
+    end
+    if result.crestHeightM >= 0.15 then
+        diagCount("centralCrestOver15cm", 1)
+    end
+end
+
+function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x, z, dtMs, stationaryWheelspin, travelDirX, travelDirZ)
     diagCount("samplesProcessed", 1)
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
@@ -176,6 +318,20 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
     diagMax("maxStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
     diagMax("maxSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
     diagMax("maxSlipSinkageMultiplier", tonumber(response.slipSinkageMultiplier) or 0)
+    diagMax("maxObservedSinkDepthM", tonumber(response.observedSinkDepthM) or 0)
+    diagMax("maxPersistentSinkDepthM", tonumber(response.persistentSinkDepthM) or 0)
+    diagMax("maxSinkPlasticTransfer", tonumber(response.sinkPlasticTransfer01) or 0)
+
+    -- Keep one coherent sample snapshot alongside maxima. This avoids
+    -- comparing peak wetness from one moment to peak rut from another.
+    diagSet("lastPlasticWetness01", tonumber(response.physicalGroundWetness01) or 0)
+    diagSet("lastPlasticSlip01", tonumber(response.longitudinalSlip01) or 0)
+    diagSet("lastObservedSinkDepthM", tonumber(response.observedSinkDepthM) or 0)
+    diagSet("lastSinkPlasticTransfer01", tonumber(response.sinkPlasticTransfer01) or 0)
+    diagSet("lastPersistentSinkDepthM", tonumber(response.persistentSinkDepthM) or 0)
+    diagSet("lastStaticRutCapacityM", tonumber(response.staticRutCapacityM) or 0)
+    diagSet("lastSlipRutCapacityM", tonumber(response.slipRutCapacityM) or 0)
+    diagSet("lastRutDepthM", tonumber(response.rutDepthM) or 0)
 
     local desiredDelta = math.max(0, tonumber(response.rutDepthM) - previousDepth)
     diagCount("requestedDepthM", desiredDelta)
@@ -194,12 +350,28 @@ function Engine.processSample(vehicle, wheel, wheelState, context, footprint, x,
         return false
     end
 
+    local transport = nil
+    if travelDirX ~= nil and travelDirZ ~= nil then
+        transport = {
+            travelDirX = travelDirX,
+            travelDirZ = travelDirZ,
+            wetness01 = tonumber(context.physicalGroundWetness) or 0,
+            deformability01 = tonumber(surface.deformability01) or 0,
+            longitudinalSlip = tonumber(context.longitudinalSlip) or 0,
+            lateralSlip = tonumber(context.lateralSlip) or 0,
+            innerBermSide = resolveInnerBermSide(
+                vehicle, x, z, travelDirX, travelDirZ
+            )
+        }
+    end
+
     local accepted = writer:enqueue({
         x = x,
         z = z,
         depthM = appliedDepth,
         radiusM = math.max(0.10, response.rutWidthM * 0.5),
-        hardness = Engine.DEFAULTS.brushHardness
+        hardness = Engine.DEFAULTS.brushHardness,
+        massTransport = transport
     })
 
     if accepted then
@@ -292,13 +464,43 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     diagCount("footprintAccepted", 1)
+    Engine.updateAxleCrestDiagnostics(vehicle, physics, context)
+
+    -- Footprint telemetry is intentionally source-state focused. It lets the
+    -- next runtime test prove how MR/Mud represent duals before RE invents any
+    -- dual-specific multiplier.
+    local supportWidthM = tonumber(footprint.supportWidthM)
+    local baseWidthM = tonumber(context.baseTireWidthM)
+    local contactAreaM2 = tonumber(footprint.contactAreaM2)
+    local groundPressurePa = tonumber(footprint.groundPressurePa)
+    local wheelLoadN = tonumber(footprint.wheelLoadN or context.wheelLoadN)
+    local inflationBar = tonumber(footprint.inflationPressureBar or context.tirePressureBar)
+
+    diagMax("maxSupportWidthM", supportWidthM)
+    diagMax("maxBaseTireWidthM", baseWidthM)
+    diagMax("maxContactAreaM2", contactAreaM2)
+    diagMax("maxWheelLoadN", wheelLoadN)
+    diagMax("maxInflationPressureBar", inflationBar)
+    diagMin("minGroundPressurePa", groundPressurePa)
+    diagMax("maxGroundPressurePa", groundPressurePa)
+
+    if supportWidthM ~= nil and baseWidthM ~= nil and baseWidthM > 0 then
+        local ratio = supportWidthM / baseWidthM
+        diagMax("maxSupportWidthRatio", ratio)
+        if ratio >= 1.45 then
+            diagCount("wideSupportContexts", 1)
+        end
+    end
 
     local x, z = context.worldX, context.worldZ
     local lastX, lastZ = state.lastX, state.lastZ
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
-        Engine.processSample(vehicle, wheel, state, context, footprint, x, z, elapsedMs, stationaryWheelspin)
+        Engine.processSample(
+            vehicle, wheel, state, context, footprint,
+            x, z, elapsedMs, stationaryWheelspin, nil, nil
+        )
         return
     end
 
@@ -324,6 +526,11 @@ function Engine.processWheel(vehicle, wheel, dt)
     end
 
     local sampleDt = elapsedMs / movingSamples
+    local travelDirX, travelDirZ = nil, nil
+    if pathDistance > 0.0001 then
+        travelDirX = (x - lastX) / pathDistance
+        travelDirZ = (z - lastZ) / pathDistance
+    end
 
     for i = 1, movingSamples do
         local t = i / movingSamples
@@ -338,12 +545,16 @@ function Engine.processWheel(vehicle, wheel, dt)
             sx,
             sz,
             sampleDt,
-            stationaryWheelspin
+            stationaryWheelspin,
+            travelDirX,
+            travelDirZ
         )
     end
 end
 
 function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, isSelected)
+    local perfStarted = RealismExtensionsTerrainPerformance ~= nil
+        and RealismExtensionsTerrainPerformance.begin() or nil
     diagCount("vehicleUpdateCalls", 1)
     if RealismExtensionsConfig == nil
         or RealismExtensionsConfig.modules == nil
@@ -360,9 +571,13 @@ function Engine:onUpdate(dt, isActiveForInput, isActiveForInputIgnoreSelection, 
 
     local spec = self[Engine.SPEC_FIELD]
     if spec == nil then return end
+    spec.diagnosticEpoch = (spec.diagnosticEpoch or 0) + 1
 
     for _, wheel in pairs(spec.wheels or {}) do
         Engine.processWheel(self, wheel, dt)
+    end
+    if RealismExtensionsTerrainPerformance ~= nil then
+        RealismExtensionsTerrainPerformance.finish("vehicleUpdate", perfStarted)
     end
 end
 

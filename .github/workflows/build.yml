@@ -11,7 +11,13 @@ on:
       - "diag/**"
       - "chore/**"
       - "research/**"
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 jobs:
@@ -31,6 +37,7 @@ jobs:
           lua5.4 tests/terrain_response_model_harness.lua
           lua5.4 tests/spatial_history_harness.lua
           lua5.4 tests/terrain_persistence_harness.lua
+          lua5.4 tests/soil_mass_transport_model_harness.lua
           lua5.4 tests/terrain_writer_harness.lua
           lua5.4 tests/terrain_deformation_engine_harness.lua
           lua5.4 tests/terrain_deformation_registration_harness.lua
