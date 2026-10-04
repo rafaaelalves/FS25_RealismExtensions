@@ -435,3 +435,24 @@ Fix:
 No RE stack error was found.
 
 The recurring shutdown `delete(nil)` stack remains owned by `FS25_manualAttach/src/core/DetectionHandler.lua`, as in earlier sessions.
+
+
+## User visual confirmation — vanilla helper tracks PASS
+
+2026-10-04 user runtime observation:
+- vanilla helper/NPC wheel marks were visibly present;
+- external True AI Tracks was not active in the corresponding runtime;
+- RE AI visual policy telemetry was active.
+
+Therefore the **AI visual tire-track policy is PASS**.
+
+The tracks feature has one remaining runtime closure gate:
+- validate the early VisualTrackCapture observer lifecycle fix.
+
+Expected healthy capture:
+- native probe `create > 0`, `point > 0`, no drift/errors;
+- bootstrap `captureBootstrap > 0`, `captureFailures = 0`;
+- journal `create > 0`, `accepted > 0`;
+- finalized fragments/chunks/chunk point references become non-zero during normal driving/cuts.
+
+Once that gate passes, the tracks assimilation feature can be closed.
