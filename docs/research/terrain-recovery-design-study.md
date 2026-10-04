@@ -651,3 +651,77 @@ Advance to **Strategy R1: current-surface target recovery**:
 - retain the surrounding slope as the reference, so intentional broad landscaping is preserved.
 
 TerraFarm's modern evolution toward target/grade semantics for deterministic raise/lower operations is supporting precedent for this fallback, but R1 must remain RE-specific and ownership-bounded.
+
+
+## Runtime decision — H2 retained as finishing, R1 promoted for structural ruts
+
+Runtime build `88b87ac75698e39c6f619dc45d622269c9d0b733`
+proved the H2 causal selection/lifecycle path but falsified native SMOOTH as
+the sole actuator for deep wheel channels.
+
+User-visible behavior:
+- small irregularities disappear satisfactorily in roughly one or two passes;
+- spoil/soil mounds become rounder;
+- large wheel channels remain visually deep.
+
+Telemetry matches that observation:
+- final session: 6,142 H2 callbacks;
+- only 20 sampled centers rose while 2,413 lowered;
+- maximum measured center deficit reached 0.5852 m and remained 0.5820 m
+  after the corresponding operation;
+- aggregate center-deficit reduction was partially offset by substantial
+  worsening, despite broad relief/roughness improvement.
+
+Conclusion:
+- **SMOOTH is a finishing actuator.**
+- It must not be tuned indefinitely to perform structural backfill.
+- Deep RE-owned rut recovery requires an actuator that moves the causal low
+  point toward the current local reference surface.
+
+### Strategy R1 — hybrid structural target recovery
+
+R1 adds a second TerrainWriter operation, `TARGET`, using GIANTS
+`setHeightTarget(...)` + `enableSetDeformationMode()`.
+
+Safety/ownership rules:
+1. reference height and slope come from the CURRENT robust boundary plane
+   measured by `RecoverySurfaceEstimator`;
+2. map-start/original terrain height is never used;
+3. structural repair starts only for an RE-authorized rut cell;
+4. each pulse is capped by remaining logical rut ownership and measured
+   physical deficit;
+5. the structural brush is narrow (initial test radius 0.45 m);
+6. once deficit falls into the <=3 cm finishing band, control returns to
+   native SMOOTH;
+7. if ownership is exhausted first, structural raising stops rather than
+   modifying unrelated landscaping.
+
+Initial experimental constants:
+- structural threshold: 0.030 m;
+- max target step: 0.040 m;
+- radius: 0.45 m;
+- maximum structural pulses: 6;
+- retry: 150 ms;
+- TTL: 4 s.
+
+These are technical experiment values, not final gameplay tuning.
+
+Automated proof now covers:
+- a 0.12 m center deficit receiving a 0.04 m target-plane raise;
+- TARGET producing upward center movement without moving its sampled boundary
+  in the deterministic writer harness;
+- hybrid lifecycle SMOOTH -> TARGET -> TARGET -> SMOOTH;
+- exact-cell history reconciliation;
+- bounded structural retries;
+- ownership exhaustion guard;
+- no-rut/no-repair behavior.
+
+The complete workflow is green at
+`fd665a5c6f11b2976c1d3ed91db363ece4f524d5`.
+
+Next runtime gate:
+- prove that FS25's real TerrainDeformation set-target path produces
+  centimeter-scale upward movement at fresh deep RE rut centers;
+- verify unrelated/current landscaping remains untouched;
+- if TARGET raises correctly, tune implement-specific recovery capacity only
+  after the actuator itself is proven.
