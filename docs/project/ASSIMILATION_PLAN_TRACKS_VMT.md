@@ -4,6 +4,32 @@ Updated: 2026-10-04
 Status: implementation-ready
 Branch: `feat/assimilation-tracks-vmt`
 
+## Implementation status — 2026-10-04
+
+Implemented on `feat/assimilation-tracks-vmt`:
+
+- **Phase 1A complete:** spatial `LoadedContactRegistry` records recent grounded/loaded wheel contacts without a mission-wide fleet scan.
+- **Phase 1B complete for TerrainRecovery:** SMOOTH recovery brushes defer when they overlap a recent loaded contact; blocked points do not consume their recovery stamp and can retry after the wheel moves.
+- **Phase 1C instrumentation complete:** runtime diagnostics expose observed Mud sink, rut-history overlap proxy and residual sink proxy. No Mud/radius ownership was changed.
+- **Phase 2A implemented:** `NativeTireTrackAdapter` owns a guarded observation boundary for `createTrack`, `addTrackPoint`, and `cutTrack`.
+- **Phase 2B implemented:** the adapter records only call counts, argument counts and type signatures; it does not persist raw GIANTS payloads.
+- **Phase 2C deliberately NOT enabled yet:** AI visual-track policy remains pending exact runtime confirmation of the FS25 specialization/native gating chain.
+- Persistent visual journal, simplification, chunk store and savegame persistence remain intentionally unimplemented until probe evidence defines the native payload semantics.
+
+Automated harnesses cover:
+- contact spatial movement / TTL / exclusion / cleanup;
+- recovery deferral without stamp loss;
+- TerrainDeformation contact registration and delete cleanup;
+- TireTrack adapter native-first call ordering;
+- observer failure isolation;
+- signature probing;
+- pointer-drift detection;
+- non-destructive uninstall when another mod takes hook ownership.
+
+This is the intended stopping point before the first in-game probe. The next implementation step must be driven by observed TireTrack signatures and runtime AI/implement behavior, not by guessing private GIANTS payload fields.
+
+---
+
 ## Goal
 
 Assimilate only capabilities that materially improve RealismExtensions, while preserving existing specialist ownership and avoiding source-copy reimplementation.
