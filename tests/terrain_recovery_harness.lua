@@ -142,8 +142,6 @@ local function applyNext()
     })
 end
 
-end
-
 RealismExtensionsTerrainRuntime={history=historyApi,writer=writer}
 local perfBegins,perfFinishes=0,0
 RealismExtensionsTerrainPerformance={
