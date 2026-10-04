@@ -3,15 +3,30 @@ RealismExtensionsConfig = { modules={TerrainDeformation=true,TerrainRecovery=tru
 
 local enqueued = {}
 local historyCells, historyDepth = 0, 0
+local historyCandidatesEnabled = true
+local historyRutDepthM = 0.05
+local historyApi = {
+    getRecoveryCandidatesParallelogram=function(self,xs,zs,xw,zw,xh,zh,options)
+        if not historyCandidatesEnabled then return {} end
+        assert(options.minRutM > 0)
+        return {
+            {key="2:2",x=0.40,z=0.40,rutDepthM=historyRutDepthM},
+            {key="6:2",x=1.20,z=0.40,rutDepthM=0.03}
+        }
+    end,
+    get=function(self,x,z)
+        if not historyCandidatesEnabled then return nil end
+        return {rutDepthM=historyRutDepthM}
+    end,
+    applyRecoveryCircle=function(self,x,z,radius,amount,fraction,options)
+        assert(radius > 0 and amount > 0 and fraction > 0)
+        historyCells = historyCells + 2
+        historyDepth = historyDepth + amount
+        return 2, amount
+    end
+}
 RealismExtensionsTerrainRuntime = {
-    history = {
-        applyRecoveryCircle=function(self,x,z,radius,amount,fraction,options)
-            assert(radius > 0 and amount > 0 and fraction > 0)
-            historyCells = historyCells + 2
-            historyDepth = historyDepth + amount
-            return 2, amount
-        end
-    },
+    history = historyApi,
     writer = {
         enqueue=function(self,brush)
             enqueued[#enqueued+1]=brush
@@ -79,6 +94,9 @@ assert(#enqueued > 0)
 local firstCount=#enqueued
 local d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.coveragePoints >= firstCount)
+assert(d.intentCandidateCells > 0)
+assert(d.intentPoints == firstCount)
+assert(d.intentMaxRutM >= 0.05)
 assert(d.roughnessImproved == firstCount)
 assert(d.reliefImproved == firstCount)
 assert(d.reliefVerified == firstCount)
@@ -145,6 +163,20 @@ RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,wor
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
 
+-- Strategy H: a physically working cultivator must not smooth arbitrary
+-- terrain when SpatialHistory has no RE-attributable rut debt in the work area.
+RealismExtensionsTerrainRecovery.resetRuntimeState()
+g_currentMission.time=19000
+historyCandidatesEnabled=false
+local beforeNoIntent=#enqueued
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==beforeNoIntent)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.intentEmptyWorkAreas>0)
+assert(d.intentCandidateCells==0)
+assert(d.intentPoints==0)
+historyCandidatesEnabled=true
+
 -- A loaded wheel blocks smoothing, but the worked patch becomes a bounded
 -- deferred request. It must complete after the contact clears even if no new
 -- Cultivator work-area callback ever visits that patch.
@@ -188,6 +220,27 @@ assert(#enqueued>beforeLoadedGuard)
 d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.deferredApplied>0)
 assert(d.deferredCount==0)
+
+-- If rut debt disappears while a patch waits under a loaded wheel, Strategy H
+-- must discard the stale physical smoothing request rather than touching
+-- unrelated/current baseline terrain.
+RealismExtensionsTerrainRecovery.resetRuntimeState()
+g_currentMission.time=21000
+blockRecovery=true
+historyRutDepthM=0.05
+local beforeStale=#enqueued
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.deferredCount>0)
+historyRutDepthM=0
+blockRecovery=false
+g_currentMission.time=21250
+RealismExtensionsTerrainRecovery.update(16)
+assert(#enqueued==beforeStale)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.intentDeferredGone>0)
+assert(d.deferredCount==0)
+historyRutDepthM=0.05
 
 -- Runtime reset must clear temporary map/session state without removing API.
 RealismExtensionsLoadedContactRegistry=nil
