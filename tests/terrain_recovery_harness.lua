@@ -13,6 +13,7 @@ local exactRecoveryDepth = 0
 local cells = {}
 local callbackMode = "COMPLETE"
 local convergenceStep = 0
+local structuralStep = 0
 
 local function hkey(x,z)
     return string.format("%.2f:%.2f", x, z)
@@ -71,7 +72,7 @@ function historyApi:applyRecoveryAt(x,z,amount,options)
     return applied
 end
 
-local function geometryForMode()
+local function geometryForMode(writerMode)
     if callbackMode == "COMPLETE" then
         return {
             roughnessBeforeM=0.020,
@@ -125,6 +126,51 @@ local function geometryForMode()
                 centerDeficitAfterM=0.002
             }
         end
+    elseif callbackMode == "STRUCTURAL" then
+        if writerMode == "TARGET" then
+            structuralStep = structuralStep + 1
+            if structuralStep == 1 then
+                return {
+                    roughnessBeforeM=0.050, roughnessAfterM=0.035,
+                    reliefBeforeM=0.140, reliefAfterM=0.100,
+                    centerDeficitBeforeM=0.110,
+                    centerDeficitAfterM=0.070,
+                    referenceAfterY=10.0,
+                    planeAxAfter=0.02,
+                    planeAzAfter=-0.01
+                }
+            else
+                return {
+                    roughnessBeforeM=0.035, roughnessAfterM=0.020,
+                    reliefBeforeM=0.100, reliefAfterM=0.055,
+                    centerDeficitBeforeM=0.070,
+                    centerDeficitAfterM=0.030,
+                    referenceAfterY=10.0,
+                    planeAxAfter=0.02,
+                    planeAzAfter=-0.01
+                }
+            end
+        elseif structuralStep >= 2 then
+            return {
+                roughnessBeforeM=0.020, roughnessAfterM=0.010,
+                reliefBeforeM=0.055, reliefAfterM=0.018,
+                centerDeficitBeforeM=0.030,
+                centerDeficitAfterM=0.002,
+                referenceAfterY=10.0,
+                planeAxAfter=0.02,
+                planeAzAfter=-0.01
+            }
+        else
+            return {
+                roughnessBeforeM=0.060, roughnessAfterM=0.052,
+                reliefBeforeM=0.150, reliefAfterM=0.140,
+                centerDeficitBeforeM=0.120,
+                centerDeficitAfterM=0.110,
+                referenceAfterY=10.0,
+                planeAxAfter=0.02,
+                planeAzAfter=-0.01
+            }
+        end
     end
     error("unexpected callbackMode")
 end
@@ -134,14 +180,29 @@ RealismExtensionsTerrainRuntime = {
     writer = {
         enqueue=function(self,brush)
             enqueued[#enqueued+1]=brush
-            assert(brush.mode=="SMOOTH" and brush.source=="RECOVERY")
-            assert(math.abs(brush.smoothAmountM-0.05)<0.000001)
-            assert(math.abs(brush.radiusM-2.0)<0.000001)
-            assert(math.abs(brush.hardness-0.20)<0.000001)
-            assert(math.abs(brush.strength-0.50)<0.000001)
-            assert(brush.probeRadiusM>0)
-            local g=geometryForMode()
-            brush.onApplied(1,-0.002,1.0,0.998,0,g)
+            assert(brush.source=="RECOVERY")
+            if brush.mode=="SMOOTH" then
+                assert(math.abs(brush.smoothAmountM-0.05)<0.000001)
+                assert(math.abs(brush.radiusM-2.0)<0.000001)
+                assert(math.abs(brush.hardness-0.20)<0.000001)
+                assert(math.abs(brush.strength-0.50)<0.000001)
+                assert(brush.probeRadiusM>0)
+                local g=geometryForMode("SMOOTH")
+                brush.onApplied(1,-0.002,1.0,0.998,0,g)
+            elseif brush.mode=="TARGET" then
+                assert(type(brush.targetY)=="number")
+                assert(type(brush.targetPlaneAx)=="number")
+                assert(type(brush.targetPlaneAz)=="number")
+                assert(brush.maxStepM>0 and brush.maxStepM<=0.040001)
+                assert(math.abs(brush.radiusM-0.45)<0.000001)
+                assert(math.abs(brush.hardness-0.45)<0.000001)
+                assert(math.abs(brush.strength-0.90)<0.000001)
+                assert(brush.probeRadiusM>1.0)
+                local g=geometryForMode("TARGET")
+                brush.onApplied(1,0.040,0.90,0.94,0,g)
+            else
+                error("unexpected recovery writer mode "..tostring(brush.mode))
+            end
             return true
         end
     }
@@ -311,7 +372,50 @@ assert(d.convergenceCompleted>=1)
 assert(d.deferredCount==0)
 assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
 
--- 6. No RE-attributable rut debt => physically working cultivation must not
+-- 6. R1 structural recovery: a deep center starts with native SMOOTH only
+-- as a detector/finisher, then two narrow TARGET pulses lift the causal rut
+-- toward the CURRENT fitted boundary plane before H2 performs final polish.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.12}})
+Recovery.resetRuntimeState()
+callbackMode="STRUCTURAL"
+structuralStep=0
+g_currentMission.time=21000
+before=#enqueued
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==before+1)
+d=Recovery.getDiagnostics()
+assert(d.structuralScheduled==1)
+assert(d.deferredCount==1)
+assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.12)
+
+g_currentMission.time=21160
+Recovery.update(16)
+assert(#enqueued==before+2)
+d=Recovery.getDiagnostics()
+assert(d.structuralApplied==1)
+assert(d.structuralScheduled>=2)
+assert(d.structuralDeficitReductionM>0.039)
+assert(d.structuralCenterRaisedM>0.039)
+assert(d.deferredCount==1)
+
+g_currentMission.time=21320
+Recovery.update(16)
+assert(#enqueued==before+3)
+d=Recovery.getDiagnostics()
+assert(d.structuralApplied==2)
+assert(d.structuralCompleted>=1)
+assert(d.deferredCount==1)
+
+g_currentMission.time=21480
+Recovery.update(16)
+assert(#enqueued==before+4)
+d=Recovery.getDiagnostics()
+assert(d.convergenceCompleted>=1)
+assert(d.deferredCount==0)
+assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
+assert(d.structuralOwnershipExhausted==0)
+
+-- 7. No RE-attributable rut debt => physically working cultivation must not
 -- smooth arbitrary landscaping/current baseline terrain.
 clearHistory()
 Recovery.resetRuntimeState()
@@ -325,7 +429,7 @@ assert(d.intentEmptyWorkAreas>0)
 assert(d.intentCandidateCells==0)
 assert(d.intentPoints==0)
 
--- 7. A loaded wheel defers the first authorized pulse; overlapping callbacks
+-- 8. A loaded wheel defers the first authorized pulse; overlapping callbacks
 -- coalesce. Once the wheel clears, recovery executes without requiring another
 -- Cultivator callback.
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
@@ -367,7 +471,7 @@ assert(d.deferredApplied>0)
 assert(d.deferredCount==0)
 assert(d.convergenceCompleted>0)
 
--- 8. If causal debt disappears while a first pulse waits under a loaded wheel,
+-- 9. If causal debt disappears while a first pulse waits under a loaded wheel,
 -- the stale request must be discarded without touching terrain.
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.05}})
 Recovery.resetRuntimeState()
@@ -385,7 +489,7 @@ d=Recovery.getDiagnostics()
 assert(d.intentDeferredGone>0)
 assert(d.deferredCount==0)
 
--- 9. Inactive/rejected work area stays inert and perf accounting remains paired.
+-- 10. Inactive/rejected work area stays inert and perf accounting remains paired.
 RealismExtensionsLoadedContactRegistry=nil
 clearHistory()
 Recovery.resetRuntimeState()
