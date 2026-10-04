@@ -137,7 +137,34 @@ RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,rejectedSuper,wor
 assert(#enqueued==beforeEnqueued)
 assert(perfBegins==perfFinishes)
 
+-- A loaded wheel blocks smoothing, but the blocked location must remain
+-- eligible immediately after the contact disappears.
+RealismExtensionsTerrainRecovery.resetRuntimeState()
+g_currentMission.time=20000
+local blockRecovery=true
+RealismExtensionsLoadedContactRegistry={
+    overlapsCircle=function(x,z,radius,nowMs)
+        if blockRecovery then
+            return true,{loadN=32000}
+        end
+        return false,nil
+    end
+}
+local beforeLoadedGuard=#enqueued
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued==beforeLoadedGuard)
+d=RealismExtensionsTerrainRecovery.getDiagnostics()
+assert(d.loadedContactQueries>0)
+assert(d.loadedContactSkips>0)
+assert(d.loadedContactMaxLoadN>=32000)
+
+blockRecovery=false
+g_currentMission.time=20001
+RealismExtensionsTerrainRecovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(#enqueued>beforeLoadedGuard)
+
 -- Runtime reset must clear temporary map/session state without removing API.
+RealismExtensionsLoadedContactRegistry=nil
 RealismExtensionsTerrainRecovery.resetRuntimeState()
 d=RealismExtensionsTerrainRecovery.getDiagnostics()
 assert(d.workAreaCalls==0)
