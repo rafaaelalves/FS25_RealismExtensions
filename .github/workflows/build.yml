@@ -35,7 +35,7 @@ jobs:
 
       - name: Build PTO dashboard texture
         run: |
-          magick -background none -density 192 \
+          convert -background none -density 192 \
             scripts/pto/ui/pto_icon.svg \
             -resize 512x320 \
             -define dds:compression=none \
