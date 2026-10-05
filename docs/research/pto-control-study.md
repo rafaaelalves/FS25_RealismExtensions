@@ -450,3 +450,59 @@ coexistence case, not a feature dependency.
 Initial tuning constants live under `RealismExtensionsConfig.ptoHud`, so
 runtime screenshots can refine offset/size without redesigning the ownership
 boundary.
+
+
+### Graphical HUD first-runtime follow-up — engagement + live layout tuning
+
+The first in-game graphical-indicator test validated:
+- vanilla speed-meter anchoring;
+- DDS overlay creation;
+- controlled-HUD draw order;
+- scale matching at 1920x1080 / UI scale 1.0.
+
+It also exposed two development needs.
+
+#### Engagement semantics
+
+The initial indicator queried `getIsPowerTakeOffActive()` on the root tractor.
+That is not a valid generic engagement source: GIANTS' base PowerTakeOffs
+implementation on an output PTO vehicle returns false. PTO-consuming implement
+specializations such as TurnOnVehicle/Dischargeable/FillUnit/BaleLoader extend
+that function with their actual operating state.
+
+RE now resolves engagement across the attached implement graph:
+1. query each attached PTO consumer's `getIsPowerTakeOffActive()`;
+2. for modded PTO consumers with an incomplete overwrite chain, fall back to
+   `getIsTurnedOn()`;
+3. recurse through intermediate implements.
+
+The same resolver is used by both the dashboard lamp and the safety rule that
+blocks PTO-speed selection while an attached PTO consumer is operating.
+
+Diagnostics now expose `engageSource` so runtime logs distinguish
+`IMPLEMENT_PTO_ACTIVE`, `IMPLEMENT_TURNED_ON` and no active consumer.
+
+#### Live layout tuning
+
+HUD placement is visual calibration, not PTO domain logic. Rebuilding the mod
+for every 2–5 pixel adjustment is unnecessary, so development console commands
+are now available:
+
+- `rePTOHud`
+  - prints the current layout;
+  - optional: `rePTOHud x y width height textSize textGap`.
+- `rePTOHudMove dx dy`
+  - relative pixel movement; positive X = right, positive Y = up.
+- `rePTOHudScale factor`
+  - scales icon, mode text and their gap together.
+- `rePTOHudReset`
+  - restores branch defaults.
+
+These changes are local/session-only by design. Once a layout is visually
+approved, the selected numbers should be committed to
+`RealismExtensionsConfig.ptoHud`. This mirrors normal HUD authoring practice:
+stable anchor + live development tuning + fixed production defaults.
+
+A future user-facing movable HUD/settings screen is optional and should only be
+added if players actually need per-user placement rather than development-time
+calibration.
