@@ -353,3 +353,47 @@ requirement is therefore necessary to preserve the physical shaft/requirement
 ratio, including deliberate mismatch cases such as selecting 540 for a
 1000-rpm implement. This was re-derived during the source audit and remains the
 correct bridge contract.
+
+
+### Hand-throttle load clarification — runtime follow-up
+
+The first native runtime follow-up clarified two different load mechanisms that
+must not be conflated:
+
+1. **RE hand throttle + MR response**
+   - RE publishes a minimum requested engine RPM;
+   - RC scopes that request into MR's required-motor-RPM path;
+   - MR then produces whatever physical engine/load response is necessary to
+     reach/hold that requested RPM.
+   - This is legitimate drivetrain behavior and must remain.
+
+2. **Dynamic PTO `gruntLoadExtra`**
+   - the exact 1.1.3.0 source derives this extra value from baler overload and
+     tractor PTO-power shortage;
+   - it then adds the value directly to motor/load-percentage getters and
+     smoothed/raw load fields.
+   - This remains a synthetic feedback layer and is intentionally not absorbed
+     into RE while MR/RMS already own physical load/stress.
+
+Therefore the absorption rule is not "remove load caused by hand throttle".
+It is "do not add a second synthetic load percentage on top of specialist
+drivetrain physics."
+
+### Input registration follow-up
+
+The exact Dynamic PTO source registers vehicle action events with the optional
+`ignoreCollisions=true` argument (with compatibility fallback) and explicitly
+activates each event through `setActionEventActive(..., true)`.
+
+The first RE native UI test showed the HUD working while Ctrl+PageUp/PageDown
+and Ctrl+0 appeared inert. RE had simplified action registration and silently
+returned when a collision prevented registration.
+
+Correction:
+- PTO combo actions now attempt collision-safe registration first, preserving
+  coexistence with other bindings instead of claiming them exclusively;
+- explicit action-event activation is restored;
+- failures and successful collision-bypass registrations are counted in
+  runtime diagnostics;
+- rejected PTO-speed changes while the shaft is engaged now produce a visible
+  warning instead of a silent no-op.
