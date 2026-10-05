@@ -22,16 +22,16 @@
             <br>PTO: rotação anterior</br>
         </text>
         <text name="input_RE_PTO_THROTTLE_UP">
-            <en>PTO hand throttle +</en>
-            <br>Acelerador manual PTO +</br>
+            <en>PTO hand throttle +100 RPM</en>
+            <br>Acelerador manual PTO +100 RPM</br>
         </text>
         <text name="input_RE_PTO_THROTTLE_DOWN">
-            <en>PTO hand throttle -</en>
-            <br>Acelerador manual PTO -</br>
+            <en>PTO hand throttle -100 RPM</en>
+            <br>Acelerador manual PTO -100 RPM</br>
         </text>
         <text name="input_RE_PTO_THROTTLE_RESET">
-            <en>Release PTO hand throttle</en>
-            <br>Liberar acelerador manual PTO</br>
+            <en>Release PTO hand throttle (ROAD)</en>
+            <br>Liberar acelerador manual PTO (ROAD)</br>
         </text>
     </l10n>
 
