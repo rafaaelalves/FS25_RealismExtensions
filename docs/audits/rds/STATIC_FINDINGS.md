@@ -179,3 +179,142 @@ RE: central settings plus shared controlled-entity HUD.
 ## Source-audit conclusion
 
 RDS is a good **behavioral reference**, not a source-port target. The strongest reasons to absorb are the ignition UX and unique pneumatic capability; the strongest reasons to redesign are mechanical ownership, networking authority and the air-brake model.
+
+
+## Exact 1.4 status review
+
+Current exact baseline: `FS25_RealisticDieselStart 1.4.0.0`, SHA-256 `a2a983c7754bc4fb3dffc04839fb16cf844c72d7664ae78cfcd70fcf3c15721c`.
+
+| Finding | 1.4 status | Notes |
+|---|---|---|
+| RDS-01 broad motorized eligibility | **PRESENT** | still injects into every motorized vehicle type and explicitly excludes only electric |
+| RDS-02 400/550 ms dead band | **PRESENT** | release at 401–549 ms still does nothing |
+| RDS-03 synthetic start clutch | **PRESENT / improved migration** | moved to Alt+L; one-time default-binding migration preserves custom mappings |
+| RDS-04 duplicate engine temperature | **PRESENT** | `engineHeat` remains authoritative for RDS preheat/warm-up |
+| RDS-05 direct torqueScale cold derate | **PRESENT** | unchanged ownership concern |
+| RDS-06 speed-based cold damage | **PRESENT** | unchanged ownership/model concern |
+| RDS-07 local start randomness | **PRESENT** | `math.random()` remains in local `tryCrank` |
+| RDS-08 under-authorized damage event | **PRESENT** | no controller/amount derivation on server |
+| RDS-09 no full air initial stream | **PRESENT** | source still explicitly documents the compromise |
+| RDS-10 continuous held-brake air drain | **PRESENT** | speed/mass-scaled formula remains |
+| RDS-11 compressor ignores RPM | **PRESENT** | constant bar/sec remains |
+| RDS-12 one scalar reservoir | **PRESENT** | external getter/setter added, topology unchanged |
+| RDS-13 truck category heuristic | **PRESENT** | unchanged |
+| RDS-14 vanilla damage leakage | **PRESENT** | unchanged |
+| RDS-15 speed-gated spring brake | **PRESENT** | unchanged |
+| RDS-16 spring brake owns brake lights | **FIXED** | 1.4 deliberately stops touching service brake lights |
+| RDS-17 visual running before confirmation | **FIXED** | request is verified and later `onStartMotor` can confirm external hard-start completion |
+| RDS-18 duplicate visual writes | **PRESENT** | still called in update + post-update |
+| RDS-19 broad light/electrical ownership | **PRESENT / partially softened** | persistent lights behavior improved, overwrite surface remains |
+| RDS-20 one global glow curve | **PRESENT / recalibrated** | max/slope improved; still one technology curve |
+| RDS-21 AI pneumatic deadlock | **FIXED BY ABSTRACTION** | AI pressure is forced to at least governor cut-in; effective but physically magical |
+| RDS-22 independent HUD/settings | **PRESENT / much improved** | scale/ADS coexistence better; surface is larger |
+
+## New 1.4 findings
+
+### RDS-23 — ADS compatibility is private-contract-heavy
+**CONFIRMED_STATIC / HIGH MAINTENANCE RISK**
+
+RDS writes ADS private start-button fields directly and optionally invokes `ADS_StartButtonEvent.send`. It also globally wraps `Motorized.actionEventToggleMotorState` to suppress the vanilla/ADS direct path for RDS-owned vehicles.
+
+The composition is clever and fixes real behavior, but it is brittle across ADS updates.
+
+RE lesson: a `StartMechanicalProvider` should own this boundary. External private adapters, if unavoidable, belong in RC.
+
+### RDS-24 — event-confirmed external start is a strong positive pattern
+**POSITIVE_PATTERN**
+
+When another system owns a difficult start, RDS stays in external CRANKING and waits for `onStartMotor` before declaring success.
+
+This is substantially better than assuming a command succeeded.
+
+### RDS-25 — optional fuel-system methods are a strong provider precedent
+**POSITIVE_PATTERN**
+
+RDS detects `scGetColdStartFactor` / `scGetStartBlockReason` by capability and lets the fuel owner explain start refusal.
+
+This directly supports RE's provider-oriented design.
+
+### RDS-26 — absolute pneumatic setter has weak conservation semantics
+**DESIGN_RISK**
+
+The new Realistic Brakes boundary exposes server-only `rdsSetAirPressure(bar)`.
+
+It is much better than private-table writes, but a consumer can replace reservoir pressure without an explicit conservation/transaction invariant.
+
+RE: expose capacity/volume plus transfer operations, or an atomic owner-managed transfer request.
+
+### RDS-27 — keybind migration is a reusable positive pattern
+**POSITIVE_PATTERN**
+
+The one-time L -> Alt+L migration changes only the obsolete exact default, preserving custom player mappings.
+
+RE should reuse this principle for future input migrations.
+
+### RDS-28 — the migration notification adds an unnecessary global hot hook
+**CONFIRMED_STATIC / LOW PERFORMANCE DESIGN ISSUE**
+
+A global `FSBaseMission.update` append exists solely to count down a 6-second one-time notification timer.
+
+The work is tiny, but the architectural lesson matters: reuse the project core scheduler/update owner rather than creating a permanent global hook for a temporary concern.
+
+### RDS-29 — HUD scale invalidation is a positive optimization pattern
+**POSITIVE_PATTERN**
+
+The HUD subscribes to UI-scale changes and recalculates cached geometry only when needed.
+
+This should inform the RE shared HUD.
+
+### RDS-30 — HUD has dead resources/state and lifecycle leaks
+**CONFIRMED_STATIC**
+
+In 1.4:
+- `showBar` is never set true;
+- `statusText` is never assigned;
+- `readyBlinkTimer` continues to be maintained after blinking was removed;
+- `barBg` and `barFill` are still allocated for a progress bar path that never renders;
+- `tickMark` is allocated and never used;
+- `tickMark` is not deleted;
+- `rdsHudSinADS` is registered but not removed by `RDSHud:delete()`.
+
+This deserves a second-save lifecycle test upstream and is a useful RE cleanup/CI lesson.
+
+### RDS-31 — 1.4 runtime version string is stale
+**CONFIRMED_STATIC**
+
+The archive's main script still prints:
+`[RealisticDieselStart] Script principal cargado (v1.2.0.0)`.
+
+RE's generated BuildIdentity avoids this class of provenance error.
+
+### RDS-32 — warm-up description claims RPM/load but implementation uses load only
+**CONFIRMED_STATIC / DOCUMENTATION-MODEL DRIFT**
+
+1.4 comments describe warm-up as RPM/load-sensitive. The implementation samples `getSmoothLoadPercentage()` but does not sample engine RPM.
+
+The load-sensitive progression is still a useful improvement, but its calibration/provenance should match the actual model.
+
+### RDS-33 — per-vehicle ADS HUD ownership check is a positive pattern
+**POSITIVE_PATTERN**
+
+HUD coexistence checks whether ADS actually manages the current vehicle, including ADS exclusions, instead of only checking whether the mod is installed.
+
+General rule: resolve capability ownership per entity, not per installed package.
+
+## Updated conclusion
+
+The 1.4 source materially improves compatibility and presentation quality, but the original architectural absorption recommendation remains intact.
+
+The most valuable new lessons are:
+- event-confirmed outcomes;
+- optional capability APIs;
+- safe input migration;
+- event-driven HUD scale invalidation;
+- per-vehicle owner resolution.
+
+The strongest remaining reasons not to clone RDS are:
+- private ADS coupling;
+- local stochastic authority;
+- duplicate thermal/torque/damage ownership;
+- weak pneumatic physics;
+- lifecycle/dead-state accumulation.
