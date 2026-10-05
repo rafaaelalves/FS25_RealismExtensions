@@ -17,8 +17,8 @@ RealismExtensionsConfig = {
         -- Pixel-space layout relative to the vanilla speed-gauge centre.
         -- RMS uses the same anchor for its dashboard additions, so this stays
         -- independent from RMS internals while fitting the same cluster.
-        offsetXPx = -68,
-        offsetYPx = 49,
+        offsetXPx = -53,
+        offsetYPx = -11,
         iconWidthPx = 30,
         iconHeightPx = 18.75,
         modeTextSizePx = 9,
