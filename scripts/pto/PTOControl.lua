@@ -27,6 +27,9 @@ local function resetStats()
         throttleChanges = 0,
         rejectedUnsupported = 0,
         rejectedEngaged = 0,
+        actionEventsRegistered = 0,
+        actionEventsFailed = 0,
+        actionEventsCollisionBypass = 0,
         noops = 0
     }
 end
@@ -39,6 +42,13 @@ local function vehicleLabel(vehicle)
         end
     end
     return tostring(vehicle ~= nil and vehicle.configFileName or "vehicle")
+end
+
+local function notifyOperator(message)
+    local mission = g_currentMission
+    if mission ~= nil and type(mission.showBlinkingWarning) == "function" then
+        mission:showBlinkingWarning(tostring(message), 2500)
+    end
 end
 
 local function logOperatorState(vehicle, spec, reason)
@@ -334,6 +344,11 @@ function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
     if replicated ~= true then
         if not isAvailable(spec, mode) then
             count("rejectedUnsupported")
+            notifyOperator(
+                "PTO: rotação "
+                .. tostring(Model.getModeToken(mode))
+                .. " indisponível neste trator"
+            )
             if RealismExtensionsDiagnostics ~= nil then
                 RealismExtensionsDiagnostics.verbose(
                     "PTO operator rejected | vehicle="
@@ -346,6 +361,9 @@ function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
         end
         if mode ~= spec.mode and Resolver.isPtoEngaged(self) then
             count("rejectedEngaged")
+            notifyOperator(
+                "PTO engatada: desengate antes de alterar a rotação"
+            )
             if RealismExtensionsDiagnostics ~= nil then
                 RealismExtensionsDiagnostics.verbose(
                     "PTO operator rejected | vehicle="
@@ -467,18 +485,66 @@ local function actionName(name)
 end
 
 local function addAction(vehicle, spec, name, callback, text)
-    local _, eventId = vehicle:addActionEvent(
+    local action = actionName(name)
+    local eventId = nil
+    local collisionBypass = false
+
+    -- FS25 vehicle actions can collide with bindings registered by other
+    -- specializations/mods. The exact Dynamic PTO source uses the optional
+    -- ignore-collisions argument for these combo bindings. Preserve that
+    -- robust registration behavior without taking ownership of the other
+    -- action: both bindings remain eligible to fire.
+    local ok, _, id = pcall(
+        vehicle.addActionEvent,
+        vehicle,
         spec.actionEvents,
-        actionName(name),
+        action,
         vehicle,
         callback,
         false,
         true,
         false,
+        true,
+        nil,
+        nil,
         true
     )
-    if eventId == nil or g_inputBinding == nil then return end
+    if ok and id ~= nil then
+        eventId = id
+        collisionBypass = true
+    else
+        local fallbackOk, _, fallbackId = pcall(
+            vehicle.addActionEvent,
+            vehicle,
+            spec.actionEvents,
+            action,
+            vehicle,
+            callback,
+            false,
+            true,
+            false,
+            true
+        )
+        if fallbackOk then eventId = fallbackId end
+    end
 
+    if eventId == nil then
+        count("actionEventsFailed")
+        if RealismExtensionsDiagnostics ~= nil then
+            RealismExtensionsDiagnostics.warn(
+                "PTO input registration failed: " .. tostring(name)
+            )
+        end
+        return
+    end
+
+    count("actionEventsRegistered")
+    if collisionBypass then count("actionEventsCollisionBypass") end
+
+    if g_inputBinding == nil then return end
+    if type(g_inputBinding.setActionEventActive) == "function" then
+        g_inputBinding:setActionEventActive(eventId, true)
+    end
     if type(g_inputBinding.setActionEventText) == "function" then
         g_inputBinding:setActionEventText(eventId, text)
     end
