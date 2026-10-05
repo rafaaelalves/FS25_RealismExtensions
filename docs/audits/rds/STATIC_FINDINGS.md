@@ -318,3 +318,53 @@ The strongest remaining reasons not to clone RDS are:
 - duplicate thermal/torque/damage ownership;
 - weak pneumatic physics;
 - lifecycle/dead-state accumulation.
+
+
+### RDS-34 — simulation-affecting settings are local profile state
+**CONFIRMED_STATIC / MULTIPLAYER DESIGN RISK**
+
+`RDSSettings` stores all options in each peer's local `modSettings` file.
+There is no settings synchronization/authority layer.
+
+The same table mixes:
+- local presentation/preferences (`plugColor*`, input/HUD behavior);
+- simulation-affecting rules (`damageEnabled`, `airSystemEnabled`,
+  `preheatScale`, `chargeScale`, `clutchRequired`).
+
+Consequences include possible client/server disagreement about start readiness,
+damage and whether the pneumatic system exists.
+
+RE rule:
+- local preferences stay local;
+- simulation configuration is server/save authoritative and synchronized.
+
+### RDS-35 — start/preheat specialization state has no full MP state contract
+**CONFIRMED_STATIC / MULTIPLAYER DESIGN RISK**
+
+RDS has no specialization initial/update stream for:
+- staged RDS state;
+- preheat progress;
+- external-crank state;
+- warm-up state.
+
+The air event is a separate server broadcast; motor state itself is partly
+carried by GIANTS.
+
+This can work for the currently controlling client but does not provide an
+explicit authoritative transfer/join contract for RDS start state.
+
+RE needs a revisioned START dirty group and full initial state.
+
+### RDS-36 — live calibration/settings workflow is a positive development pattern
+**POSITIVE_PATTERN**
+
+RDS exposes bounded live console tuning for timing, charge rate, brake debug and
+glow-indicator color, with persistence.
+
+RE should keep a development calibration surface, but distinguish:
+- dev/calibration knobs;
+- player preferences;
+- authoritative gameplay parameters.
+
+Validated constants should graduate into profiles/config data rather than
+remaining ad-hoc runtime globals.
