@@ -29,6 +29,8 @@ local C=RealismExtensionsPTOControl
 local motor={
     minRpm=800,
     maxRpm=2200,
+    lastRealMotorRpm=845,
+    getLastRealMotorRpm=function(self) return self.lastRealMotorRpm end,
     getPtoMotorRpmRatio=function() return 4.0 end
 }
 
@@ -126,26 +128,36 @@ assert(#g_currentMission.warnings==1)
 assert(string.find(g_currentMission.warnings[1],"desengate",1,true)~=nil)
 engaged=false
 
--- Hand throttle is independent operator state.
+-- Hand throttle is an engine-RPM governor, not an abstract 5% nudge.
 C.actionThrottleUp(vehicle)
-assert(math.abs(spec.handThrottlePercent-0.05)<0.000001)
-assert(sent==2)
 state=C.getPublicState(vehicle)
-assert(state.handThrottleRpm>800)
-assert(state.handThrottleRpm<2200)
+assert(math.abs(state.handThrottleRpm-900)<0.000001)
+assert(math.abs(spec.handThrottlePercent-(100/1400))<0.000001)
+assert(sent==2)
+
+C.actionThrottleUp(vehicle)
+state=C.getPublicState(vehicle)
+assert(math.abs(state.handThrottleRpm-1000)<0.000001)
+assert(sent==3)
+
+C.actionThrottleDown(vehicle)
+state=C.getPublicState(vehicle)
+assert(math.abs(state.handThrottleRpm-900)<0.000001)
+assert(sent==4)
 
 C.actionThrottleReset(vehicle)
 assert(spec.handThrottlePercent==0)
-assert(sent==3)
+assert(sent==5)
 assert(C.getPublicState(vehicle).handThrottleRpm==0)
 
 local diag=C.getDiagnostics()
 assert(diag.actionModeNext==1)
-assert(diag.actionThrottleUp==1)
+assert(diag.actionThrottleUp==2)
+assert(diag.actionThrottleDown==1)
 assert(diag.actionThrottleReset==1)
 assert(diag.modeChanges==1)
-assert(diag.throttleChanges==2)
-assert(diag.stateChanges==3)
+assert(diag.throttleChanges==4)
+assert(diag.stateChanges==5)
 assert(diag.rejectedEngaged==1)
 assert(diag.actionEventsRegistered==5)
 assert(diag.actionEventsFailed==0)
