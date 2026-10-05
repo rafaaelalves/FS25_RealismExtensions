@@ -40,6 +40,33 @@ local chipper={
 
 local engaged=false
 local dirty=0
+local registeredActions=0
+local activeEvents=0
+local collisionBypassArgs=0
+
+InputAction={
+    RE_PTO_MODE_NEXT="RE_PTO_MODE_NEXT",
+    RE_PTO_MODE_PREV="RE_PTO_MODE_PREV",
+    RE_PTO_THROTTLE_UP="RE_PTO_THROTTLE_UP",
+    RE_PTO_THROTTLE_DOWN="RE_PTO_THROTTLE_DOWN",
+    RE_PTO_THROTTLE_RESET="RE_PTO_THROTTLE_RESET"
+}
+GS_PRIO_HIGH=2
+g_inputBinding={
+    setActionEventText=function() end,
+    setActionEventTextPriority=function() end,
+    setActionEventTextVisibility=function() end,
+    setActionEventActive=function(id,active)
+        if active then activeEvents=activeEvents+1 end
+    end
+}
+g_currentMission={
+    warnings={},
+    showBlinkingWarning=function(self,msg,duration)
+        self.warnings[#self.warnings+1]=msg
+    end
+}
+
 local vehicle={
     configFileName="/mods/fiat18090.xml",
     isServer=true,
@@ -50,10 +77,21 @@ local vehicle={
     getAttachedImplements=function() return {{object=chipper}} end,
     getIsPowerTakeOffActive=function() return engaged end,
     getNextDirtyFlag=function() return 8 end,
-    raiseDirtyFlags=function(self,flag) dirty=dirty+flag end
+    raiseDirtyFlags=function(self,flag) dirty=dirty+flag end,
+    clearActionEventsTable=function(self,t) end,
+    addActionEvent=function(self,t,action,target,callback,triggerUp,triggerDown,triggerAlways,startActive,callbackState,customIcon,ignoreCollisions)
+        registeredActions=registeredActions+1
+        if ignoreCollisions==true then collisionBypassArgs=collisionBypassArgs+1 end
+        return true,registeredActions,nil
+    end
 }
 
 C.onLoad(vehicle,nil)
+C.onRegisterActionEvents(vehicle,true,true)
+assert(registeredActions==5)
+assert(activeEvents==5)
+assert(collisionBypassArgs==5)
+
 local spec=vehicle[C.SPEC_TABLE]
 assert(spec~=nil)
 assert(spec.enabled==true)
@@ -81,6 +119,8 @@ engaged=true
 assert(C.stepPowerTakeOffMode(vehicle,-1)==false)
 assert(spec.mode==M.MODE.RPM_1000)
 assert(sent==1)
+assert(#g_currentMission.warnings==1)
+assert(string.find(g_currentMission.warnings[1],"desengate",1,true)~=nil)
 engaged=false
 
 -- Hand throttle is independent operator state.
@@ -104,6 +144,9 @@ assert(diag.modeChanges==1)
 assert(diag.throttleChanges==2)
 assert(diag.stateChanges==3)
 assert(diag.rejectedEngaged==1)
+assert(diag.actionEventsRegistered==5)
+assert(diag.actionEventsFailed==0)
+assert(diag.actionEventsCollisionBypass==5)
 
 -- Requirement refresh is event-driven, not per-frame.
 vehicle.getAttachedImplements=function() return {} end
