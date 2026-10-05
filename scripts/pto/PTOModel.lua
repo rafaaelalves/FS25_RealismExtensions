@@ -186,6 +186,47 @@ function Model.handThrottleRpm(percent, minRpm, maxRpm)
     return minRpm + (maxRpm - minRpm) * percent
 end
 
+function Model.handThrottlePercentForRpm(rpm, minRpm, maxRpm)
+    rpm = tonumber(rpm) or 0
+    if rpm <= 0 then return 0 end
+
+    minRpm = tonumber(minRpm) or 850
+    maxRpm = tonumber(maxRpm) or math.max(minRpm, 2200)
+    if maxRpm < minRpm then maxRpm = minRpm end
+    if maxRpm <= minRpm then return 1 end
+
+    rpm = math.max(minRpm, math.min(maxRpm, rpm))
+    return clamp01((rpm - minRpm) / (maxRpm - minRpm))
+end
+
+function Model.stepHandThrottleRpm(currentRpm, direction, minRpm, maxRpm, currentEngineRpm, stepRpm)
+    direction = tonumber(direction) or 0
+    if direction == 0 then return tonumber(currentRpm) or 0 end
+
+    minRpm = tonumber(minRpm) or 850
+    maxRpm = tonumber(maxRpm) or math.max(minRpm, 2200)
+    if maxRpm < minRpm then maxRpm = minRpm end
+
+    stepRpm = math.max(10, tonumber(stepRpm) or 100)
+    currentRpm = tonumber(currentRpm) or 0
+
+    if direction > 0 then
+        local base = currentRpm
+        if base <= 0 then
+            base = math.max(minRpm, tonumber(currentEngineRpm) or minRpm)
+        end
+
+        local target = math.floor(base / stepRpm) * stepRpm
+        if target <= base + 0.001 then target = target + stepRpm end
+        return math.min(maxRpm, math.max(minRpm, target))
+    end
+
+    if currentRpm <= 0 then return 0 end
+    local target = currentRpm - stepRpm
+    if target <= minRpm then return 0 end
+    return math.max(minRpm, target)
+end
+
 function Model.clampThrottle(percent)
     return clamp01(percent)
 end
