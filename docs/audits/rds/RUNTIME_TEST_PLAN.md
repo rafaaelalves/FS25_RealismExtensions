@@ -56,7 +56,21 @@ Preheat -> ADS starter -> confirmed running.
 Hold crank through difficult start without bypassing preheat or stopping incorrectly on release.
 
 ### T13 — historical bridge comparison
-Compare native RE+ADS behavior with the old RDSADS semantics before retiring that bridge.
+Compare native RE+ADS behavior with:
+- old RC RDSADS semantics;
+- exact RDS 1.4 behavior for held ADS hard-start.
+
+Expected: RE keeps one key owner, passes crank intent cleanly and waits for
+authoritative start confirmation without private ADS table writes.
+
+### T13b — fuel-start facet composition
+With a compatible fuel-system provider:
+- premium/high-cetane fuel;
+- stale/low-cetane fuel;
+- filter/air-line hard block.
+
+Expected: fuel factor/reason composes with starter/glow state instead of
+replacing it.
 
 ## Pneumatic MVP
 
@@ -117,6 +131,10 @@ AI automatically satisfies ignition/preheat.
 ### T27 — low-air helper departure
 AI builds required air or fails safely; never freezes indefinitely.
 
+Contrast against RDS 1.4's reference workaround (instant pressure floor):
+RE must not create unexplained persistent pressure merely because AI took
+control.
+
 ### T28 — Courseplay / AutoDrive smoke
 No oscillation between manual RE start state and external controller behavior.
 
@@ -131,7 +149,11 @@ Expected: RE indicators remain anchored in controlled-entity HUD.
 
 ### T31 — second mission same process
 Save A -> menu -> Save B.
-Expected: no stale HUD/settings references.
+Expected: no stale HUD/settings references or console-command ownership leaks.
+
+RDS 1.4 reference defects to guard against:
+- overlay allocated but not deleted;
+- console command registered by HUD instance but not removed.
 
 ## First replacement milestone exit gate
 
@@ -143,4 +165,33 @@ External RDS can be disabled in the project test stack when:
 - pneumatic T14–T21 pass for a baseline air-brake vehicle;
 - AI cannot deadlock;
 - no new RC ownership collision is introduced;
-- current RDS 1.4 source has been rechecked if it becomes available.
+- exact RDS 1.4 source lessons/regressions are covered by the relevant gates.
+
+
+## Reference-mod runtime characterization (optional before native code)
+
+The exact RDS 1.4 source is now available. A short external-RDS characterization
+session can improve calibration without making RDS the design authority.
+
+### R1 — input boundary sweep
+Measure 350 / 400 / 450 / 500 / 550 / 600 ms release/hold behavior.
+Expected source prediction: 401–549 ms is inert.
+
+### R2 — ADS hard-start handoff
+With ADS difficult-start condition, hold key until ADS catches.
+Verify RDS remains CRANKING and transitions only on real motor start.
+
+### R3 — AI pressure clamp inheritance
+Start with low air, hand vehicle to helper, then take control back.
+Measure whether physical pressure permanently jumps to >= cut-in as predicted.
+
+### R4 — second-save HUD lifecycle
+Use `rdsHudSinADS` in save A, return to menu, load save B and inspect command
+registration/behavior.
+
+### R5 — join-in-progress low-air
+Join while an unattended truck has non-default air pressure and inspect time to
+first correct client state.
+
+These tests are not prerequisites for the clean-room RE architecture; they are
+useful behavioral/calibration evidence.
