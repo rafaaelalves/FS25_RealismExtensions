@@ -9,12 +9,15 @@ local state={
     requiredShaftRpm=1000,
     hasPtoConsumer=true
 }
+local speedKph=12
+local engaged=true
 local motor={
     getLastRealMotorRpm=function() return 1800 end
 }
 local vehicle={
     getMotor=function() return motor end,
-    getIsPowerTakeOffActive=function() return true end
+    getIsPowerTakeOffActive=function() return engaged end,
+    getLastSpeed=function() return speedKph end
 }
 
 RealismExtensionsPTO={
@@ -30,16 +33,52 @@ RealismExtensionsConfig={modules={PTOControl=true}}
 
 local order={}
 local drawn={}
+local icon={
+    width=0,
+    height=0,
+    x=0,
+    y=0,
+    color=nil,
+    deleted=false
+}
+function icon:setDimension(w,h) self.width,self.height=w,h end
+function icon:setPosition(x,y) self.x,self.y=x,y end
+function icon:setColor(r,g,b,a) self.color={r,g,b,a} end
+function icon:render() order[#order+1]="icon" end
+function icon:delete() self.deleted=true end
+
+local textureConfigLoads=0
+local overlayCreates=0
+g_overlayManager={
+    addTextureConfigFile=function(self,path,id)
+        textureConfigLoads=textureConfigLoads+1
+        assert(string.find(path,"pto_dashboardHud.xml",1,true)~=nil)
+        assert(id=="re_PTODashboardHud")
+    end,
+    createOverlay=function(self,id,x,y,w,h)
+        overlayCreates=overlayCreates+1
+        assert(id=="re_PTODashboardHud.pto")
+        return icon
+    end
+}
+
 function renderText(x,y,size,text)
-    order[#order+1]="pto"
-    drawn[#drawn+1]=text
+    order[#order+1]="text"
+    drawn[#drawn+1]={x=x,y=y,size=size,text=text}
 end
 function getCorrectTextSize(v) return v end
 function setTextAlignment() end
+function setTextVerticalAlignment() end
 function setTextColor() end
 function setTextBold() end
 function new2DLayer() end
-RenderText={ALIGN_RIGHT=1,ALIGN_LEFT=0}
+RenderText={
+    ALIGN_RIGHT=1,
+    ALIGN_LEFT=0,
+    ALIGN_CENTER=2,
+    VERTICAL_ALIGN_MIDDLE=3,
+    VERTICAL_ALIGN_BOTTOM=4
+}
 function addModEventListener(listener) end
 
 Utils={
@@ -52,16 +91,34 @@ Utils={
     end
 }
 
+local speedBg={
+    getPosition=function() return 0.70,0.10 end
+}
+local speedMeter={
+    vehicle=vehicle,
+    speedBg=speedBg,
+    speedGaugeCenterOffsetX=0.10,
+    speedGaugeCenterOffsetY=0.10,
+    scalePixelValuesToScreenVector=function(self,x,y)
+        return x/1920,y/1080
+    end,
+    scalePixelToScreenHeight=function(self,v)
+        return v/1080
+    end
+}
 local missionHud={
     isVisible=true,
+    speedMeter=speedMeter,
     drawControlledEntityHUD=function()
         order[#order+1]="base"
     end
 }
-g_currentMission={hud=missionHud}
+g_currentMission={hud=missionHud,time=0}
 g_localPlayer={
     getCurrentVehicle=function() return vehicle end
 }
+g_gui={getIsGuiVisible=function() return false end}
+g_currentModDirectory="/mods/FS25_RealismExtensions/"
 
 dofile("scripts/pto/PTOHUD.lua")
 local H=RealismExtensionsPTOHUD
@@ -73,41 +130,74 @@ assert(H._hookedHud==missionHud)
 
 missionHud.drawControlledEntityHUD()
 assert(order[1]=="base")
-assert(order[2]=="pto")
+assert(order[2]=="icon")
+assert(order[3]=="text")
 assert(#drawn==1)
-assert(string.find(drawn[1],"PTO 1000",1,true)~=nil)
-assert(string.find(drawn[1],"hand 45%",1,true)~=nil)
-assert(string.find(drawn[1],"1000 ok",1,true)~=nil)
-assert(string.find(drawn[1],"900 rpm",1,true)~=nil)
+assert(drawn[1].text=="1000")
+assert(textureConfigLoads==1)
+assert(overlayCreates==1)
+assert(icon.color[1]==H.COLOR_ACTIVE[1])
+assert(icon.color[2]==H.COLOR_ACTIVE[2])
 
 local d=H.getDiagnostics()
 assert(d.installed==true)
+assert(d.overlayReady==true)
 assert(d.hookInstalls==1)
 assert(d.drawCalls==1)
+assert(d.graphicalRendered==1)
+assert(d.fallbackRendered==0)
 assert(d.rendered==1)
 assert(d.noVehicle==0)
 assert(d.noState==0)
+assert(d.lastMode=="1000")
+assert(d.lastEngaged==true)
+assert(math.abs(d.lastActualRpm-900)<0.000001)
+assert(d.lastTransportWarning==false)
 
--- Same revision reuses only the static/base text. Live shaft RPM still updates.
-state.handThrottlePercent=0.90
+-- Mode text is revision cached, while engagement/speed/RPM remain live.
+engaged=false
 motor.getLastRealMotorRpm=function() return 1600 end
 missionHud.drawControlledEntityHUD()
-assert(string.find(drawn[2],"hand 45%",1,true)~=nil)
-assert(string.find(drawn[2],"800 rpm",1,true)~=nil)
+d=H.getDiagnostics()
+assert(d.lastEngaged==false)
+assert(d.lastActualRpm==nil)
+assert(drawn[2].text=="1000")
+assert(icon.color[1]==H.COLOR_OFF[1])
 
+-- A mismatch while disengaged keeps the icon off but makes the selector text
+-- a warning. Revision advances because mismatch is owner state.
 state.revision=2
-state.handThrottlePercent=0.90
 state.mismatch=true
 state.requiredShaftRpm=540
 missionHud.drawControlledEntityHUD()
-assert(string.find(drawn[3],"hand 90%",1,true)~=nil)
-assert(string.find(drawn[3],"! requires 540",1,true)~=nil)
+d=H.getDiagnostics()
+assert(d.lastMismatch==true)
+assert(d.lastEngaged==false)
+
+-- Transport warning is presentation-only and only exists while PTO is engaged.
+engaged=true
+state.revision=3
+state.mismatch=false
+speedKph=30
+g_currentMission.time=0
+missionHud.drawControlledEntityHUD()
+d=H.getDiagnostics()
+assert(d.lastTransportWarning==true)
+assert(d.warningFrames==1)
+assert(icon.color[1]==H.COLOR_CRITICAL[1])
+
+-- Next blink phase keeps active semantics but alternates warning colour.
+g_currentMission.time=600
+missionHud.drawControlledEntityHUD()
+assert(icon.color[1]==H.COLOR_ACTIVE[1])
 
 -- HUD visibility follows the mission HUD.
 missionHud.isVisible=false
 missionHud.drawControlledEntityHUD()
 d=H.getDiagnostics()
 assert(d.hidden==1)
-assert(d.rendered==3)
+
+H:deleteMap()
+assert(icon.deleted==true)
 
 print("pto_hud_harness: OK")
