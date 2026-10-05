@@ -716,7 +716,16 @@ end
 
 function Control.actionThrottleReset(self)
     count("actionThrottleReset")
+    local spec = getSpec(self)
+    local wasReleased = spec == nil
+        or (tonumber(spec.handThrottlePercent) or 0) <= 0.0001
     Control.resetPowerTakeOffThrottle(self)
+    if wasReleased then
+        -- Give explicit operator feedback even when ROAD was already active.
+        -- This also makes a successful reset binding distinguishable from a
+        -- key-binding failure during runtime testing.
+        notifyOperator("Acelerador manual PTO: ROAD")
+    end
 end
 
 function Control:onWriteStream(streamId, connection)
