@@ -97,7 +97,8 @@
             <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_down"/>
         </actionBinding>
         <actionBinding action="RE_PTO_THROTTLE_RESET">
-            <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_0"/>
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_0" index="1"/>
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_KP_0" index="2"/>
         </actionBinding>
     </inputBinding>
 </modDesc>
