@@ -27,8 +27,8 @@ HUD.COLOR_CRITICAL = {0.8069, 0.0097, 0.0097, 1.0}
 local DEFAULT_LAYOUT = {
     -- Lower-left corner of the icon relative to the vanilla speed-gauge
     -- centre. RMS anchors its own dashboard indicators to the same point.
-    offsetXPx = -68,
-    offsetYPx = 49,
+    offsetXPx = -53,
+    offsetYPx = -11,
     iconWidthPx = 30,
     iconHeightPx = 18.75,
     modeTextSizePx = 9,
