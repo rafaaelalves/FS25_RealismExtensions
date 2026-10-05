@@ -14,6 +14,21 @@ Profiles.TRACTORS = {
             [Model.MODE.RPM_540] = {},
             [Model.MODE.RPM_1000] = {}
         }
+    },
+    {
+        -- John Deere 6R 155 standard rear-PTO configuration:
+        -- 540 / 540E / 1000. Deere publishes rated engine speeds of
+        -- 1987 / 1753 / 2000 rpm respectively in the current 6R brochure.
+        -- The optional 540E / 1000 / 1000E package is intentionally not
+        -- merged into this profile because the in-game vehicle does not
+        -- expose which mutually-exclusive factory PTO package is installed.
+        id = "john_deere_6r_155",
+        tokens = { "6r 155", "6r_155", "6r155" },
+        modes = {
+            [Model.MODE.RPM_540] = { engineRpm = 1987 },
+            [Model.MODE.RPM_540_ECO] = { engineRpm = 1753 },
+            [Model.MODE.RPM_1000] = { engineRpm = 2000 }
+        }
     }
 }
 
