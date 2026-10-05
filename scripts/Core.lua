@@ -234,7 +234,7 @@ function RealismExtensionsCore:update(dt)
                         and type(RealismExtensionsPTOHUD.getDiagnostics) == "function"
                         and RealismExtensionsPTOHUD.getDiagnostics() or {}
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "PTOControl | state=%d mode=%d throttle=%d rejectUnsupported=%d rejectEngaged=%d actions=%d/%d/%d/%d/%d registered=%d failed=%d collisionBypass=%d HUD=%s overlay=%s hooks=%d draws=%d rendered=%d graph=%d fallback=%d noVehicle=%d noState=%d noSpeedMeter=%d assetFail=%d hidden=%d display=%s engaged=%s mismatch=%s transportWarn=%s speed=%.1f actualPto=%.0f",
+                        "PTOControl | state=%d mode=%d throttle=%d rejectUnsupported=%d rejectEngaged=%d actions=%d/%d/%d/%d/%d registered=%d failed=%d collisionBypass=%d HUD=%s overlay=%s hooks=%d draws=%d rendered=%d graph=%d fallback=%d noVehicle=%d noState=%d noSpeedMeter=%d assetFail=%d hidden=%d display=%s engaged=%s engageSource=%s mismatch=%s transportWarn=%s speed=%.1f actualPto=%.0f",
                         pc.stateChanges or 0,
                         pc.modeChanges or 0,
                         pc.throttleChanges or 0,
@@ -262,6 +262,7 @@ function RealismExtensionsCore:update(dt)
                         ph.hidden or 0,
                         tostring(ph.lastMode or "-"),
                         tostring(ph.lastEngaged == true),
+                        tostring(ph.lastEngagementSource or "-"),
                         tostring(ph.lastMismatch == true),
                         tostring(ph.lastTransportWarning == true),
                         tonumber(ph.lastSpeedKph) or 0,
