@@ -1,0 +1,507 @@
+RealismExtensionsPTOControl = RealismExtensionsPTOControl or {}
+local Control = RealismExtensionsPTOControl
+local Model = RealismExtensionsPTOModel
+local Resolver = RealismExtensionsPTOResolver
+
+Control.VERSION = 1
+Control.SPEC_NAME = "realismExtensionsPTO"
+Control.SPEC_TABLE = "spec_realismExtensionsPTO"
+
+local THROTTLE_STEP = 0.05
+
+local function modules()
+    return RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules or {}
+end
+
+local function enabledByConfig()
+    return modules().PTOControl == true
+end
+
+local function getSpec(vehicle)
+    return vehicle ~= nil and vehicle[Control.SPEC_TABLE] or nil
+end
+
+local function firstAvailableMode(capability)
+    local modes = Model.sortedModes(capability ~= nil and capability.modes or nil)
+    return modes[1] or Model.MODE.RPM_540
+end
+
+local function isAvailable(spec, mode)
+    return spec ~= nil
+        and spec.capability ~= nil
+        and spec.capability.modes ~= nil
+        and spec.capability.modes[Model.normalizeMode(mode)] ~= nil
+end
+
+local function getMotorBounds(vehicle)
+    local motor = Resolver.getMotor(vehicle)
+    if motor == nil then return 850, 2200 end
+    local minRpm = tonumber(motor.minRpm) or 850
+    local maxRpm = tonumber(motor.maxRpm) or 2200
+    if maxRpm < minRpm then maxRpm = minRpm end
+    return minRpm, maxRpm
+end
+
+local function getModeRatio(spec)
+    if spec == nil or spec.capability == nil then return nil end
+    local entry = spec.capability.modes ~= nil
+        and spec.capability.modes[spec.mode] or nil
+    return entry ~= nil and tonumber(entry.effectiveMotorRatio) or nil
+end
+
+local function refreshPublicState(vehicle, spec)
+    if spec == nil then return end
+
+    spec.publicState = spec.publicState or {}
+    spec.revision = (spec.revision or 0) + 1
+
+    local state = spec.publicState
+    local modeDef = Model.getMode(spec.mode)
+    local minRpm, maxRpm = getMotorBounds(vehicle)
+    local requirements = spec.requirements or {}
+
+    state.apiVersion = RealismExtensionsPTO ~= nil
+        and RealismExtensionsPTO.API_VERSION or 1
+    state.revision = spec.revision
+    state.enabled = spec.enabled == true
+    state.hasPtoOutput = spec.hasPtoOutput == true
+    state.mode = spec.mode
+    state.modeToken = modeDef.token
+    state.shaftRpm = modeDef.shaftRpm
+    state.economy = modeDef.economy == true
+    state.effectiveMotorRatio = getModeRatio(spec)
+    state.nativeMotorRatio = spec.capability ~= nil
+        and spec.capability.nativeMotorRatio or nil
+    state.handThrottlePercent = spec.handThrottlePercent or 0
+    state.handThrottleRpm = Model.handThrottleRpm(
+        spec.handThrottlePercent,
+        minRpm,
+        maxRpm
+    )
+    state.requiredShaftRpm = requirements.requiredRpm
+    state.requirementKnown = requirements.requiredRpm ~= nil
+    state.requirementConflict = requirements.conflict == true
+    state.hasPtoConsumer = requirements.hasPtoConsumer == true
+    state.unknownRequirementCount = requirements.unknownCount or 0
+    state.mismatch = requirements.requiredRpm ~= nil
+        and requirements.requiredRpm ~= modeDef.shaftRpm
+    state.capabilitySource = spec.capability ~= nil
+        and spec.capability.source or "UNKNOWN"
+    state.capabilityProfileId = spec.capability ~= nil
+        and spec.capability.profileId or nil
+    state.availableModes = spec.availableModes
+end
+
+local function refreshRequirements(vehicle, spec)
+    if spec == nil or spec.enabled ~= true then return end
+    spec.requirements = Resolver.collectRequirements(vehicle)
+    refreshPublicState(vehicle, spec)
+end
+
+function Control.prerequisitesPresent(specializations)
+    return SpecializationUtil.hasSpecialization(Motorized, specializations)
+        and SpecializationUtil.hasSpecialization(Drivable, specializations)
+        and SpecializationUtil.hasSpecialization(AttacherJoints, specializations)
+end
+
+function Control.initSpecialization()
+    if Vehicle == nil or Vehicle.xmlSchemaSavegame == nil then return end
+
+    local schema = Vehicle.xmlSchemaSavegame
+    local modName = tostring(g_currentModName or "FS25_RealismExtensions")
+    local key = "vehicles.vehicle(?)." .. modName .. "." .. Control.SPEC_NAME
+
+    schema:register(
+        XMLValueType.INT,
+        key .. "#mode",
+        "Selected PTO speed mode"
+    )
+    schema:register(
+        XMLValueType.FLOAT,
+        key .. "#handThrottle",
+        "PTO hand throttle position 0..1"
+    )
+end
+
+function Control.registerFunctions(vehicleType)
+    SpecializationUtil.registerFunction(
+        vehicleType,
+        "setPowerTakeOffState",
+        Control.setPowerTakeOffState
+    )
+    SpecializationUtil.registerFunction(
+        vehicleType,
+        "stepPowerTakeOffMode",
+        Control.stepPowerTakeOffMode
+    )
+    SpecializationUtil.registerFunction(
+        vehicleType,
+        "adjustPowerTakeOffThrottle",
+        Control.adjustPowerTakeOffThrottle
+    )
+    SpecializationUtil.registerFunction(
+        vehicleType,
+        "resetPowerTakeOffThrottle",
+        Control.resetPowerTakeOffThrottle
+    )
+    SpecializationUtil.registerFunction(
+        vehicleType,
+        "refreshPowerTakeOffRequirements",
+        Control.refreshPowerTakeOffRequirements
+    )
+end
+
+function Control.registerEventListeners(vehicleType)
+    SpecializationUtil.registerEventListener(vehicleType, "onLoad", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onPostLoad", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onPostAttachImplement", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onPostDetachImplement", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onRegisterActionEvents", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onWriteStream", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onReadStream", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onWriteUpdateStream", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onReadUpdateStream", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "saveToXMLFile", Control)
+end
+
+function Control:onLoad(savegame)
+    self[Control.SPEC_TABLE] = self[Control.SPEC_TABLE] or {}
+    local spec = self[Control.SPEC_TABLE]
+
+    spec.enabled = enabledByConfig()
+    spec.hasPtoOutput = spec.enabled
+        and Resolver.vehicleHasOutputPto(self) or false
+    spec.capability = Resolver.resolveCapability(self)
+    spec.availableModes = spec.capability.modes
+    spec.mode = firstAvailableMode(spec.capability)
+    spec.handThrottlePercent = 0
+    spec.requirements = {
+        items = {},
+        hasPtoConsumer = false,
+        conflict = false,
+        requiredRpm = nil,
+        unknownCount = 0
+    }
+    spec.publicState = {}
+    spec.revision = 0
+    spec.actionEvents = {}
+    spec.dirtyFlag = type(self.getNextDirtyFlag) == "function"
+        and self:getNextDirtyFlag() or 0
+
+    if spec.hasPtoOutput then
+        refreshRequirements(self, spec)
+    else
+        refreshPublicState(self, spec)
+    end
+end
+
+function Control:onPostLoad(savegame)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true then return end
+
+    if savegame ~= nil and savegame.xmlFile ~= nil then
+        local modName = tostring(g_currentModName or "FS25_RealismExtensions")
+        local key = savegame.key .. "." .. modName .. "." .. Control.SPEC_NAME
+        local xml = savegame.xmlFile
+
+        local mode = nil
+        local throttle = nil
+        if type(xml.getValue) == "function" then
+            mode = xml:getValue(key .. "#mode")
+            throttle = xml:getValue(key .. "#handThrottle")
+        else
+            if type(xml.getInt) == "function" then
+                mode = xml:getInt(key .. "#mode")
+            end
+            if type(xml.getFloat) == "function" then
+                throttle = xml:getFloat(key .. "#handThrottle")
+            end
+        end
+
+        mode = mode ~= nil and Model.normalizeMode(mode) or spec.mode
+        if isAvailable(spec, mode) then spec.mode = mode end
+        if throttle ~= nil then
+            spec.handThrottlePercent = Model.clampThrottle(throttle)
+        end
+    end
+
+    refreshRequirements(self, spec)
+end
+
+function Control:saveToXMLFile(xmlFile, key, usedModNames)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true then return end
+
+    local modName = tostring(g_currentModName or "FS25_RealismExtensions")
+    local specKey = key .. "." .. modName .. "." .. Control.SPEC_NAME
+
+    if type(xmlFile.setValue) == "function" then
+        xmlFile:setValue(specKey .. "#mode", spec.mode)
+        xmlFile:setValue(
+            specKey .. "#handThrottle",
+            spec.handThrottlePercent or 0
+        )
+    else
+        if type(xmlFile.setInt) == "function" then
+            xmlFile:setInt(specKey .. "#mode", spec.mode)
+        end
+        if type(xmlFile.setFloat) == "function" then
+            xmlFile:setFloat(
+                specKey .. "#handThrottle",
+                spec.handThrottlePercent or 0
+            )
+        end
+    end
+end
+
+function Control.getPublicState(vehicle)
+    local spec = getSpec(vehicle)
+    if spec == nil or spec.enabled ~= true or spec.hasPtoOutput ~= true then
+        return nil
+    end
+    return spec.publicState
+end
+
+function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true or spec.hasPtoOutput ~= true then
+        return false
+    end
+
+    mode = Model.normalizeMode(mode)
+    throttle = Model.clampThrottle(throttle)
+
+    if replicated ~= true then
+        if not isAvailable(spec, mode) then return false end
+        if mode ~= spec.mode and Resolver.isPtoEngaged(self) then
+            return false
+        end
+    end
+
+    if spec.mode == mode
+        and math.abs((spec.handThrottlePercent or 0) - throttle) < 0.0001 then
+        return true
+    end
+
+    spec.mode = mode
+    spec.handThrottlePercent = throttle
+    refreshPublicState(self, spec)
+
+    if self.isServer == true
+        and spec.dirtyFlag ~= 0
+        and type(self.raiseDirtyFlags) == "function" then
+        self:raiseDirtyFlags(spec.dirtyFlag)
+    end
+
+    if noEventSend ~= true
+        and RealismExtensionsPTOStateEvent ~= nil
+        and type(RealismExtensionsPTOStateEvent.send) == "function" then
+        RealismExtensionsPTOStateEvent.send(
+            self,
+            spec.mode,
+            spec.handThrottlePercent
+        )
+    end
+
+    return true
+end
+
+function Control:stepPowerTakeOffMode(direction)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true then return false end
+
+    local nextMode = Model.stepAvailableMode(
+        spec.mode,
+        spec.availableModes,
+        direction
+    )
+    return self:setPowerTakeOffState(
+        nextMode,
+        spec.handThrottlePercent,
+        false,
+        false
+    )
+end
+
+function Control:adjustPowerTakeOffThrottle(delta)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true then return false end
+
+    local value = Model.clampThrottle(
+        (spec.handThrottlePercent or 0) + (tonumber(delta) or 0)
+    )
+    return self:setPowerTakeOffState(
+        spec.mode,
+        value,
+        false,
+        false
+    )
+end
+
+function Control:resetPowerTakeOffThrottle()
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true then return false end
+    return self:setPowerTakeOffState(spec.mode, 0, false, false)
+end
+
+function Control:refreshPowerTakeOffRequirements()
+    local spec = getSpec(self)
+    if spec == nil then return end
+    refreshRequirements(self, spec)
+end
+
+function Control:onPostAttachImplement(attachable, inputJointDescIndex, jointDescIndex)
+    self:refreshPowerTakeOffRequirements()
+end
+
+function Control:onPostDetachImplement(implementIndex)
+    self:refreshPowerTakeOffRequirements()
+end
+
+local function actionName(name)
+    return InputAction ~= nil and InputAction[name] or name
+end
+
+local function addAction(vehicle, spec, name, callback, text)
+    local _, eventId = vehicle:addActionEvent(
+        spec.actionEvents,
+        actionName(name),
+        vehicle,
+        callback,
+        false,
+        true,
+        false,
+        true
+    )
+    if eventId == nil or g_inputBinding == nil then return end
+
+    if type(g_inputBinding.setActionEventText) == "function" then
+        g_inputBinding:setActionEventText(eventId, text)
+    end
+    if type(g_inputBinding.setActionEventTextPriority) == "function" then
+        g_inputBinding:setActionEventTextPriority(eventId, GS_PRIO_HIGH or 2)
+    end
+    if type(g_inputBinding.setActionEventTextVisibility) == "function" then
+        g_inputBinding:setActionEventTextVisibility(eventId, true)
+    end
+end
+
+function Control:onRegisterActionEvents(isActiveForInput, isActiveForInputIgnoreSelection)
+    local spec = getSpec(self)
+    if spec == nil or spec.enabled ~= true or spec.hasPtoOutput ~= true then
+        return
+    end
+    if self.isClient ~= true or not isActiveForInputIgnoreSelection then
+        return
+    end
+
+    self:clearActionEventsTable(spec.actionEvents)
+
+    addAction(
+        self,
+        spec,
+        "RE_PTO_MODE_NEXT",
+        Control.actionModeNext,
+        "PTO: próxima rotação"
+    )
+    addAction(
+        self,
+        spec,
+        "RE_PTO_MODE_PREV",
+        Control.actionModePrev,
+        "PTO: rotação anterior"
+    )
+    addAction(
+        self,
+        spec,
+        "RE_PTO_THROTTLE_UP",
+        Control.actionThrottleUp,
+        "Acelerador manual PTO +"
+    )
+    addAction(
+        self,
+        spec,
+        "RE_PTO_THROTTLE_DOWN",
+        Control.actionThrottleDown,
+        "Acelerador manual PTO -"
+    )
+    addAction(
+        self,
+        spec,
+        "RE_PTO_THROTTLE_RESET",
+        Control.actionThrottleReset,
+        "Acelerador manual PTO: liberar"
+    )
+end
+
+function Control.actionModeNext(self)
+    self:stepPowerTakeOffMode(1)
+end
+
+function Control.actionModePrev(self)
+    self:stepPowerTakeOffMode(-1)
+end
+
+function Control.actionThrottleUp(self)
+    self:adjustPowerTakeOffThrottle(THROTTLE_STEP)
+end
+
+function Control.actionThrottleDown(self)
+    self:adjustPowerTakeOffThrottle(-THROTTLE_STEP)
+end
+
+function Control.actionThrottleReset(self)
+    self:resetPowerTakeOffThrottle()
+end
+
+function Control:onWriteStream(streamId, connection)
+    local spec = getSpec(self)
+    local mode = spec ~= nil and spec.mode or Model.MODE.RPM_540
+    local throttle = spec ~= nil and spec.handThrottlePercent or 0
+
+    streamWriteUIntN(streamId, mode, 3)
+    streamWriteFloat32(streamId, throttle)
+end
+
+function Control:onReadStream(streamId, connection)
+    local spec = getSpec(self)
+    local mode = streamReadUIntN(streamId, 3)
+    local throttle = streamReadFloat32(streamId)
+    if spec == nil then return end
+
+    if isAvailable(spec, mode) then spec.mode = Model.normalizeMode(mode) end
+    spec.handThrottlePercent = Model.clampThrottle(throttle)
+    refreshPublicState(self, spec)
+end
+
+function Control:onWriteUpdateStream(streamId, connection, dirtyMask)
+    local spec = getSpec(self)
+    if spec == nil then
+        streamWriteBool(streamId, false)
+        return
+    end
+
+    local dirty = true
+    if bitAND ~= nil and spec.dirtyFlag ~= 0 then
+        dirty = bitAND(dirtyMask, spec.dirtyFlag) ~= 0
+    end
+
+    if streamWriteBool(streamId, dirty) then
+        streamWriteUIntN(streamId, spec.mode, 3)
+        streamWriteFloat32(streamId, spec.handThrottlePercent or 0)
+    end
+end
+
+function Control:onReadUpdateStream(streamId, timestamp, connection)
+    local spec = getSpec(self)
+    if not streamReadBool(streamId) then return end
+
+    local mode = streamReadUIntN(streamId, 3)
+    local throttle = streamReadFloat32(streamId)
+    if spec == nil then return end
+
+    self:setPowerTakeOffState(mode, throttle, true, true)
+end
+
+return Control
