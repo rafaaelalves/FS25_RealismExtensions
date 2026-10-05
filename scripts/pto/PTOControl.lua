@@ -51,29 +51,6 @@ local function notifyOperator(message)
     end
 end
 
-local function logOperatorState(vehicle, spec, reason)
-    if RealismExtensionsDiagnostics == nil or spec == nil then return end
-    local mode = Model.getMode(spec.mode)
-    local minRpm, maxRpm = getMotorBounds(vehicle)
-    local handRpm = Model.handThrottleRpm(
-        spec.handThrottlePercent,
-        minRpm,
-        maxRpm
-    )
-    RealismExtensionsDiagnostics.verbose(string.format(
-        "PTO operator | vehicle=%s reason=%s mode=%s hand=%srpm throttle=%.1f%% required=%s mismatch=%s",
-        vehicleLabel(vehicle),
-        tostring(reason),
-        tostring(mode ~= nil and mode.token or "?"),
-        handRpm > 0 and tostring(math.floor(handRpm + 0.5)) or "ROAD/",
-        (tonumber(spec.handThrottlePercent) or 0) * 100,
-        tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
-        tostring(spec.requirements ~= nil
-            and spec.requirements.requiredRpm ~= nil
-            and spec.requirements.requiredRpm ~= mode.shaftRpm)
-    ))
-end
-
 local function modules()
     return RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules or {}
@@ -130,6 +107,29 @@ local function getCurrentEngineRpm(vehicle)
     return tonumber(motor.lastRealMotorRpm)
         or tonumber(motor.lastMotorRpm)
         or tonumber(motor.equalizedMotorRpm)
+end
+
+local function logOperatorState(vehicle, spec, reason)
+    if RealismExtensionsDiagnostics == nil or spec == nil then return end
+    local mode = Model.getMode(spec.mode)
+    local minRpm, maxRpm = getMotorBounds(vehicle)
+    local handRpm = Model.handThrottleRpm(
+        spec.handThrottlePercent,
+        minRpm,
+        maxRpm
+    )
+    RealismExtensionsDiagnostics.verbose(string.format(
+        "PTO operator | vehicle=%s reason=%s mode=%s hand=%srpm throttle=%.1f%% required=%s mismatch=%s",
+        vehicleLabel(vehicle),
+        tostring(reason),
+        tostring(mode ~= nil and mode.token or "?"),
+        handRpm > 0 and tostring(math.floor(handRpm + 0.5)) or "ROAD/",
+        (tonumber(spec.handThrottlePercent) or 0) * 100,
+        tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
+        tostring(spec.requirements ~= nil
+            and spec.requirements.requiredRpm ~= nil
+            and spec.requirements.requiredRpm ~= mode.shaftRpm)
+    ))
 end
 
 local function getModeRatio(spec)
