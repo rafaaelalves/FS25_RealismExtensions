@@ -118,14 +118,16 @@ assert(dirty==8)
 state=C.getPublicState(vehicle)
 assert(state.mismatch==false)
 assert(state.effectiveMotorRatio~=nil)
+assert(#g_currentMission.warnings==1)
+assert(string.find(g_currentMission.warnings[1],"1000",1,true)~=nil)
 
 -- Safety: selector cannot move while PTO is engaged.
 engaged=true
 assert(C.stepPowerTakeOffMode(vehicle,-1)==false)
 assert(spec.mode==M.MODE.RPM_1000)
 assert(sent==1)
-assert(#g_currentMission.warnings==1)
-assert(string.find(g_currentMission.warnings[1],"desengate",1,true)~=nil)
+assert(#g_currentMission.warnings==2)
+assert(string.find(g_currentMission.warnings[2],"desengate",1,true)~=nil)
 engaged=false
 
 -- Hand throttle is an engine-RPM governor, not an abstract 5% nudge.
@@ -149,6 +151,7 @@ C.actionThrottleReset(vehicle)
 assert(spec.handThrottlePercent==0)
 assert(sent==5)
 assert(C.getPublicState(vehicle).handThrottleRpm==0)
+assert(string.find(g_currentMission.warnings[#g_currentMission.warnings],"ROAD",1,true)~=nil)
 
 local diag=C.getDiagnostics()
 assert(diag.actionModeNext==1)
