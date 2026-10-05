@@ -430,6 +430,28 @@ function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
             spec,
             modeChanged and "mode" or "handThrottle"
         )
+
+        if modeChanged then
+            notifyOperator(
+                "PTO: " .. tostring(Model.getModeToken(spec.mode))
+            )
+        elseif throttleChanged then
+            local minRpm, maxRpm = getMotorBounds(self)
+            local handRpm = Model.handThrottleRpm(
+                spec.handThrottlePercent,
+                minRpm,
+                maxRpm
+            )
+            if handRpm > 0 then
+                notifyOperator(
+                    "Acelerador manual PTO: "
+                    .. tostring(math.floor(handRpm + 0.5))
+                    .. " RPM"
+                )
+            else
+                notifyOperator("Acelerador manual PTO: ROAD")
+            end
+        end
     end
 
     if self.isServer == true
