@@ -241,15 +241,77 @@ function Resolver.collectRequirements(vehicle)
     }
 end
 
-function Resolver.isPtoEngaged(vehicle)
-    if vehicle == nil then return false end
+local function getObjectPtoActivity(object)
+    if object == nil then return false, nil end
 
-    if type(vehicle.getIsPowerTakeOffActive) == "function" then
-        local ok, active = pcall(vehicle.getIsPowerTakeOffActive, vehicle)
-        if ok then return active == true end
+    -- GIANTS' base PowerTakeOffs implementation on a tractor returns false.
+    -- PTO-consuming implement specializations (TurnOnVehicle, Dischargeable,
+    -- FillUnit, BaleLoader, etc.) overwrite this method with their real
+    -- operating state, so engagement must be queried on the attached consumer.
+    if type(object.getIsPowerTakeOffActive) == "function" then
+        local ok, active = pcall(
+            object.getIsPowerTakeOffActive,
+            object
+        )
+        if ok and active == true then
+            return true, "IMPLEMENT_PTO_ACTIVE"
+        end
     end
 
-    return false
+    -- Defensive fallback for mod implements that consume PTO but implement only
+    -- TurnOnVehicle semantics and do not participate correctly in the
+    -- getIsPowerTakeOffActive overwrite chain.
+    local usesPto = hasInputPowerTakeOff(object)
+        or readPtoRpm(object) ~= nil
+        or object.spec_powerConsumer ~= nil
+    if usesPto and type(object.getIsTurnedOn) == "function" then
+        local ok, active = pcall(object.getIsTurnedOn, object)
+        if ok and active == true then
+            return true, "IMPLEMENT_TURNED_ON"
+        end
+    end
+
+    return false, nil
+end
+
+function Resolver.isPtoEngaged(vehicle)
+    if vehicle == nil then return false, "NO_VEHICLE" end
+
+    local seen = {}
+
+    local function walk(attacher)
+        if attacher == nil or seen[attacher] then return false, nil end
+        seen[attacher] = true
+
+        if type(attacher.getAttachedImplements) ~= "function" then
+            return false, nil
+        end
+
+        local ok, implements = pcall(
+            attacher.getAttachedImplements,
+            attacher
+        )
+        if not ok or type(implements) ~= "table" then
+            return false, nil
+        end
+
+        for _, implement in pairs(implements) do
+            local object = implement ~= nil and implement.object or nil
+            if object ~= nil then
+                local active, source = getObjectPtoActivity(object)
+                if active then return true, source end
+
+                local childActive, childSource = walk(object)
+                if childActive then return true, childSource end
+            end
+        end
+
+        return false, nil
+    end
+
+    local active, source = walk(vehicle)
+    if active then return true, source end
+    return false, "NO_ACTIVE_CONSUMER"
 end
 
 function Resolver.getMotor(vehicle)
