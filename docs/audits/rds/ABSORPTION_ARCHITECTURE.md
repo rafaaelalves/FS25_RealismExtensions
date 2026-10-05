@@ -34,43 +34,59 @@ OFF -> IGNITION -> PREHEAT -> READY -> CRANKING -> RUNNING
 
 Do **not** give `WARMUP` mechanical ownership. Cold/warm state is supplied by the mechanical provider. RE may expose a derived warm-up advisory for presentation.
 
-## 2. `StartMechanicalProvider`
+## 2. `StartCapabilityResolver` — compose facets, not one winner
 
-Select one authoritative mechanical provider per vehicle.
+The exact RDS 1.4 source invalidates the earlier idea of choosing one monolithic
+`StartMechanicalProvider`.
+
+A vehicle may legitimately have multiple simultaneous authoritative owners:
+- RMS/ADS for electrical starter/battery state;
+- a fuel-system specialist for cetane, blocked filter, air in fuel lines;
+- RE profile data for ignition/glow technology;
+- a drivetrain owner for neutral/clutch/interlock state.
+
+Resolve ownership **per capability facet**.
 
 Conceptual reads:
 
 ```text
-getEngineTemperatureC(vehicle)
-getAmbientTemperatureC(vehicle)
-getBatteryState(vehicle)
-getStarterState(vehicle)
-getGlowState(vehicle)
-getStartInterlockState(vehicle)
-getStartDifficulty(vehicle)
-canCrank(vehicle)
+ThermalFacet.getEngineTemperatureC(vehicle)
+ElectricalStartFacet.getBatteryState(vehicle)
+ElectricalStartFacet.getStarterState(vehicle)
+GlowFacet.getGlowState(vehicle)
+FuelStartFacet.getColdStartFactor(vehicle)
+FuelStartFacet.getStartBlockReason(vehicle)
+InterlockFacet.getStartInterlockState(vehicle)
+MotorStartFacet.getStartDifficulty(vehicle)
 ```
 
 Conceptual intents:
 
 ```text
-requestIgnition(vehicle, enabled)
-requestCrank(vehicle, context)
-releaseCrank(vehicle)
+IgnitionFacet.requestIgnition(vehicle, enabled)
+MotorStartFacet.requestCrank(vehicle, context)
+MotorStartFacet.releaseCrank(vehicle)
 ```
 
-Priority:
-1. RMS when RMS manages the vehicle;
-2. ADS when ADS manages it and RMS does not;
-3. minimal GIANTS/RE fallback.
+The coordinator composes the facets into one operator-visible result instead
+of allowing one provider to erase another domain.
 
-Provider APIs expose normalized values, not mutable specialist tables.
+Example:
+```text
+ADS starter = healthy
+Fuel provider = blocked filter
+RE glow = ready
+=> crank intent is allowed electrically, but combustion/start remains blocked
+   with the fuel provider's authoritative reason.
+```
+
+Provider APIs expose normalized values/reasons, not mutable specialist tables.
 
 ### RMS
 
 RMS already has engine thermal, battery/electrical, starter, preheat/glow and hard-start mechanics.
 
-With RMS active, RE is the **interaction/orchestration layer**:
+When RMS owns one of those facets, RE is the **interaction/orchestration layer**:
 - staged key intent from RE;
 - readiness/mechanics from RMS;
 - final crank/start success from RMS;
@@ -82,7 +98,21 @@ RE must not maintain a second temperature/battery/failure model.
 
 Historical RC RDSADS work proved the same ownership split: RDS gesture/preheat needed to compose with ADS starter/battery/hard-start authority.
 
-Native RE should replace that private bridge with a provider contract rather than reproducing synthetic RDS state.
+Exact RDS 1.4 now confirms the problem directly: its ADS support writes private
+start-button fields and waits for ADS to complete an externally-owned hard
+start. The behavior is good; the coupling is not.
+
+Native RE should replace that private boundary with capability-facet adapters
+rather than reproducing ADS private state inside RE core.
+
+### Fuel-system providers
+
+Exact RDS 1.4 demonstrates a useful independent fuel facet:
+`scGetColdStartFactor()` and `scGetStartBlockReason()`.
+
+RE should generalize that idea rather than hard-code one mod name. Fuel quality,
+air in lines, filters and priming can contribute to start readiness without
+owning the starter or thermal model.
 
 ### MoreRealistic
 
@@ -151,10 +181,11 @@ Avoid duplicate temperature gauges beside RMS/ADS.
 | ignition/contact gesture | RE | owner |
 | diesel/profile classification | RE | owner |
 | preheat UX/orchestration | RE | owner |
-| engine temperature | RMS > ADS > fallback | consume |
-| battery/starter | RMS > ADS > fallback | consume |
-| glow mechanical health | specialist/provider | consume/fallback |
-| hard-start/failure mechanics | specialist/provider | request/consume |
+| engine temperature | thermal facet owner | consume |
+| battery/starter | electrical-start facet owner | consume |
+| glow mechanical health | glow facet owner | consume/fallback |
+| fuel quality/start blockage | fuel-start facet owner | consume/compose |
+| hard-start/failure mechanics | motor-start facet owner | request/consume |
 | drivetrain torque response | MR/RMS | no direct write |
 | generic mechanical damage | RMS/ADS | no direct write |
 | electrical/light consequences | RMS/ADS/vanilla | ignition intent only |
@@ -205,17 +236,19 @@ Current RDS 1.4 publicly reports ADS compatibility, so the historical external-R
 - profile resolver;
 - diesel eligibility;
 - complete input state machine;
-- standalone no-damage provider;
+- capability-facet resolver;
+- minimal standalone facets without arbitrary damage;
 - shared HUD;
 - server authority + MP sync.
 
-### B — RMS provider
+### B — RMS facet adapters
 - temperature/battery/starter/glow integration;
 - no duplicate thermal/damage state.
 
-### C — ADS provider
-- validate ADS 0.9.2.8;
-- replace historical RDSADS semantics for native RE.
+### C — ADS + fuel facet adapters
+- validate ADS 0.9.2.8 start ownership;
+- replace historical RDSADS semantics for native RE;
+- preserve independent fuel-start contributions instead of choosing one monolithic provider.
 
 ### D — pneumatic MVP
 - equivalent service reservoir;
@@ -232,3 +265,22 @@ Only after MVP:
 - hoses/manualAttach/Interactive Control.
 
 Audit Realistic Brakes before Phase E because current RDS 1.4 explicitly integrates trailer air with Realistic Brakes 1.3.
+
+
+## Exact 1.4 design refinements
+
+The current source adds four architecture constraints:
+
+1. **Outcome, not command, owns RUNNING.** A crank request may be accepted by
+   another system and finish later. RE must wait for the authoritative motor
+   transition/event.
+2. **Reasons are provider data.** A fuel owner may block start and should return
+   the reason rather than forcing RE to reverse-engineer it.
+3. **Per-vehicle ownership matters.** ADS can be installed but exclude a
+   particular vehicle; provider/HUD selection must resolve per entity.
+4. **Physical-resource mutation needs stronger semantics than setters.**
+   RDS's new `rdsSetAirPressure` is useful interoperability, but RE should
+   expose transactional transfer semantics for air.
+
+These refinements generalize beyond RDS and should influence future RE provider
+contracts.
