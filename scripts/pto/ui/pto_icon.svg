@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="160" viewBox="0 0 256 160">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="320" viewBox="0 0 256 160">
   <g fill="#ffffff">
     <path d="M20 74V40C20 22.327 34.327 8 52 8H204C221.673 8 236 22.327 236 40V74H218V42C218 33.163 210.837 26 202 26H54C45.163 26 38 33.163 38 42V74Z"/>
     <g transform="translate(128 103)">
