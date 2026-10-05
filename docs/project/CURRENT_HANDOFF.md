@@ -929,3 +929,15 @@ Next performance pass should:
 - profile Reifen hot hooks, Dynamic PTO + RC composition, FarmKit implement dust, RE VisualTrackCapture separately;
 - optimize ownership at registration/dispatch level where possible instead of paying thousands of suppressed calls;
 - keep gameplay calibration and performance refactors on separate branches.
+
+
+## Runtime acceptance checkpoint — berms/mounds (2026-10-04)
+
+User validation after the current recovery line: visible mounds/berms are no longer a blocking problem and the delivered terrain result is now acceptable.
+
+This is a **behavioral non-regression requirement, not an implementation freeze**:
+- recovery/writer/mass-transport internals may still be redesigned or optimized;
+- a replacement is acceptable only if it preserves or improves the current visible/functional berm result;
+- do not reopen berm/mound recovery as an active problem without new runtime evidence of regression.
+
+Performance work is now being pursued separately in RealismCompatibility/stack profiling so terrain recovery is not destabilized merely to chase frame time.
