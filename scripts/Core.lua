@@ -234,7 +234,7 @@ function RealismExtensionsCore:update(dt)
                         and type(RealismExtensionsPTOHUD.getDiagnostics) == "function"
                         and RealismExtensionsPTOHUD.getDiagnostics() or {}
                     RealismExtensionsDiagnostics.verbose(string.format(
-                        "PTOControl | state=%d mode=%d throttle=%d rejectUnsupported=%d rejectEngaged=%d actions=%d/%d/%d/%d/%d HUD=%s hooks=%d draws=%d rendered=%d noVehicle=%d noState=%d hidden=%d",
+                        "PTOControl | state=%d mode=%d throttle=%d rejectUnsupported=%d rejectEngaged=%d actions=%d/%d/%d/%d/%d registered=%d failed=%d collisionBypass=%d HUD=%s hooks=%d draws=%d rendered=%d noVehicle=%d noState=%d hidden=%d",
                         pc.stateChanges or 0,
                         pc.modeChanges or 0,
                         pc.throttleChanges or 0,
@@ -245,6 +245,9 @@ function RealismExtensionsCore:update(dt)
                         pc.actionThrottleUp or 0,
                         pc.actionThrottleDown or 0,
                         pc.actionThrottleReset or 0,
+                        pc.actionEventsRegistered or 0,
+                        pc.actionEventsFailed or 0,
+                        pc.actionEventsCollisionBypass or 0,
                         tostring(ph.installed == true),
                         ph.hookInstalls or 0,
                         ph.drawCalls or 0,
