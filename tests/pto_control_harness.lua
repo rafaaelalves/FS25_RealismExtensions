@@ -67,8 +67,8 @@ assert(state.requiredShaftRpm==1000)
 assert(state.mismatch==true)
 assert(state.capabilitySource=="PROFILE")
 
--- Manual selector: operator explicitly changes to 1000.
-assert(C.stepPowerTakeOffMode(vehicle,1)==true)
+-- Manual selector: operator action explicitly changes to 1000.
+C.actionModeNext(vehicle)
 assert(spec.mode==M.MODE.RPM_1000)
 assert(sent==1)
 assert(dirty==8)
@@ -84,17 +84,26 @@ assert(sent==1)
 engaged=false
 
 -- Hand throttle is independent operator state.
-assert(C.adjustPowerTakeOffThrottle(vehicle,0.05)==true)
+C.actionThrottleUp(vehicle)
 assert(math.abs(spec.handThrottlePercent-0.05)<0.000001)
 assert(sent==2)
 state=C.getPublicState(vehicle)
 assert(state.handThrottleRpm>800)
 assert(state.handThrottleRpm<2200)
 
-assert(C.resetPowerTakeOffThrottle(vehicle)==true)
+C.actionThrottleReset(vehicle)
 assert(spec.handThrottlePercent==0)
 assert(sent==3)
 assert(C.getPublicState(vehicle).handThrottleRpm==0)
+
+local diag=C.getDiagnostics()
+assert(diag.actionModeNext==1)
+assert(diag.actionThrottleUp==1)
+assert(diag.actionThrottleReset==1)
+assert(diag.modeChanges==1)
+assert(diag.throttleChanges==2)
+assert(diag.stateChanges==3)
+assert(diag.rejectedEngaged==1)
 
 -- Requirement refresh is event-driven, not per-frame.
 vehicle.getAttachedImplements=function() return {} end
