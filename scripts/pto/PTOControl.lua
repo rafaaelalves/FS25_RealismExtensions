@@ -9,6 +9,54 @@ Control.SPEC_TABLE = "spec_realismExtensionsPTO"
 
 local THROTTLE_STEP = 0.05
 
+Control.stats = Control.stats or {}
+
+local function count(name)
+    Control.stats[name] = (Control.stats[name] or 0) + 1
+end
+
+local function resetStats()
+    Control.stats = {
+        actionModeNext = 0,
+        actionModePrev = 0,
+        actionThrottleUp = 0,
+        actionThrottleDown = 0,
+        actionThrottleReset = 0,
+        stateChanges = 0,
+        modeChanges = 0,
+        throttleChanges = 0,
+        rejectedUnsupported = 0,
+        rejectedEngaged = 0,
+        noops = 0
+    }
+end
+
+local function vehicleLabel(vehicle)
+    if vehicle ~= nil and type(vehicle.getName) == "function" then
+        local ok, name = pcall(vehicle.getName, vehicle)
+        if ok and name ~= nil and tostring(name) ~= "" then
+            return tostring(name)
+        end
+    end
+    return tostring(vehicle ~= nil and vehicle.configFileName or "vehicle")
+end
+
+local function logOperatorState(vehicle, spec, reason)
+    if RealismExtensionsDiagnostics == nil or spec == nil then return end
+    local mode = Model.getMode(spec.mode)
+    RealismExtensionsDiagnostics.verbose(string.format(
+        "PTO operator | vehicle=%s reason=%s mode=%s throttle=%.0f%% required=%s mismatch=%s",
+        vehicleLabel(vehicle),
+        tostring(reason),
+        tostring(mode ~= nil and mode.token or "?"),
+        (tonumber(spec.handThrottlePercent) or 0) * 100,
+        tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
+        tostring(spec.requirements ~= nil
+            and spec.requirements.requiredRpm ~= nil
+            and spec.requirements.requiredRpm ~= mode.shaftRpm)
+    ))
+end
+
 local function modules()
     return RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules or {}
@@ -284,20 +332,56 @@ function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
     throttle = Model.clampThrottle(throttle)
 
     if replicated ~= true then
-        if not isAvailable(spec, mode) then return false end
+        if not isAvailable(spec, mode) then
+            count("rejectedUnsupported")
+            if RealismExtensionsDiagnostics ~= nil then
+                RealismExtensionsDiagnostics.verbose(
+                    "PTO operator rejected | vehicle="
+                    .. vehicleLabel(self)
+                    .. " reason=unsupported mode="
+                    .. tostring(Model.getModeToken(mode))
+                )
+            end
+            return false
+        end
         if mode ~= spec.mode and Resolver.isPtoEngaged(self) then
+            count("rejectedEngaged")
+            if RealismExtensionsDiagnostics ~= nil then
+                RealismExtensionsDiagnostics.verbose(
+                    "PTO operator rejected | vehicle="
+                    .. vehicleLabel(self)
+                    .. " reason=PTO engaged mode="
+                    .. tostring(Model.getModeToken(mode))
+                )
+            end
             return false
         end
     end
 
-    if spec.mode == mode
-        and math.abs((spec.handThrottlePercent or 0) - throttle) < 0.0001 then
+    local modeChanged = spec.mode ~= mode
+    local throttleChanged = math.abs(
+        (spec.handThrottlePercent or 0) - throttle
+    ) >= 0.0001
+
+    if not modeChanged and not throttleChanged then
+        count("noops")
         return true
     end
 
     spec.mode = mode
     spec.handThrottlePercent = throttle
     refreshPublicState(self, spec)
+
+    count("stateChanges")
+    if modeChanged then count("modeChanges") end
+    if throttleChanged then count("throttleChanges") end
+    if replicated ~= true then
+        logOperatorState(
+            self,
+            spec,
+            modeChanged and "mode" or "handThrottle"
+        )
+    end
 
     if self.isServer == true
         and spec.dirtyFlag ~= 0
@@ -455,22 +539,27 @@ function Control:onRegisterActionEvents(isActiveForInput, isActiveForInputIgnore
 end
 
 function Control.actionModeNext(self)
+    count("actionModeNext")
     Control.stepPowerTakeOffMode(self, 1)
 end
 
 function Control.actionModePrev(self)
+    count("actionModePrev")
     Control.stepPowerTakeOffMode(self, -1)
 end
 
 function Control.actionThrottleUp(self)
+    count("actionThrottleUp")
     Control.adjustPowerTakeOffThrottle(self, THROTTLE_STEP)
 end
 
 function Control.actionThrottleDown(self)
+    count("actionThrottleDown")
     Control.adjustPowerTakeOffThrottle(self, -THROTTLE_STEP)
 end
 
 function Control.actionThrottleReset(self)
+    count("actionThrottleReset")
     Control.resetPowerTakeOffThrottle(self)
 end
 
@@ -523,4 +612,17 @@ function Control:onReadUpdateStream(streamId, timestamp, connection)
     self:setPowerTakeOffState(mode, throttle, true, true)
 end
 
+function Control.getDiagnostics()
+    local out = {}
+    for key, value in pairs(Control.stats or {}) do
+        out[key] = value
+    end
+    return out
+end
+
+function Control.resetDiagnostics()
+    resetStats()
+end
+
+resetStats()
 return Control
