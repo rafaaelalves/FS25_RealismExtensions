@@ -63,6 +63,8 @@ local function resetStats()
     HUD._lastSpeedKph = 0
     HUD._lastActualRpm = nil
     HUD._lastHandThrottleRpm = 0
+    HUD._lastAvailableModeMask = 0
+    HUD._lastProfileId = nil
     HUD._lastEngagementSource = nil
 end
 
@@ -417,6 +419,10 @@ function HUD:drawControlledVehicle()
     HUD._lastSpeedKph = speedKph
     HUD._lastActualRpm = actualRpm
     HUD._lastHandThrottleRpm = tonumber(state.handThrottleRpm) or 0
+    HUD._lastAvailableModeMask = tonumber(state.availableModeMask) or 0
+    HUD._lastProfileId = state.capabilityProfileId
+        or state.capabilitySource
+        or "-"
 
     if activeWarning then count("warningFrames") end
 
@@ -722,6 +728,8 @@ function HUD.getDiagnostics()
     out.lastSpeedKph = HUD._lastSpeedKph
     out.lastActualRpm = HUD._lastActualRpm
     out.lastHandThrottleRpm = HUD._lastHandThrottleRpm
+    out.lastAvailableModeMask = HUD._lastAvailableModeMask
+    out.lastProfileId = HUD._lastProfileId
     return out
 end
 
