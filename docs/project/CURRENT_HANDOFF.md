@@ -969,3 +969,87 @@ Asset rule:
 - study upstream behavior, do not copy its custom assets/shaders;
 - prefer base-game UI/dashboard facilities or original small assets;
 - physical state must not depend on visual shader support.
+
+
+## Native PTO absorption — implementation checkpoint (2026-10-05)
+
+Branch: `feat/pto-control`
+
+The external PTO feature has been re-designed as an RE-owned domain rather than
+copied.
+
+Architecture:
+- manual operator selector only: 540 / 540E / 1000 / 1000E when supported;
+- independent hand throttle;
+- no AUTO speed selection;
+- no synthetic grunt/load model;
+- no PTO controller `onUpdate`/`onUpdateTick`;
+- capability/requirement state refreshes only on load, attachment graph changes
+  and operator/network state changes;
+- public state uses a monotonic revision;
+- RC consumes that revision instead of re-resolving PTO state per frame.
+
+Unknown tractors fail closed to their native 540 mode. 1000/Economy capability
+requires evidence-backed profile data.
+
+Initial evidence profiles:
+- Fiat 180-90: 540 + 1000;
+- HM 10-500 / HM10500 family: 1000-rpm implement requirement.
+
+Standalone:
+- when no external drivetrain owner is present, RE scopes selected PTO ratio
+  into GIANTS `VehicleMotor` PTO queries;
+- native motor fields are restored immediately;
+- hand throttle floors required engine RPM;
+- zero polling.
+
+MR/RMS:
+- RC branch `feat/pto-control-bridge` consumes `RealismExtensionsPTO`
+  API v1;
+- MR and RMS composition remains scoped;
+- RC cache is keyed by RE state revision, not `g_time`;
+- legacy external-PTO bridges remain only for reversible migration.
+
+Migration safety:
+- if the old external PTO owner is installed, RE native PTO does not attach;
+- native RC bridges become INACTIVE rather than delaying bootstrap;
+- remove/disable the external owner for the first native runtime test.
+
+Temporary UI:
+- assetless, revision-cached text HUD;
+- final icon/dashboard integration is deliberately deferred and does not affect
+  physics/state ownership.
+
+Controls:
+- Ctrl+PageUp / Ctrl+PageDown: next/previous PTO speed;
+- Ctrl+Up / Ctrl+Down: hand throttle +/-;
+- Ctrl+0: release hand throttle.
+
+Detailed design/runtime gate:
+`docs/research/pto-control-study.md`.
+
+### Running-gear wear visual migration decision
+
+Do not fork or incrementally patch the external tire-wear mechanics.
+
+Planned ownership:
+- RE will own wear state, causality, persistence/service and later physical
+  consequences;
+- RC will compose only with specialist wheel/soil owners where required.
+
+Temporary visual strategy requested by the user:
+- keep the external tire-wear package installed temporarily as a **visual asset
+  provider**;
+- disable/suppress its own wear calculation, friction/radius ownership,
+  persistence/workshop, HUD and immobilizer behavior;
+- a future RE visual adapter may consume only its existing tire/track material
+  assets/shaders;
+- this is a migration bridge, not final dependency;
+- external asset files must not be copied into RE;
+- final goal remains an owned/base-game visual solution.
+
+Source review shows this cannot be achieved merely by a public “assets only”
+toggle: the external loader currently wires core, persistence, workshop,
+immobilizer and visual systems together. Implement the visual-provider bridge
+explicitly when the RE running-gear-wear feature starts; do not disable pieces
+blindly in RC.
