@@ -32,13 +32,16 @@ local motor={
     getPtoMotorRpmRatio=function() return 4.0 end
 }
 
+local engaged=false
 local chipper={
     configFileName="/mods/hm10500KF.xml",
     spec_powerConsumer={ptoRpm=540},
-    spec_powerTakeOffs={inputPowerTakeOffs={{}}}
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getIsPowerTakeOffActive=function() return engaged end,
+    getIsTurnedOn=function() return engaged end,
+    getAttachedImplements=function() return {} end
 }
 
-local engaged=false
 local dirty=0
 local registeredActions=0
 local activeEvents=0
@@ -75,7 +78,7 @@ local vehicle={
     getMotor=function() return motor end,
     getOutputPowerTakeOffs=function() return {rear={}} end,
     getAttachedImplements=function() return {{object=chipper}} end,
-    getIsPowerTakeOffActive=function() return engaged end,
+    getIsPowerTakeOffActive=function() return false end,
     getNextDirtyFlag=function() return 8 end,
     raiseDirtyFlags=function(self,flag) dirty=dirty+flag end,
     clearActionEventsTable=function(self,t) end,
