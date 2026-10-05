@@ -4,6 +4,7 @@ local state={
     shaftRpm=1000,
     effectiveMotorRatio=2.0,
     handThrottlePercent=0.45,
+    handThrottleRpm=1500,
     mismatch=false,
     requirementKnown=true,
     requiredShaftRpm=1000,
@@ -143,8 +144,8 @@ assert(consoleCommands.rePTOHudScale~=nil)
 assert(consoleCommands.rePTOHudReset~=nil)
 
 local summary=H:consoleCommandMove(10,-5)
-assert(string.find(summary,"x=-58.0",1,true)~=nil)
-assert(string.find(summary,"y=44.0",1,true)~=nil)
+assert(string.find(summary,"x=-43.0",1,true)~=nil)
+assert(string.find(summary,"y=-16.0",1,true)~=nil)
 summary=H:consoleCommandScale(2)
 assert(string.find(summary,"w=60.0",1,true)~=nil)
 summary=H:consoleCommandLayout(-70,50,32,20,10,6)
@@ -178,6 +179,7 @@ assert(d.lastMode=="1000")
 assert(d.lastEngaged==true)
 assert(d.lastEngagementSource=="IMPLEMENT_PTO_ACTIVE")
 assert(math.abs(d.lastActualRpm-900)<0.000001)
+assert(d.lastHandThrottleRpm==1500)
 assert(d.lastTransportWarning==false)
 
 -- Mode text is revision cached, while engagement/speed/RPM remain live.
