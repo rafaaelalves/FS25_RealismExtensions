@@ -50,6 +50,17 @@ local function getModeRatio(spec)
     return entry ~= nil and tonumber(entry.effectiveMotorRatio) or nil
 end
 
+local function availableModeMask(spec)
+    local mask = 0
+    if spec ~= nil and type(spec.availableModes) == "table" then
+        for mode in pairs(spec.availableModes) do
+            mode = Model.normalizeMode(mode)
+            mask = mask + (2 ^ (mode - 1))
+        end
+    end
+    return mask
+end
+
 local function refreshPublicState(vehicle, spec)
     if spec == nil then return end
 
@@ -90,7 +101,7 @@ local function refreshPublicState(vehicle, spec)
         and spec.capability.source or "UNKNOWN"
     state.capabilityProfileId = spec.capability ~= nil
         and spec.capability.profileId or nil
-    state.availableModes = spec.availableModes
+    state.availableModeMask = availableModeMask(spec)
 end
 
 local function refreshRequirements(vehicle, spec)
