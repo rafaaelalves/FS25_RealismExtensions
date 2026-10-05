@@ -192,9 +192,9 @@ Server authority:
 Temporary default keyboard bindings:
 - Ctrl + PageUp: next PTO speed;
 - Ctrl + PageDown: previous PTO speed;
-- Ctrl + Up: hand throttle +5%;
-- Ctrl + Down: hand throttle -5%;
-- Ctrl + 0: release hand throttle.
+- Ctrl + Up: hand throttle +100 engine rpm;
+- Ctrl + Down: hand throttle -100 engine rpm;
+- Ctrl + 0: release hand throttle to ROAD (Ctrl + Numpad0 is a secondary fallback).
 
 These bindings are transitional and may be changed after gameplay feedback.
 
@@ -299,8 +299,8 @@ Expected:
 6. Selecting 540 with that implement shows mismatch.
 7. Selecting 1000 clears mismatch.
 8. Selector refuses a mode change while PTO is engaged.
-9. Hand throttle raises MR minimum engine RPM without requiring accelerator
-   input.
+9. Hand throttle commands an MR engine-RPM governor without requiring
+   accelerator input.
 10. No persistent overwrite of native `motor.ptoMotorRpmRatio`.
 
 The first runtime log decides whether this branch moves from architectural/CI
@@ -384,8 +384,9 @@ The first native runtime follow-up clarified two different load mechanisms that
 must not be conflated:
 
 1. **RE hand throttle + MR response**
-   - RE publishes a minimum requested engine RPM;
-   - RC scopes that request into MR's required-motor-RPM path;
+   - RE publishes an operator-selected engine-RPM target;
+   - RC scopes that target into MR's own `controlVehicle` engine-governor
+     boundary;
    - MR then produces whatever physical engine/load response is necessary to
      reach/hold that requested RPM.
    - This is legitimate drivetrain behavior and must remain.
