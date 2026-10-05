@@ -125,9 +125,21 @@ function Bootstrap.registerSpecialization(typeManager)
             "native PTO control active"
         )
     end
+
+    local physicsOk, physicsReason = false, "adapter unavailable"
+    if RealismExtensionsPTOPhysics ~= nil
+        and type(RealismExtensionsPTOPhysics.install) == "function" then
+        physicsOk, physicsReason = RealismExtensionsPTOPhysics.install()
+    end
+
     if RealismExtensionsDiagnostics ~= nil then
         RealismExtensionsDiagnostics.info(
             "PTOControl active; vehicleTypes=" .. tostring(added)
+        )
+        RealismExtensionsDiagnostics.verbose(
+            "PTO standalone physics="
+            .. tostring(physicsOk and "active" or "inactive")
+            .. " reason=" .. tostring(physicsReason)
         )
     end
 end
