@@ -62,6 +62,7 @@ local function resetStats()
     HUD._lastTransportWarning = false
     HUD._lastSpeedKph = 0
     HUD._lastActualRpm = nil
+    HUD._lastHandThrottleRpm = 0
     HUD._lastEngagementSource = nil
 end
 
@@ -415,6 +416,7 @@ function HUD:drawControlledVehicle()
     HUD._lastTransportWarning = transportWarning
     HUD._lastSpeedKph = speedKph
     HUD._lastActualRpm = actualRpm
+    HUD._lastHandThrottleRpm = tonumber(state.handThrottleRpm) or 0
 
     if activeWarning then count("warningFrames") end
 
@@ -719,6 +721,7 @@ function HUD.getDiagnostics()
     out.lastTransportWarning = HUD._lastTransportWarning
     out.lastSpeedKph = HUD._lastSpeedKph
     out.lastActualRpm = HUD._lastActualRpm
+    out.lastHandThrottleRpm = HUD._lastHandThrottleRpm
     return out
 end
 
