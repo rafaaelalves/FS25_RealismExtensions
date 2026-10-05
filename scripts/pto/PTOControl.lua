@@ -7,7 +7,7 @@ Control.VERSION = 1
 Control.SPEC_NAME = "realismExtensionsPTO"
 Control.SPEC_TABLE = "spec_realismExtensionsPTO"
 
-local THROTTLE_STEP = 0.05
+local HAND_THROTTLE_RPM_STEP = 100
 
 Control.stats = Control.stats or {}
 
@@ -54,11 +54,18 @@ end
 local function logOperatorState(vehicle, spec, reason)
     if RealismExtensionsDiagnostics == nil or spec == nil then return end
     local mode = Model.getMode(spec.mode)
+    local minRpm, maxRpm = getMotorBounds(vehicle)
+    local handRpm = Model.handThrottleRpm(
+        spec.handThrottlePercent,
+        minRpm,
+        maxRpm
+    )
     RealismExtensionsDiagnostics.verbose(string.format(
-        "PTO operator | vehicle=%s reason=%s mode=%s throttle=%.0f%% required=%s mismatch=%s",
+        "PTO operator | vehicle=%s reason=%s mode=%s hand=%srpm throttle=%.1f%% required=%s mismatch=%s",
         vehicleLabel(vehicle),
         tostring(reason),
         tostring(mode ~= nil and mode.token or "?"),
+        handRpm > 0 and tostring(math.floor(handRpm + 0.5)) or "ROAD/",
         (tonumber(spec.handThrottlePercent) or 0) * 100,
         tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
         tostring(spec.requirements ~= nil
@@ -99,6 +106,30 @@ local function getMotorBounds(vehicle)
     local maxRpm = tonumber(motor.maxRpm) or 2200
     if maxRpm < minRpm then maxRpm = minRpm end
     return minRpm, maxRpm
+end
+
+local function getCurrentEngineRpm(vehicle)
+    local motor = Resolver.getMotor(vehicle)
+    if motor == nil then return nil end
+
+    for _, name in ipairs({
+        "getLastRealMotorRpm",
+        "getLastModRpm",
+        "getNonClampedMotorRpm"
+    }) do
+        local fn = motor[name]
+        if type(fn) == "function" then
+            local ok, value = pcall(fn, motor)
+            value = ok and tonumber(value) or nil
+            if value ~= nil and value == value and value >= 0 then
+                return value
+            end
+        end
+    end
+
+    return tonumber(motor.lastRealMotorRpm)
+        or tonumber(motor.lastMotorRpm)
+        or tonumber(motor.equalizedMotorRpm)
 end
 
 local function getModeRatio(spec)
@@ -429,6 +460,24 @@ function Control:stepPowerTakeOffMode(direction)
         spec.availableModes,
         direction
     )
+    if nextMode == spec.mode then
+        count("noops")
+        local token = Model.getModeToken(spec.mode)
+        notifyOperator(
+            "PTO: sem outra rotação disponível neste perfil (" .. token .. ")"
+        )
+        if RealismExtensionsDiagnostics ~= nil then
+            RealismExtensionsDiagnostics.verbose(
+                "PTO operator no-op | vehicle="
+                .. vehicleLabel(self)
+                .. " reason=no alternate mode current="
+                .. tostring(token)
+                .. " capability="
+                .. tostring(spec.capability ~= nil and spec.capability.source or "?")
+            )
+        end
+        return false
+    end
     return Control.setPowerTakeOffState(
         self,
         nextMode,
@@ -438,12 +487,31 @@ function Control:stepPowerTakeOffMode(direction)
     )
 end
 
-function Control:adjustPowerTakeOffThrottle(delta)
+function Control:adjustPowerTakeOffThrottle(deltaRpm)
     local spec = getSpec(self)
     if spec == nil or spec.enabled ~= true then return false end
 
-    local value = Model.clampThrottle(
-        (spec.handThrottlePercent or 0) + (tonumber(delta) or 0)
+    local delta = tonumber(deltaRpm) or 0
+    if math.abs(delta) < 0.001 then return true end
+
+    local minRpm, maxRpm = getMotorBounds(self)
+    local currentTarget = Model.handThrottleRpm(
+        spec.handThrottlePercent,
+        minRpm,
+        maxRpm
+    )
+    local target = Model.stepHandThrottleRpm(
+        currentTarget,
+        delta > 0 and 1 or -1,
+        minRpm,
+        maxRpm,
+        getCurrentEngineRpm(self),
+        math.abs(delta)
+    )
+    local value = Model.handThrottlePercentForRpm(
+        target,
+        minRpm,
+        maxRpm
     )
     return Control.setPowerTakeOffState(
         self,
@@ -586,21 +654,21 @@ function Control:onRegisterActionEvents(isActiveForInput, isActiveForInputIgnore
         spec,
         "RE_PTO_THROTTLE_UP",
         Control.actionThrottleUp,
-        "Acelerador manual PTO +"
+        "Acelerador manual PTO +100 RPM"
     )
     addAction(
         self,
         spec,
         "RE_PTO_THROTTLE_DOWN",
         Control.actionThrottleDown,
-        "Acelerador manual PTO -"
+        "Acelerador manual PTO -100 RPM"
     )
     addAction(
         self,
         spec,
         "RE_PTO_THROTTLE_RESET",
         Control.actionThrottleReset,
-        "Acelerador manual PTO: liberar"
+        "Acelerador manual PTO: liberar (ROAD)"
     )
 end
 
@@ -616,12 +684,12 @@ end
 
 function Control.actionThrottleUp(self)
     count("actionThrottleUp")
-    Control.adjustPowerTakeOffThrottle(self, THROTTLE_STEP)
+    Control.adjustPowerTakeOffThrottle(self, HAND_THROTTLE_RPM_STEP)
 end
 
 function Control.actionThrottleDown(self)
     count("actionThrottleDown")
-    Control.adjustPowerTakeOffThrottle(self, -THROTTLE_STEP)
+    Control.adjustPowerTakeOffThrottle(self, -HAND_THROTTLE_RPM_STEP)
 end
 
 function Control.actionThrottleReset(self)
