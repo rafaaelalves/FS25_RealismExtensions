@@ -26,6 +26,30 @@ assert(cap.modes[M.MODE.RPM_540]~=nil)
 assert(cap.modes[M.MODE.RPM_1000]~=nil)
 assert(cap.modes[M.MODE.RPM_540_ECO]==nil)
 
+local johnDeere={
+    configFileName="data/vehicles/johnDeere/series6R/series6RLarge.xml",
+    getName=function() return "6R 155" end,
+    getMotor=function() return motor end,
+    getOutputPowerTakeOffs=function() return {rear={}} end,
+    getAttachedImplements=function() return {} end
+}
+local jdCap=R.resolveCapability(johnDeere)
+assert(jdCap.source=="PROFILE")
+assert(jdCap.profileId=="john_deere_6r_155")
+assert(jdCap.modes[M.MODE.RPM_540]~=nil)
+assert(jdCap.modes[M.MODE.RPM_540_ECO]~=nil)
+assert(jdCap.modes[M.MODE.RPM_1000]~=nil)
+assert(jdCap.modes[M.MODE.RPM_1000_ECO]==nil)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_540].effectiveMotorRatio-(1987/540)
+)<0.000001)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_540_ECO].effectiveMotorRatio-(1753/540)
+)<0.000001)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_1000].effectiveMotorRatio-2.0
+)<0.000001)
+
 local unknown={
     configFileName="/mods/unknownTractor.xml",
     getMotor=function() return motor end,
