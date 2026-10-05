@@ -41,6 +41,16 @@ assert(math.abs(M.resolveMotorRatio(
 
 assert(M.handThrottleRpm(0,800,2200)==0)
 assert(math.abs(M.handThrottleRpm(0.5,800,2200)-1500)<0.000001)
+assert(math.abs(M.handThrottlePercentForRpm(1500,800,2200)-0.5)<0.000001)
+assert(M.handThrottlePercentForRpm(0,800,2200)==0)
+
+-- Released hand throttle captures the live engine neighbourhood on first +.
+assert(M.stepHandThrottleRpm(0,1,800,2200,845,100)==900)
+assert(M.stepHandThrottleRpm(900,1,800,2200,845,100)==1000)
+assert(M.stepHandThrottleRpm(1000,-1,800,2200,845,100)==900)
+assert(M.stepHandThrottleRpm(900,-1,800,2200,845,100)==0)
+assert(M.stepHandThrottleRpm(2200,1,800,2200,845,100)==2200)
+
 assert(M.clampThrottle(-1)==0)
 assert(M.clampThrottle(2)==1)
 
