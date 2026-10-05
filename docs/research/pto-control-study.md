@@ -282,3 +282,74 @@ Expected:
 
 The first runtime log decides whether this branch moves from architectural/CI
 validation to gameplay validation.
+
+
+## Runtime/source re-audit after first native test — 2026-10-05
+
+First runtime build:
+- RE commit `0e6567c421972ff0e0ae60061c8de155debe0a0b`;
+- native PTO specialization attached to 50 vehicle types;
+- MoreRealistic correctly disabled the standalone GIANTS adapter;
+- RC native PTO state was consumed heavily and hand throttle reached MR, but the
+  temporary global-listener HUD was not visible.
+
+Exact-source re-audit inputs:
+- Dynamic PTO RPM 1.1.3.0 supplied archive;
+- Realistic Mechanical Systems 0.10.0.0 supplied archive.
+
+### UI lifecycle finding
+
+Dynamic PTO attaches its presentation to the controlled vehicle specialization
+through `onDraw`. RMS creates its HUD during `onStartMission`, registers it in
+`mission.hud.displayComponents`, and appends its drawing to
+`mission.hud.drawControlledEntityHUD`.
+
+The original RE temporary HUD instead depended on a free-standing mod-event
+`draw()` listener and mission-level controlled-vehicle lookup. The isolated
+harness proved only text formatting, not the real FS25 controlled-HUD lifecycle.
+
+Correction:
+- PTO HUD v2 attaches to `mission.hud.drawControlledEntityHUD` after mission
+  startup;
+- local-player current vehicle is the primary vehicle lookup;
+- mission/speed-meter lookup remains fallback only;
+- the temporary line renders after the existing controlled-HUD chain and shows
+  live physical PTO RPM when engaged;
+- HUD and operator actions expose runtime counters so the next log can separate
+  input, state, rejection and rendering failures.
+
+### Clean-room parity review
+
+| Dynamic PTO concept | RE native status | Decision |
+| --- | --- | --- |
+| 540 / 540E / 1000 / 1000E model | implemented | retained |
+| manual PTO selection | implemented | retained |
+| independent hand throttle | implemented | retained |
+| save + multiplayer state | implemented | retained |
+| implement requirement + mismatch | implemented, evidence-first | retained |
+| live PTO RPM presentation | HUD v2 | retained as presentation, not per-frame domain state |
+| exact tractor capability profiles | implemented, small evidence catalog | expand only from evidence |
+| AUTO gear selection | not implemented | intentionally rejected |
+| horsepower-based 1000/E inference | not implemented | intentionally rejected |
+| synthetic engine grunt/load | not implemented | MR/RMS own mechanics |
+| baler overload/stall solver | not implemented | specialist owner concern |
+| dynamic implement output/work-rate scaling | not implemented | specialist owner concern |
+| front/rear selector | not implemented | deferred; no current ownership need proven |
+| large settings/menu/HUD surface | not implemented | intentionally simplified |
+| clickable hand-throttle bar | not implemented | deferred UX |
+| in-cab/dashboard indicators | not implemented | final presentation phase |
+
+The absorption target is therefore **behavioral/architectural parity for the
+selected PTO-control boundary**, not feature-for-feature cloning.
+
+### RC canonical-domain note
+
+Do not replace the RC formula
+`effectiveCanonicalRatio = physicalSelectedRatio * requiredPtoRpm / 540`
+with a selected-family multiplier.
+
+MR normalizes PTO consumers into a canonical 540-rpm domain. The implement
+requirement is therefore necessary to preserve the physical shaft/requirement
+ratio, including deliberate mismatch cases such as selecting 540 for a
+1000-rpm implement. This was re-derived during the source audit and remains the
+correct bridge contract.
