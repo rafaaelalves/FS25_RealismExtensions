@@ -941,3 +941,31 @@ This is a **behavioral non-regression requirement, not an implementation freeze*
 - do not reopen berm/mound recovery as an active problem without new runtime evidence of regression.
 
 Performance work is now being pursued separately in RealismCompatibility/stack profiling so terrain recovery is not destabilized merely to chase frame time.
+
+
+## Selective absorption direction — PTO and tire wear (2026-10-05)
+
+Cross-project decision recorded in RC research:
+`docs/research/2026-10-05-absorption-roadmap.md`.
+
+Direction:
+- Dynamic PTO is a near-term ABSORB candidate for RE.
+  - RE should own PTO operator state, capabilities/profiles, hand throttle,
+    persistence/networking and HUD/dashboard values.
+  - RC should retain only external MR/RMS composition.
+  - do not depend on Dynamic PTO's UI assets.
+- Reifenverschleiss is a staged ABSORB candidate.
+  - Stage 1: owned running-gear wear state/mechanics/persistence with no custom
+    visual shader dependency.
+  - Stage 2: workshop/service.
+  - Stage 3: promote proven MR/Mud physical consequences.
+  - Stage 4: independent optional visuals.
+  - immobilizer/start-delay is a separate feature decision, not mandatory tire
+    wear scope.
+- While external owner mods remain installed, owned equivalents must stay
+  disabled/fail-closed to avoid duplicate physics.
+
+Asset rule:
+- study upstream behavior, do not copy its custom assets/shaders;
+- prefer base-game UI/dashboard facilities or original small assets;
+- physical state must not depend on visual shader support.
