@@ -14,6 +14,7 @@ HUD._cacheVehicle = nil
 HUD._cacheRevision = nil
 HUD._cacheModeText = nil
 HUD._cacheMismatch = false
+HUD._consoleCommandsInstalled = false
 HUD.stats = HUD.stats or {}
 
 -- Independent palette chosen to visually sit beside the RMS dashboard without
@@ -61,12 +62,26 @@ local function resetStats()
     HUD._lastTransportWarning = false
     HUD._lastSpeedKph = 0
     HUD._lastActualRpm = nil
+    HUD._lastEngagementSource = nil
 end
 
 local function getHudConfig()
     local cfg = RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.ptoHud or nil
     return type(cfg) == "table" and cfg or DEFAULT_LAYOUT
+end
+
+local function getMutableHudConfig()
+    RealismExtensionsConfig = RealismExtensionsConfig or {}
+    if type(RealismExtensionsConfig.ptoHud) ~= "table" then
+        RealismExtensionsConfig.ptoHud = {}
+    end
+    local cfg = RealismExtensionsConfig.ptoHud
+    for key, value in pairs(DEFAULT_LAYOUT) do
+        if cfg[key] == nil then cfg[key] = value end
+    end
+    if cfg.enabled == nil then cfg.enabled = true end
+    return cfg
 end
 
 local function cfgNumber(name)
@@ -150,15 +165,11 @@ local function getEngineRpm(motor)
 end
 
 local function isEngaged(vehicle)
-    if vehicle ~= nil
-        and type(vehicle.getIsPowerTakeOffActive) == "function" then
-        local ok, active = pcall(
-            vehicle.getIsPowerTakeOffActive,
-            vehicle
-        )
-        if ok then return active == true end
+    if RealismExtensionsPTOResolver ~= nil
+        and type(RealismExtensionsPTOResolver.isPtoEngaged) == "function" then
+        return RealismExtensionsPTOResolver.isPtoEngaged(vehicle)
     end
-    return false
+    return false, "NO_RESOLVER"
 end
 
 local function getVehicleSpeedKph(vehicle)
@@ -390,7 +401,7 @@ function HUD:drawControlledVehicle()
         return
     end
 
-    local engaged = isEngaged(vehicle)
+    local engaged, engagementSource = isEngaged(vehicle)
     local speedKph = getVehicleSpeedKph(vehicle)
     local transportWarning = engaged
         and speedKph > math.max(0, cfgNumber("transportWarningKph"))
@@ -399,6 +410,7 @@ function HUD:drawControlledVehicle()
 
     HUD._lastMode = modeText
     HUD._lastEngaged = engaged
+    HUD._lastEngagementSource = engagementSource
     HUD._lastMismatch = mismatch
     HUD._lastTransportWarning = transportWarning
     HUD._lastSpeedKph = speedKph
@@ -508,6 +520,123 @@ function HUD:drawControlledVehicle()
     count("rendered")
 end
 
+local function layoutSummary()
+    local cfg = getMutableHudConfig()
+    return string.format(
+        "PTO HUD layout: x=%.1f y=%.1f w=%.1f h=%.1f text=%.1f gap=%.1f warn=%.1fkm/h",
+        tonumber(cfg.offsetXPx) or 0,
+        tonumber(cfg.offsetYPx) or 0,
+        tonumber(cfg.iconWidthPx) or 0,
+        tonumber(cfg.iconHeightPx) or 0,
+        tonumber(cfg.modeTextSizePx) or 0,
+        tonumber(cfg.modeTextGapPx) or 0,
+        tonumber(cfg.transportWarningKph) or 0
+    )
+end
+
+local function setNumericIfPresent(cfg, key, value)
+    if value == nil or tostring(value) == "" then return true end
+    local number = tonumber(value)
+    if number == nil then return false end
+    cfg[key] = number
+    return true
+end
+
+function HUD:consoleCommandLayout(x, y, width, height, textSize, textGap)
+    local cfg = getMutableHudConfig()
+    local ok = setNumericIfPresent(cfg, "offsetXPx", x)
+        and setNumericIfPresent(cfg, "offsetYPx", y)
+        and setNumericIfPresent(cfg, "iconWidthPx", width)
+        and setNumericIfPresent(cfg, "iconHeightPx", height)
+        and setNumericIfPresent(cfg, "modeTextSizePx", textSize)
+        and setNumericIfPresent(cfg, "modeTextGapPx", textGap)
+    if not ok then
+        return "Usage: rePTOHud [x y width height textSize textGap]"
+    end
+    return layoutSummary()
+end
+
+function HUD:consoleCommandMove(dx, dy)
+    dx = tonumber(dx)
+    dy = tonumber(dy)
+    if dx == nil or dy == nil then
+        return "Usage: rePTOHudMove <dxPx> <dyPx>"
+    end
+    local cfg = getMutableHudConfig()
+    cfg.offsetXPx = (tonumber(cfg.offsetXPx) or 0) + dx
+    cfg.offsetYPx = (tonumber(cfg.offsetYPx) or 0) + dy
+    return layoutSummary()
+end
+
+function HUD:consoleCommandScale(factor)
+    factor = tonumber(factor)
+    if factor == nil or factor <= 0 then
+        return "Usage: rePTOHudScale <factor>, e.g. 1.10 or 0.90"
+    end
+    local cfg = getMutableHudConfig()
+    cfg.iconWidthPx = (tonumber(cfg.iconWidthPx)
+        or DEFAULT_LAYOUT.iconWidthPx) * factor
+    cfg.iconHeightPx = (tonumber(cfg.iconHeightPx)
+        or DEFAULT_LAYOUT.iconHeightPx) * factor
+    cfg.modeTextSizePx = (tonumber(cfg.modeTextSizePx)
+        or DEFAULT_LAYOUT.modeTextSizePx) * factor
+    cfg.modeTextGapPx = (tonumber(cfg.modeTextGapPx)
+        or DEFAULT_LAYOUT.modeTextGapPx) * factor
+    return layoutSummary()
+end
+
+function HUD:consoleCommandReset()
+    local cfg = getMutableHudConfig()
+    for key, value in pairs(DEFAULT_LAYOUT) do
+        cfg[key] = value
+    end
+    cfg.enabled = true
+    return layoutSummary()
+end
+
+local function installConsoleCommands()
+    if HUD._consoleCommandsInstalled or type(addConsoleCommand) ~= "function" then
+        return
+    end
+    addConsoleCommand(
+        "rePTOHud",
+        "Show/set PTO HUD layout: x y width height textSize textGap",
+        "consoleCommandLayout",
+        HUD
+    )
+    addConsoleCommand(
+        "rePTOHudMove",
+        "Move PTO HUD by pixel delta: dx dy",
+        "consoleCommandMove",
+        HUD
+    )
+    addConsoleCommand(
+        "rePTOHudScale",
+        "Scale PTO HUD icon/text by factor",
+        "consoleCommandScale",
+        HUD
+    )
+    addConsoleCommand(
+        "rePTOHudReset",
+        "Reset PTO HUD layout to branch defaults",
+        "consoleCommandReset",
+        HUD
+    )
+    HUD._consoleCommandsInstalled = true
+end
+
+local function removeConsoleCommands()
+    if not HUD._consoleCommandsInstalled
+        or type(removeConsoleCommand) ~= "function" then
+        return
+    end
+    removeConsoleCommand("rePTOHud")
+    removeConsoleCommand("rePTOHudMove")
+    removeConsoleCommand("rePTOHudScale")
+    removeConsoleCommand("rePTOHudReset")
+    HUD._consoleCommandsInstalled = false
+end
+
 function HUD.installFromMission()
     local mission = g_currentMission
     local missionHud = mission ~= nil and mission.hud or nil
@@ -541,6 +670,7 @@ function HUD.installFromMission()
 end
 
 function HUD:loadMap()
+    installConsoleCommands()
     HUD._installElapsedMs = HUD.installRetryMs
     HUD._hookedHud = nil
     HUD._cacheVehicle = nil
@@ -562,6 +692,7 @@ function HUD:update(dt)
 end
 
 function HUD:deleteMap()
+    removeConsoleCommands()
     if HUD._icon ~= nil and type(HUD._icon.delete) == "function" then
         HUD._icon:delete()
     end
@@ -583,6 +714,7 @@ function HUD.getDiagnostics()
     out.overlayReady = HUD._icon ~= nil
     out.lastMode = HUD._lastMode
     out.lastEngaged = HUD._lastEngaged
+    out.lastEngagementSource = HUD._lastEngagementSource
     out.lastMismatch = HUD._lastMismatch
     out.lastTransportWarning = HUD._lastTransportWarning
     out.lastSpeedKph = HUD._lastSpeedKph
