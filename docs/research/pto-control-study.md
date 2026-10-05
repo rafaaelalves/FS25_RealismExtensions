@@ -198,21 +198,44 @@ Temporary default keyboard bindings:
 
 These bindings are transitional and may be changed after gameplay feedback.
 
-## Temporary HUD
+## Dashboard indicator
 
-The current HUD is intentionally assetless.
+The runtime-validation text line has been superseded by an RE-owned graphical
+dashboard indicator.
 
-It shows a compact cached line such as:
-`PTO 1000 | 45% | 1000 ok`
+The indicator deliberately does **not** depend on an RMS API. Exact RMS
+0.10.0.0 source review showed that its dashboard additions are positioned from
+the vanilla speed-meter anchor:
 
-Mismatch example:
-`PTO 540 | ! requer 1000`
+`speedMeter.speedBg position + speedGaugeCenterOffset`
 
-This is an operational/runtime-validation UI, not the final art direction.
+RE uses that same vanilla anchor and FS25 pixel-to-screen scaling. Therefore the
+same indicator can sit beside RMS dashboard additions when RMS is present and
+still render on the vanilla HUD when RMS is absent.
 
-Future presentation can add:
-- original PTO pictogram;
-- proper HUD widget;
+Presentation:
+- original RE PTO pictogram overlay;
+- dynamic `540 / 540E / 1000 / 1000E` text below the pictogram;
+- dim white = PTO available but disengaged;
+- amber = PTO engaged;
+- red selector text while disengaged = selected/required PTO mismatch;
+- blinking red/amber while engaged = mismatch or advisory transport-speed
+  warning.
+
+The transport-speed warning is presentation only. The initial threshold is
+25 km/h and is intentionally configurable; it does not disengage PTO, limit
+vehicle speed or alter drivetrain physics.
+
+Live physical PTO rpm continues to be calculated from engine rpm / selected
+effective PTO ratio for diagnostics and a possible later display revision, but
+is intentionally not rendered in this first compact cluster layout.
+
+The pictogram is an original vector asset derived from the user's design
+reference and converted to DDS during CI. No Dynamic PTO or RMS visual asset is
+copied.
+
+Future presentation may still add:
+- optional live PTO-rpm readout if the cluster remains legible;
 - GIANTS DashboardValueType values for compatible in-cab indicators;
 - vehicle-specific dashboard profiles.
 
@@ -397,3 +420,33 @@ Correction:
   runtime diagnostics;
 - rejected PTO-speed changes while the shaft is engaged now produce a visible
   warning instead of a silent no-op.
+
+
+### RMS dashboard layout study — graphical indicator implementation
+
+Exact RMS 0.10.0.0 source was re-opened before implementing the graphical PTO
+indicator.
+
+Relevant RMS pattern:
+- creates overlays through `g_overlayManager`;
+- scales UI dimensions from pixel-space values;
+- anchors dashboard elements to the vanilla speed-gauge centre;
+- tints one white/neutral source icon at runtime instead of maintaining a
+  separate texture for every state;
+- appends its own draw to `mission.hud.drawControlledEntityHUD`.
+
+RE now follows those *layout/rendering principles* independently:
+- one white PTO pictogram source;
+- runtime tint;
+- text mode rendered separately;
+- vanilla speed-meter anchor;
+- same controlled-entity draw lifecycle already validated by the first HUD
+  repair.
+
+RE does not read `RMS_Main.hud`, `RMS_Hud`, RMS indicator tables, RMS
+positions or RMS configuration. This is deliberate: RMS presence is a visual
+coexistence case, not a feature dependency.
+
+Initial tuning constants live under `RealismExtensionsConfig.ptoHud`, so
+runtime screenshots can refine offset/size without redesigning the ownership
+boundary.
