@@ -24,6 +24,8 @@ Status vocabulary:
 | active/self-leveling front suspension | no dedicated target-stack owner; MR owns passive WheelPhysics/spring baseline | CANDIDATE_ABSORB | research clean ActiveSuspension controller with load/ride-height feedback; implementation requires explicit MR baseline composition and must not suppress MR suspension writes |
 | 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | keep RMS physical topology/lock owner; exact 4x4 audit confirms only demand/decision semantics are worth redesigning (dt-normalized slip, traction reserve, explainable reasons, richer lock demand), preferably upstream in RMS or via a normalized advisor |
 | PTO modes / live PTO RPM / hand throttle | Dynamic PTO + RC bridges | CANDIDATE_ABSORB | strong candidate for native Extensions module |
+| manual diesel ignition / glow / crank UX | Realistic Diesel Start externally | CANDIDATE_ABSORB | native RE EngineStartControl; mechanical temperature/battery/starter state remains provider-owned by RMS/ADS/fallback |
+| compressed-air supply / low-air / spring-brake state | Realistic Diesel Start externally | CANDIDATE_ABSORB | native RE PneumaticBrakeSystem, physically redesigned; final braking composed with active physics owner; trailer-air deferred pending Realistic Brakes audit |
 | PTO-to-MR/RMS composition | RC | EXTERNAL/BRIDGE | retain compatibility boundary even after PTO absorption |
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
