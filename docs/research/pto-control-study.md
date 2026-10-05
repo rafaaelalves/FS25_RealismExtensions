@@ -506,3 +506,78 @@ stable anchor + live development tuning + fixed production defaults.
 A future user-facing movable HUD/settings screen is optional and should only be
 added if players actually need per-user placement rather than development-time
 calibration.
+
+
+### Operator-control correction after 6R 155 runtime — 2026-10-05
+
+The second graphical-HUD runtime clarified three separate behaviours.
+
+#### Selector actions were firing
+
+The 6R 155 session recorded repeated mode-next/mode-prev callbacks while the
+display remained at 540. This was not an input-registration failure: the
+vehicle was still on the evidence-first unknown-tractor fallback, which exposes
+only native 540. Cycling a one-entry mode set therefore returned 540 again.
+
+RE now has an evidence-backed John Deere 6R 155 profile based on Deere's
+published factory PTO packages. The default/base package is represented as:
+- 540 at 1987 engine rpm;
+- 540E at 1753 engine rpm;
+- 1000 at 2000 engine rpm.
+
+The alternative factory package 540E/1000/1000E is not merged into the same
+profile because these are mutually exclusive PTO packages and the FS25 vehicle
+does not expose which option is installed. Thus the default 6R 155 intentionally
+cycles 540 -> 540E -> 1000, not all four modes.
+
+A selector command on a genuinely one-mode profile now produces visible/log
+feedback instead of silently returning the current mode.
+
+#### Hand throttle is engine-RPM control
+
+The previous native design stored a normalized hand-throttle percentage and RC
+translated it into a floor on `VehicleMotor.getRequiredMotorRpmRange()`.
+Runtime proved that the bridge was exercised, but that boundary describes PTO
+consumer requirements; it is not a convincing operator governor.
+
+The operator model is now engine-RPM based:
+- Ctrl+Up = +100 engine rpm;
+- Ctrl+Down = -100 engine rpm;
+- the first increase after ROAD/released state starts from the current engine
+  rpm neighbourhood;
+- Ctrl+0 releases the governor back to ROAD;
+- persistence/networking remain backward-compatible by normalizing the RPM
+  target into the existing 0..1 serialized field.
+
+With MoreRealistic active, RC no longer injects the hand throttle as a fake PTO
+requirement. Instead it temporarily wraps the vehicle instance's
+`controlVehicle` while the MR-owned `WheelsUtil.updateWheelsPhysics` and
+`Motorized.onUpdate` paths execute. The requested engine rpm raises MR's
+minimum/target engine-rotation arguments while preserving accelerator input,
+gearbox logic, clutch, PTO torque and load simulation. The wrapper is restored
+immediately after each scoped MR call.
+
+This deliberately differs from Dynamic PTO's exact implementation, which can
+write motor RPM state fields directly. RE/RC use the drivetrain owner's control
+boundary instead of forcing displayed/simulated RPM values.
+
+#### Reset binding and HUD calibration
+
+The tested graphical HUD position is now the production default:
+- x = -53 px;
+- y = -11 px;
+- icon = 30 x 18.75 px;
+- text = 9 px;
+- gap = 5 px.
+
+Live tuning commands remain available.
+
+Ctrl+0 did not reach the reset callback in the runtime log even though the
+other action callbacks did. The primary Ctrl+0 binding remains, with
+Ctrl+Numpad0 added as a secondary keyboard fallback. Decreasing the governor
+below its first usable RPM step also returns to ROAD, so release is no longer
+dependent on a single physical key.
+
+The dashboard texture is now supersampled to 512x320 and packaged as
+uncompressed ARGB DDS to avoid DXT block artifacts at the small ~30 px rendered
+size. The SVG remains the editable source of truth.
