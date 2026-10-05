@@ -1,12 +1,23 @@
-RealismExtensionsPTOBootstrap = RealismExtensionsPTOBootstrap or {}
-local Bootstrap = RealismExtensionsPTOBootstrap
+-- PTO specialization bootstrap.
+--
+-- The implementation is deliberately NOT an extraSourceFile. GIANTS owns its
+-- lifecycle through SpecializationManager, matching the established terrain
+-- registration pattern and avoiding duplicate implementation loads.
 
-Bootstrap.registered = false
-Bootstrap.disabledByExternalOwner = false
+local MOD_NAME = g_currentModName
+local MOD_DIRECTORY = g_currentModDirectory
+local SPEC_NAME = "realismExtensionsPTO"
 
-local EXTERNAL_PTO_OWNERS = {
-    "FS25_DynamicPTO_FFM"
-}
+if type(MOD_NAME) ~= "string" or MOD_NAME == "" then
+    error("RealismExtensions PTO bootstrap: g_currentModName unavailable")
+end
+if type(MOD_DIRECTORY) ~= "string" or MOD_DIRECTORY == "" then
+    error("RealismExtensions PTO bootstrap: g_currentModDirectory unavailable")
+end
+
+local FULL_NAME = MOD_NAME .. "." .. SPEC_NAME
+local IMPLEMENTATION = MOD_DIRECTORY .. "scripts/pto/PTOControl.lua"
+local statusReported = false
 
 local function moduleEnabled()
     return RealismExtensionsConfig ~= nil
@@ -15,142 +26,93 @@ local function moduleEnabled()
 end
 
 local function externalOwnerPresent()
-    if type(g_modIsLoaded) ~= "table" then return false, nil end
-    for _, modName in ipairs(EXTERNAL_PTO_OWNERS) do
-        if g_modIsLoaded[modName] == true then
-            return true, modName
-        end
-    end
-    return false, nil
+    return type(g_modIsLoaded) == "table"
+        and g_modIsLoaded["FS25_DynamicPTO_FFM"] == true
 end
 
-local function typeHas(typeDef, specialization)
-    return typeDef ~= nil
-        and typeDef.specializations ~= nil
-        and specialization ~= nil
-        and SpecializationUtil.hasSpecialization(
-            specialization,
-            typeDef.specializations
-        )
-end
-
-local function isCombine(typeDef)
-    return Combine ~= nil and typeHas(typeDef, Combine)
-end
-
-function Bootstrap.registerSpecialization(typeManager)
-    if Bootstrap.registered or not moduleEnabled() then return end
-    if g_vehicleTypeManager == nil or g_specializationManager == nil then return end
-
-    if typeManager ~= nil
-        and typeManager.typeName ~= nil
-        and typeManager.typeName ~= "vehicle"
-        and typeManager ~= g_vehicleTypeManager then
-        return
-    end
-
-    local blocked, owner = externalOwnerPresent()
-    if blocked then
-        Bootstrap.disabledByExternalOwner = true
-        if RealismExtensionsPTO ~= nil then
-            RealismExtensionsPTO.setRuntimeStatus(
-                false,
-                "external PTO owner active"
-            )
-        end
-        if RealismExtensionsDiagnostics ~= nil then
-            RealismExtensionsDiagnostics.info(
-                "PTOControl disabled; external PTO owner active"
-            )
-        end
-        Bootstrap.registered = true
-        return
-    end
-
-    local specName = RealismExtensionsPTOControl.SPEC_NAME
-    local fullSpecName = tostring(g_currentModName) .. "." .. specName
-    local filename = Utils.getFilename(
-        "scripts/pto/PTOControl.lua",
-        g_currentModDirectory
+if g_specializationManager ~= nil
+    and g_specializationManager:getSpecializationByName(SPEC_NAME) == nil then
+    g_specializationManager:addSpecialization(
+        SPEC_NAME,
+        "RealismExtensionsPTOControl",
+        IMPLEMENTATION,
+        MOD_NAME
     )
+end
 
-    if g_specializationManager:getSpecializationByName(specName) == nil
-        and g_specializationManager:getSpecializationByName(fullSpecName) == nil then
-        g_specializationManager:addSpecialization(
-            specName,
-            "RealismExtensionsPTOControl",
-            filename,
-            nil
+local function report(enabled, reason, added)
+    if RealismExtensionsPTO ~= nil then
+        RealismExtensionsPTO.setRuntimeStatus(enabled, reason)
+    end
+
+    if statusReported or RealismExtensionsDiagnostics == nil then return end
+    statusReported = true
+
+    if enabled then
+        RealismExtensionsDiagnostics.info(
+            "PTOControl active; vehicleTypes=" .. tostring(added or 0)
+        )
+    else
+        RealismExtensionsDiagnostics.info(
+            "PTOControl inactive; reason=" .. tostring(reason)
         )
     end
+end
 
-    local registeredName = fullSpecName
-    if g_specializationManager:getSpecializationByName(registeredName) == nil then
-        registeredName = specName
+local function installSpecialization(typeManager)
+    if typeManager == nil or typeManager.typeName ~= "vehicle" then return end
+
+    if not moduleEnabled() then
+        report(false, "disabled by config", 0)
+        return
     end
-    if g_specializationManager:getSpecializationByName(registeredName) == nil then
-        if RealismExtensionsPTO ~= nil then
-            RealismExtensionsPTO.setRuntimeStatus(
-                false,
-                "PTO specialization registration failed"
-            )
-        end
+
+    -- Migration guard only. The old external owner may remain installed until
+    -- the native RE implementation is validated, but both must never own the
+    -- same PTO state simultaneously.
+    if externalOwnerPresent() then
+        report(false, "external PTO owner active", 0)
+        return
+    end
+
+    local types = typeManager:getTypes()
+    if type(types) ~= "table" then
+        report(false, "vehicle type table unavailable", 0)
         return
     end
 
     local added = 0
-    for typeName, typeDef in pairs(g_vehicleTypeManager.types or {}) do
+    for typeName, typeDef in pairs(types) do
         local byName = typeDef ~= nil and typeDef.specializationsByName or nil
-        local already = byName ~= nil
-            and (
-                byName[registeredName] ~= nil
-                or byName[specName] ~= nil
-                or byName[fullSpecName] ~= nil
-            )
+        local eligible = type(byName) == "table"
+            and typeName ~= "locomotive"
+            and byName["motorized"] ~= nil
+            and byName["drivable"] ~= nil
+            and byName["attacherJoints"] ~= nil
+            and byName["combine"] == nil
 
-        if not already
-            and typeHas(typeDef, Motorized)
-            and typeHas(typeDef, Drivable)
-            and typeHas(typeDef, AttacherJoints)
-            and not isCombine(typeDef) then
-            g_vehicleTypeManager:addSpecialization(typeName, registeredName)
+        if eligible and byName[FULL_NAME] == nil then
+            typeManager:addSpecialization(typeName, FULL_NAME)
             added = added + 1
         end
     end
 
-    Bootstrap.registered = true
-    if RealismExtensionsPTO ~= nil then
-        RealismExtensionsPTO.setRuntimeStatus(
-            true,
-            "native PTO control active"
-        )
-    end
+    report(true, "native PTO control active", added)
 
-    local physicsOk, physicsReason = false, "adapter unavailable"
     if RealismExtensionsPTOPhysics ~= nil
         and type(RealismExtensionsPTOPhysics.install) == "function" then
-        physicsOk, physicsReason = RealismExtensionsPTOPhysics.install()
-    end
-
-    if RealismExtensionsDiagnostics ~= nil then
-        RealismExtensionsDiagnostics.info(
-            "PTOControl active; vehicleTypes=" .. tostring(added)
-        )
-        RealismExtensionsDiagnostics.verbose(
-            "PTO standalone physics="
-            .. tostring(physicsOk and "active" or "inactive")
-            .. " reason=" .. tostring(physicsReason)
-        )
+        local ok, reason = RealismExtensionsPTOPhysics.install()
+        if RealismExtensionsDiagnostics ~= nil then
+            RealismExtensionsDiagnostics.verbose(
+                "PTO standalone physics="
+                .. tostring(ok and "active" or "inactive")
+                .. " reason=" .. tostring(reason)
+            )
+        end
     end
 end
 
-if TypeManager ~= nil
-    and Utils ~= nil
-    and type(Utils.prependedFunction) == "function" then
-    TypeManager.finalizeTypes = Utils.prependedFunction(
-        TypeManager.finalizeTypes,
-        Bootstrap.registerSpecialization
-    )
-end
-
-return Bootstrap
+TypeManager.validateTypes = Utils.appendedFunction(
+    TypeManager.validateTypes,
+    installSpecialization
+)
