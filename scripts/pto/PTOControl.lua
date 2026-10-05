@@ -316,7 +316,8 @@ function Control:stepPowerTakeOffMode(direction)
         spec.availableModes,
         direction
     )
-    return self:setPowerTakeOffState(
+    return Control.setPowerTakeOffState(
+        self,
         nextMode,
         spec.handThrottlePercent,
         false,
@@ -331,7 +332,8 @@ function Control:adjustPowerTakeOffThrottle(delta)
     local value = Model.clampThrottle(
         (spec.handThrottlePercent or 0) + (tonumber(delta) or 0)
     )
-    return self:setPowerTakeOffState(
+    return Control.setPowerTakeOffState(
+        self,
         spec.mode,
         value,
         false,
@@ -342,7 +344,13 @@ end
 function Control:resetPowerTakeOffThrottle()
     local spec = getSpec(self)
     if spec == nil or spec.enabled ~= true then return false end
-    return self:setPowerTakeOffState(spec.mode, 0, false, false)
+    return Control.setPowerTakeOffState(
+        self,
+        spec.mode,
+        0,
+        false,
+        false
+    )
 end
 
 function Control:refreshPowerTakeOffRequirements()
@@ -352,11 +360,11 @@ function Control:refreshPowerTakeOffRequirements()
 end
 
 function Control:onPostAttachImplement(attachable, inputJointDescIndex, jointDescIndex)
-    self:refreshPowerTakeOffRequirements()
+    Control.refreshPowerTakeOffRequirements(self)
 end
 
 function Control:onPostDetachImplement(implementIndex)
-    self:refreshPowerTakeOffRequirements()
+    Control.refreshPowerTakeOffRequirements(self)
 end
 
 local function actionName(name)
@@ -436,23 +444,23 @@ function Control:onRegisterActionEvents(isActiveForInput, isActiveForInputIgnore
 end
 
 function Control.actionModeNext(self)
-    self:stepPowerTakeOffMode(1)
+    Control.stepPowerTakeOffMode(self, 1)
 end
 
 function Control.actionModePrev(self)
-    self:stepPowerTakeOffMode(-1)
+    Control.stepPowerTakeOffMode(self, -1)
 end
 
 function Control.actionThrottleUp(self)
-    self:adjustPowerTakeOffThrottle(THROTTLE_STEP)
+    Control.adjustPowerTakeOffThrottle(self, THROTTLE_STEP)
 end
 
 function Control.actionThrottleDown(self)
-    self:adjustPowerTakeOffThrottle(-THROTTLE_STEP)
+    Control.adjustPowerTakeOffThrottle(self, -THROTTLE_STEP)
 end
 
 function Control.actionThrottleReset(self)
-    self:resetPowerTakeOffThrottle()
+    Control.resetPowerTakeOffThrottle(self)
 end
 
 function Control:onWriteStream(streamId, connection)
