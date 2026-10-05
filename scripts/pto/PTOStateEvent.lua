@@ -44,26 +44,35 @@ function PTOStateEvent:run(connection)
     end
 
     if not connection:getIsServer() then
-        -- Client -> server request. Server applies the authoritative state,
-        -- then broadcasts to every other client.
-        vehicle:setPowerTakeOffState(
+        -- Client -> server request. The server validates availability/safety
+        -- before broadcasting the accepted state.
+        local applied = vehicle:setPowerTakeOffState(
             self.mode,
             self.throttle,
-            true
+            true,
+            false
         )
-        if g_server ~= nil then
+        if applied and g_server ~= nil then
+            local state = RealismExtensionsPTO ~= nil
+                and RealismExtensionsPTO.getVehicleState(vehicle) or nil
             g_server:broadcastEvent(
-                self,
+                PTOStateEvent.new(
+                    vehicle,
+                    state ~= nil and state.mode or self.mode,
+                    state ~= nil and state.handThrottlePercent
+                        or self.throttle
+                ),
                 nil,
                 connection,
                 vehicle
             )
         end
     else
-        -- Server -> client replication.
+        -- Server -> client replication is authoritative.
         vehicle:setPowerTakeOffState(
             self.mode,
             self.throttle,
+            true,
             true
         )
     end
