@@ -66,6 +66,11 @@ function RealismExtensionsCore:loadMap()
         RealismExtensionsTerrainRecovery.resetRuntimeState()
     end
 
+    if RealismExtensionsPTOControl ~= nil
+        and type(RealismExtensionsPTOControl.resetDiagnostics) == "function" then
+        RealismExtensionsPTOControl.resetDiagnostics()
+    end
+
     self:tryDiscoverProvider()
 
     configureTireTrackAdapterProbe()
@@ -220,6 +225,36 @@ function RealismExtensionsCore:update(dt)
                     and runtime.getDiagnostics() or {}
                 local r = RealismExtensionsTerrainRecovery ~= nil
                     and RealismExtensionsTerrainRecovery.getDiagnostics() or {}
+
+                if RealismExtensionsConfig.modules.PTOControl == true then
+                    local pc = RealismExtensionsPTOControl ~= nil
+                        and type(RealismExtensionsPTOControl.getDiagnostics) == "function"
+                        and RealismExtensionsPTOControl.getDiagnostics() or {}
+                    local ph = RealismExtensionsPTOHUD ~= nil
+                        and type(RealismExtensionsPTOHUD.getDiagnostics) == "function"
+                        and RealismExtensionsPTOHUD.getDiagnostics() or {}
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "PTOControl | state=%d mode=%d throttle=%d rejectUnsupported=%d rejectEngaged=%d actions=%d/%d/%d/%d/%d HUD=%s hooks=%d draws=%d rendered=%d noVehicle=%d noState=%d hidden=%d",
+                        pc.stateChanges or 0,
+                        pc.modeChanges or 0,
+                        pc.throttleChanges or 0,
+                        pc.rejectedUnsupported or 0,
+                        pc.rejectedEngaged or 0,
+                        pc.actionModeNext or 0,
+                        pc.actionModePrev or 0,
+                        pc.actionThrottleUp or 0,
+                        pc.actionThrottleDown or 0,
+                        pc.actionThrottleReset or 0,
+                        tostring(ph.installed == true),
+                        ph.hookInstalls or 0,
+                        ph.drawCalls or 0,
+                        ph.rendered or 0,
+                        ph.noVehicle or 0,
+                        ph.noState or 0,
+                        ph.hidden or 0
+                    ))
+                end
+
                 local telemetry = RealismExtensionsTerrainTelemetry
                 local window, nextSnapshot = {}, nil
                 if telemetry ~= nil then
