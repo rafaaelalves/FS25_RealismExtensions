@@ -221,3 +221,33 @@ Instead it sharpens the target:
 - do not reproduce duplicate thermal/damage ownership;
 - redesign pneumatics around conservation and physical pressure demand;
 - make authority, initial sync, lifecycle and diagnostics first-class from the beginning.
+
+
+## Current RealismCompatibility implication
+
+Current RC version policy verifies RDS `1.2.0.0` for `RDSADS`; RDS
+`1.4.0.0` is not accepted by that bridge.
+
+That fail-closed behavior is correct.
+
+Do **not** add 1.4 as SOURCE_COMPATIBLE to the historical bridge:
+- upstream RDS now owns its own ADS interaction;
+- the bridge was designed to repair 1.2 ownership gaps;
+- activating both would risk double-routing start gestures/hard-start state.
+
+If RDS 1.4 + ADS is used externally during migration, let upstream RDS handle
+that pair and keep RC `RDSADS` inactive/unsupported.
+
+The native RE replacement should eventually remove the need for either path.
+
+## Classification lesson from old RC
+
+The historical RC bridge already improved one upstream behavior:
+- it classified explicit `FillType.DIESEL`;
+- it bypassed electric and no-diesel consumers.
+
+Exact RDS 1.4 still enables its sequence for every non-electric motorized
+vehicle.
+
+Therefore the old RC classification logic is a **better precedent** than
+current upstream RDS for RE `StartProfileResolver`.
