@@ -38,15 +38,23 @@ assert(fallback.modes[M.MODE.RPM_540]~=nil)
 assert(fallback.modes[M.MODE.RPM_1000]==nil)
 assert(math.abs(fallback.modes[M.MODE.RPM_540].effectiveMotorRatio-4.0)<0.000001)
 
+local chipperActive=false
 local chipper={
     configFileName="/mods/hm10500KF.xml",
     spec_powerConsumer={ptoRpm=540},
-    spec_powerTakeOffs={inputPowerTakeOffs={{}}}
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getIsPowerTakeOffActive=function() return chipperActive end,
+    getIsTurnedOn=function() return chipperActive end,
+    getAttachedImplements=function() return {} end
 }
+local mowerActive=false
 local mower={
     configFileName="/mods/mower.xml",
     spec_powerConsumer={ptoRpm=540},
-    spec_powerTakeOffs={inputPowerTakeOffs={{}}}
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getIsPowerTakeOffActive=function() return mowerActive end,
+    getIsTurnedOn=function() return mowerActive end,
+    getAttachedImplements=function() return {} end
 }
 
 fiat.getAttachedImplements=function()
@@ -65,9 +73,30 @@ req=R.collectRequirements(fiat)
 assert(req.conflict==true)
 assert(req.requiredRpm==nil)
 
-fiat.getIsPowerTakeOffActive=function() return true end
-assert(R.isPtoEngaged(fiat)==true)
+-- Tractor PowerTakeOffs itself reports false; active state lives on the
+-- attached PTO-consuming implement specialization.
 fiat.getIsPowerTakeOffActive=function() return false end
-assert(R.isPtoEngaged(fiat)==false)
+fiat.getAttachedImplements=function()
+    return {{object=chipper}}
+end
+local engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
+
+chipperActive=true
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==true)
+assert(source=="IMPLEMENT_PTO_ACTIVE")
+
+-- Fallback: a modded PTO consumer can expose only TurnOnVehicle state.
+chipper.getIsPowerTakeOffActive=nil
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==true)
+assert(source=="IMPLEMENT_TURNED_ON")
+
+chipperActive=false
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
 
 print("pto_resolver_harness: OK")
