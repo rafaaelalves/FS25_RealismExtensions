@@ -2,9 +2,9 @@
 <texture>
     <meta>
         <filename>pto_icon.dds</filename>
-        <size width="256" height="160" />
+        <size width="512" height="320" />
     </meta>
     <slices>
-        <slice id="pto" uvs="0px 0px 256px 160px" />
+        <slice id="pto" uvs="0px 0px 512px 320px" />
     </slices>
 </texture>
