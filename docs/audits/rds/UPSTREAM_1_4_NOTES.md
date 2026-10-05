@@ -1,79 +1,66 @@
-# RDS current-upstream notes (1.3 / 1.4)
+# RDS upstream 1.4 provenance / closure notes
 
 Updated: 2026-10-05
 
-## Evidence limitation
+This file originally tracked RDS 1.4 from public changelog evidence because the
+archive was unavailable.
 
-No public GitHub repository for Realistic Diesel Start / GN Realism was found during this audit.
+That limitation is now closed.
 
-Newest public release identified: **1.4.0.0**, published 2026-10-04.
+## Exact current archive
 
-The actual 1.4 Lua source was not available in this session. Everything below is therefore public changelog/description evidence only, not source verification.
+User-supplied:
+- mod version: `1.4.0.0`;
+- ZIP SHA-256: `a2a983c7754bc4fb3dffc04839fb16cf844c72d7664ae78cfcd70fcf3c15721c`.
 
-Primary 1.4 page:
-https://fs22mods.com/realistic-diesel-start-v1-4-0-0/
+Exact diff against the earlier supplied 1.2 archive is documented in:
+`SOURCE_DIFF_1_2_TO_1_4.md`.
 
-Historical 1.3 page:
-https://fs25.net/realistic-diesel-start-v1-0/
+No public GitHub repository was found during either search pass, and the
+supplied 1.4 ZIP does not contain a LICENSE file. Continue to treat replacement
+as clean-room functional reimplementation, not source/assets reuse.
 
-## 1.3.0.0 reported changes
+## Changelog claims now source-confirmed
 
-Public changelog reports:
-- Advanced Damage System compatibility;
-- shorter/more realistic cold glow preheat;
-- helper freeze during air build-up fixed;
-- false visual running state after unsuccessful start fixed;
-- new dashboard icons and ADS-aware layout.
+Exact 1.4 code confirms:
+- ADS removed from the explicit conflict list;
+- engine-key interception added for ADS coexistence;
+- external/difficult ADS crank lifecycle support;
+- L -> Alt+L synthetic-clutch migration;
+- brake-light spring-brake fix;
+- per-vehicle ADS-aware HUD layout/thermometer suppression;
+- UI-scale-aware HUD positioning;
+- RDS pneumatic getter/setter API for Realistic Brakes;
+- Diesel Fuel System cold-start factor/start-block reason hooks;
+- AI air-pressure workaround;
+- shorter glow-preheat calibration.
 
-Implications for the 1.2 audit:
-- the 1.2 speculative visual-running path was a real upstream issue;
-- AI/air readiness could deadlock helpers;
-- upstream itself considered the cold preheat duration too long;
-- ADS is moving from explicit conflict toward composition.
+## Claims only partially visible from the RDS side
 
-Do not infer how these were implemented without source.
+The changelog says contact runs a common-rail priming pump.
 
-## 1.4.0.0 reported changes
+The RDS archive does not contain a priming-pump call. The behavior may be
+implemented in Diesel Fuel System by observing RDS/motor contact state.
+Therefore this audit does not claim the pump implementation is proven without
+that mod's source.
 
-Public changelog reports:
-- dedicated clutch binding moved from `L` to `Alt+L` because shared FS25 key bindings can leave only one action active;
-- migration preserves custom bindings where possible;
-- spring/low-air brake-light behavior corrected to prevent battery drain and restore pedal-controlled brake lamps;
-- trailer air supply added with Realistic Brakes 1.3.0.0;
-- HUD alignment corrected for non-1.0 UI scale and ADS layouts;
-- ADS hard-start behavior revised so difficult-start faults can keep cranking until success;
-- start key no longer bypasses glow plugs or stops the engine incorrectly on release;
-- ADS 0.9.2.8 is the reported tested baseline.
+Trailer-air equalization logic is likewise not in RDS. RDS only exposes the
+truck pressure methods; Realistic Brakes owns the consumer/transfer logic.
 
-Implications:
-- input collision is a proven operational issue, not a theoretical concern;
-- 1.2 brake-light ownership was wrong and has been changed upstream;
-- fragmented HUD coexistence continues to require maintenance;
-- ADS start composition remains complex;
-- trailer pneumatics now cross into another GN Realism specialist.
+## New exact-source issues not visible from changelog
 
-## Absorption consequence
+- local `math.random()` still decides an RDS start failure;
+- client damage event remains under-authorized;
+- no full initial pneumatic stream;
+- 400/550 ms input dead band remains;
+- direct RDS thermal/torque/damage ownership remains;
+- pneumatic energy-proxy consumption remains;
+- dead HUD state/resources and lifecycle cleanup issues remain;
+- runtime diagnostic still prints `v1.2.0.0` from the 1.4 archive.
 
-Upstream progress does not make RDS a poor mod. It strengthens the architectural case for native RE ownership in this particular stack:
+## Status
 
-- start intent repeatedly needs to compose with ADS/RMS;
-- RDS carries its own HUD/input/settings state;
-- air behavior now reaches a separate brake mod;
-- RE already has a shared HUD and capability-ownership architecture.
+Current-upstream source comparison: **CLOSED for supplied 1.4.0.0**.
 
-The goal is therefore clean functional integration, not reproducing RDS implementation details.
-
-## Required exact-source follow-up
-
-When RDS 1.4 ZIP/source becomes available, diff it against the supplied 1.2 baseline for:
-1. ADS integration;
-2. input/clutch migration;
-3. AI/helper pneumatic behavior;
-4. brake-light correction;
-5. Realistic Brakes/trailer-air API;
-6. HUD scaling/lifecycle;
-7. initial stream/network authority;
-8. license/provenance;
-9. hot-path/performance changes.
-
-Then mark every 1.2 finding as still present, fixed upstream, changed-but-relevant, or obsolete.
+Reopen only for a newer exact RDS archive, an official source repository, or a
+focused dependency audit (Realistic Brakes / Diesel Fuel System / ADS update).
