@@ -16,8 +16,13 @@ local motor={
 }
 local vehicle={
     getMotor=function() return motor end,
-    getIsPowerTakeOffActive=function() return engaged end,
     getLastSpeed=function() return speedKph end
+}
+RealismExtensionsPTOResolver={
+    isPtoEngaged=function(v)
+        assert(v==vehicle)
+        return engaged, engaged and "IMPLEMENT_PTO_ACTIVE" or "NO_ACTIVE_CONSUMER"
+    end
 }
 
 RealismExtensionsPTO={
@@ -80,6 +85,13 @@ RenderText={
     VERTICAL_ALIGN_BOTTOM=4
 }
 function addModEventListener(listener) end
+local consoleCommands={}
+function addConsoleCommand(name,description,method,target)
+    consoleCommands[name]={method=method,target=target}
+end
+function removeConsoleCommand(name)
+    consoleCommands[name]=nil
+end
 
 Utils={
     appendedFunction=function(original,appended)
@@ -125,6 +137,19 @@ local H=RealismExtensionsPTOHUD
 
 H:loadMap()
 assert(H._hookedHud==nil)
+assert(consoleCommands.rePTOHud~=nil)
+assert(consoleCommands.rePTOHudMove~=nil)
+assert(consoleCommands.rePTOHudScale~=nil)
+assert(consoleCommands.rePTOHudReset~=nil)
+
+local summary=H:consoleCommandMove(10,-5)
+assert(string.find(summary,"x=-58.0",1,true)~=nil)
+assert(string.find(summary,"y=44.0",1,true)~=nil)
+summary=H:consoleCommandScale(2)
+assert(string.find(summary,"w=60.0",1,true)~=nil)
+summary=H:consoleCommandLayout(-70,50,32,20,10,6)
+assert(string.find(summary,"x=-70.0",1,true)~=nil)
+assert(string.find(summary,"w=32.0",1,true)~=nil)
 H:update(250)
 assert(H._hookedHud==missionHud)
 
@@ -151,6 +176,7 @@ assert(d.noVehicle==0)
 assert(d.noState==0)
 assert(d.lastMode=="1000")
 assert(d.lastEngaged==true)
+assert(d.lastEngagementSource=="IMPLEMENT_PTO_ACTIVE")
 assert(math.abs(d.lastActualRpm-900)<0.000001)
 assert(d.lastTransportWarning==false)
 
@@ -199,5 +225,7 @@ assert(d.hidden==1)
 
 H:deleteMap()
 assert(icon.deleted==true)
+assert(consoleCommands.rePTOHud==nil)
+assert(consoleCommands.rePTOHudMove==nil)
 
 print("pto_hud_harness: OK")
