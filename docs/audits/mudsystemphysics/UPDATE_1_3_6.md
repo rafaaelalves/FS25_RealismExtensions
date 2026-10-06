@@ -289,3 +289,25 @@ Therefore our response is deliberately **not** to reproduce Mud's compatibility 
 - fail-closed for unknown wrappers/future Mud versions.
 
 That is currently the best compromise between architectural purity and compatibility with the mods we actually use.
+
+
+## Cross-audit follow-up: Reifenverschleiss 1.2.2.70
+
+The later Reifen 1.2.2.70 audit strengthens and refines this Mud conclusion.
+
+Reifen now explicitly publishes compatibility API v1:
+- `getWearAppliedTargetForScale()`;
+- `getWheelWearRadius()`;
+- `getWheelCompatibilityData()`;
+- `getCompatibilityApiVersion() == 1`.
+
+Consequences:
+- Mud 1.3.6's API-v1 friction path is confirmed against the provider side;
+- RC can prefer Reifen's public wear-radius API over Mud/Reifen private
+  `__rvDesiredRadius` state for structural reads;
+- the private Mud radius channel remains useful as fallback/partner handoff;
+- the bounded Mud outer-wrapper repair remains necessary because wrapping the
+  public Reifen API itself would corrupt its semantics for other consumers.
+
+This does not change the Mud 1.3.6 verdict; it improves the preferred RC read
+boundary and supplies stronger evidence for the existing pairwise math.
