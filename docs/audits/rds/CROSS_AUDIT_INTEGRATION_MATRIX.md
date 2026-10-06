@@ -521,3 +521,421 @@ They collectively make the implementation boundary stricter:
 - **state reads, decisions and physical actuation stay separate**;
 - **all persistent/stochastic mechanical outcomes are server authoritative**;
 - **translation is exactly once and provenance-aware**.
+
+
+# Final transversal pass additions — 2026-10-06
+
+This section is the final "did we cross every prior audit?" ledger before the
+RDS work is intentionally parked.
+
+## Audit coverage ledger
+
+| Prior audit/domain | Rechecked for RDS absorption | Concrete consequence |
+|---|---:|---|
+| MoreRealistic | yes | motor/clutch/brake/RPM/AIR final-owner boundaries; AutoDrive hybrid fallback; no duplicate engine brake |
+| RMS | yes | preheat/start facade mode, electrical/thermal authority, parking-brake composition, service/security precedents |
+| ADS / historical RDSADS | yes | held hard-start outcome, secure action adapter requirement, legacy bridge remains exact-version gated |
+| MudSystemPhysics | yes | no pneumatic->friction shortcut; wheel-ground stack decides drag/skid; wetness is not thermal state |
+| Reifenverschleiss | yes | brake demand should create real wheel slip/force consequences; no direct RDS->Reifen bridge |
+| Dynamic/native PTO | yes | collision-safe inputs, revisioned state, profile resolution, PTO-start interlock option, shared RPM-demand concern |
+| realistic 4x4 | yes | sensors -> pure demand/decision -> actuator pattern reused for brakes |
+| hydraulic suspension | yes | compose corrections against physical owner; do not seize baseline writer |
+| FarmKit | yes | fragmented HUD is not a clone target; engine/spatial-sound ownership remains external |
+| soundExpansionMP | yes, exact source | native AIR `doRefill` is already an MP/audio contract; avoid parallel compressor sound/state |
+| SoilCompaction / RealisticHarvesting | yes | exactly-once translation/provenance rule generalized to start factors |
+| TerraFarm | yes | declarative profile hierarchy + runtime sanity validation |
+| Persistent Tracks / VMT / True AI Tracks | yes | only lifecycle/revision/bounded-work precedents apply; no direct RDS integration |
+| Reifen workshop/persistence | yes | reinforces server authorization, lifecycle cleanup and no local-only mechanical persistence |
+| project StateContract/provider | yes | requires capability-version refactor before START can be added safely |
+| current Realistic Brakes 1.3 public behavior | preliminary only | exact-source audit remains a hard gate before trailer-air/general brake ownership |
+
+No previous audit uncovered a reason to cancel RDS functional absorption.
+Several did narrow the allowed implementation boundary.
+
+---
+
+## New architecture correction — StateContract must be capability-optional
+
+Current `RealismExtensionsState` validates one provider by requiring:
+- provider API v2;
+- wheel context v2;
+- `getWheelContext()`.
+
+That is appropriate for current TerrainDeformation consumers, but it must **not**
+become an accidental dependency of native engine-start behavior.
+
+Standalone RE start must work with:
+- GIANTS Motorized state;
+- RE profiles;
+- no RealismCompatibility installed.
+
+External specialist state should be optional enrichment through RC.
+
+### Target provider-info shape
+
+Do not bump one global context version every time a new capability is added.
+
+Conceptual:
+
+```text
+providerInfo {
+    apiVersion = 2,
+    capabilities = {
+        WHEEL = { version=2 },
+        START = { version=1 },
+        MECHANICAL = { version=1 },
+        PNEUMATIC = { version=1 }
+    }
+}
+```
+
+Rules:
+- provider protocol/API major changes remain explicit;
+- each context has its own version;
+- TerrainDeformation validates only WHEEL;
+- EngineStartControl requests START if available and fills missing fallback
+  state from native GIANTS/profile logic;
+- absence of RC does not disable standalone RE start;
+- a START provider must not be forced to implement WHEEL merely to register.
+
+This should be solved in S0 before start gameplay code.
+
+---
+
+## Single-owner facts vs multi-contributor constraints
+
+The "facets" model needs one more distinction.
+
+Some values normally need **one authoritative source**:
+- engine temperature;
+- battery voltage/SOC;
+- final starter state;
+- final motor-running state.
+
+Other start conditions can have **multiple independent contributors**:
+- interlocks: neutral + clutch + brake + PTO + provider-specific;
+- fuel: low cetane + air in line + blocked filter + starvation;
+- hard blocks from several owners;
+- advisory/reason state.
+
+Therefore do not implement every facet as:
+`owner -> one scalar`.
+
+Use two semantic classes:
+
+```text
+AuthoritativeChannel<T>
+    value
+    owner
+    revision
+
+ConstraintSet
+    contributors[]
+    hardBlocks[]
+    modifiers[]
+    provenance
+```
+
+Example:
+
+```text
+RMS fuel subsystem: clogged filter
+Diesel Fuel provider: low cetane
+RE profile: glow ready
+ADS electrical: starter healthy
+```
+
+Both fuel causes may legitimately exist. One must not erase the other merely
+because they share the word "fuel".
+
+Composition still follows exactly-once provenance; two adapters must not expose
+the same physical cause under different labels.
+
+---
+
+## Controller-policy layer — PLAYER / GIANTS AI / Courseplay / AutoDrive
+
+RDS and Realistic Brakes both solved AI deadlocks by bypassing/mutating parts of
+their simulation. The cross-audits show a cleaner rule:
+
+**controller policy may skip human interaction, but must not silently disable
+physical safety state.**
+
+Conceptual:
+
+```text
+PhysicalState
+    start readiness
+    air pressure
+    spring-brake demand
+
+ControllerPolicy
+    PLAYER       -> manual gesture
+    GIANTS_AI    -> automatic preparation
+    COURSEPLAY   -> automatic preparation + controller adapter
+    AUTODRIVE    -> automatic preparation + controller adapter
+```
+
+Important MR consequence:
+- MR deliberately bypasses its central wheel-control implementation for active
+  AutoDrive;
+- therefore spring-brake actuation must sit at a physical boundary that remains
+  effective under that fallback;
+- do not attach forced spring-brake behavior only to the player/controller
+  command layer.
+
+Runtime acceptance must prove forced low-air brake demand survives:
+PLAYER / GIANTS_AI / COURSEPLAY / AUTODRIVE.
+
+For start:
+- controller code that calls motor start directly must not bypass authoritative
+  readiness;
+- automatic controllers use the same server transition graph with a different
+  interaction policy.
+
+---
+
+## Safe load/join ordering
+
+Crossing Reifen/RMS lifecycle findings with pneumatic persistence exposes a
+specific safety gate.
+
+If a vehicle/trailer loads with insufficient air:
+1. restore authoritative storage state;
+2. derive low-air/spring-brake demand;
+3. install/apply final brake constraint;
+4. only then allow ordinary vehicle wake/motion.
+
+Do not permit:
+```text
+vehicle physics active
+ -> one frame of free roll
+ -> spring brake restored later
+```
+
+The same applies to a disconnected trailer loaded with an empty reservoir.
+
+Join-in-progress requires the initial state before presentation/control is
+considered ready.
+
+---
+
+## Connected-resource lifecycle — learn from RMS external power
+
+Truck/trailer air transfer is a paired-resource problem.
+
+Future connector rules:
+- each vehicle persists its own reservoir, never a direct Lua object reference
+  to the partner;
+- hose/attachment connection is transient topology;
+- pair solve exactly once per server step;
+- transfer is symmetric/conservative;
+- detach/delete invalidates both sides immediately;
+- stale partner references fail closed;
+- connection action is server-validated.
+
+This directly avoids the class of stale reciprocal-reference defect already
+identified in RMS external-power deletion.
+
+ManualAttach / Interactive Control may provide **connection state**, not
+permission to mutate air amount client-side.
+
+---
+
+## Pneumatic condition/service ownership gate
+
+The first RDS audit correctly rejected vanilla `damageAmount` as the leak-health
+signal. The deeper question is: who owns pneumatic degradation?
+
+Do not answer this implicitly during P1.
+
+### MVP
+- profile baseline leakage;
+- explicit externally supplied fault/condition if available;
+- no random RE brake-system wear/failure model.
+
+### Future
+If compressor/line/chamber degradation is desired, prefer:
+1. an RMS-side extensible subsystem/service API; or
+2. a small normalized condition contract that RMS/workshop can consume.
+
+Only create a separate RE pneumatic condition/service lifecycle if no mechanical
+owner can represent the capability cleanly and the feature is valuable enough
+to justify independent persistence/service UX.
+
+Avoid ending with:
+- RMS mechanical workshop;
+- Reifen tire workshop;
+- RE pneumatic workshop;
+- Realistic Brakes service UI
+
+all independently pricing adjacent vehicle maintenance.
+
+RMS's Condition / Stress / Service separation remains the preferred conceptual
+model for future pneumatic degradation.
+
+---
+
+## Brake demand must be extensible beyond one scalar
+
+A single `springDemand01` is adequate for an MVP, but do not freeze the public
+contract around "all wheels receive the same brake".
+
+Air-brake systems can have:
+- primary/secondary service circuits feeding different wheel groups;
+- service chambers with different effective areas;
+- spring chambers only on selected axles;
+- trailer circuits.
+
+Official air-brake reference confirms dual service circuits and wheel-specific
+chambers, while spring brakes are a separate subsystem.
+
+Future-compatible demand shape:
+
+```text
+BrakeDemand {
+    service {
+        global01
+        wheelGroups[] optional
+    }
+    spring {
+        global01
+        wheelGroups[] optional
+    }
+    manualParking {
+        global01
+        wheelGroups[] optional
+    }
+    reasonMask
+}
+```
+
+MVP may fill only global values; the adapter API remains evolvable.
+
+Do not model low pressure as tire-friction reduction.
+
+---
+
+## Compressor engine consequence — reserve, do not fake
+
+RDS models compressor pressure but no mechanical compressor power demand.
+
+A future higher-fidelity model may add:
+- compressor torque/power demand while loaded;
+- optional governor/fast-idle RPM request.
+
+Rules:
+- do not add synthetic "engine load percentage";
+- translate real auxiliary power/torque demand into the active MR/GIANTS engine
+  owner;
+- keep RPM request separate from power demand;
+- do not create a generic `AuxiliaryPowerDemand` bus until a second real
+  consumer justifies it.
+
+The existing `EngineRpmDemand` candidate remains valid for:
+- PTO hand throttle;
+- cold idle;
+- optional compressor fast idle.
+
+If compressor power becomes real, exactly-once provenance is required so RMS
+electrical/other owners do not count the same accessory demand twice.
+
+---
+
+## Presentation hierarchy — dashboard before extra HUD where possible
+
+RDS grew a large overlay partly because every state was presented externally.
+
+For native RE, presentation preference should be:
+
+1. native/in-cab dashboard value/telltale when a safe vehicle interface exists;
+2. shared RE HUD semantic slot;
+3. warning toast only for transition/attention state.
+
+Probe native AIR dashboard/sound behavior during P0.
+
+The shared HUD remains important, but "unified HUD" should not mean "duplicate
+every gauge already present in the cab".
+
+---
+
+## Legacy RDS save migration opportunity
+
+Exact RDS 1.4 persists:
+
+```text
+<vehicle>.realDieselStart#airPressure
+<vehicle>.realDieselStart#engineHeat
+<vehicle>.realDieselStart#lastStamp
+```
+
+When external RDS is eventually retired, a one-time migration can preserve the
+only state that is truly valuable across ownership change.
+
+Candidate policy:
+- import legacy air pressure only after the target pneumatic backend/profile is
+  known;
+- convert pressure into the target stored-air domain conservatively;
+- apply bounded elapsed leakage using an explicit time basis;
+- do **not** inject RDS `engineHeat` into RMS/ADS thermal state;
+- mark migration schema/version so it runs once;
+- log source and conversion.
+
+If native AIR becomes the backend, migration needs an explicit bar -> stored-air
+mapping and must wait until P0 proves native capacity semantics.
+
+Migration is optional compatibility polish, not permission to preserve flawed
+RDS algorithms.
+
+---
+
+## Realistic Brakes 1.3 preliminary boundary
+
+Current public 1.3 material (2026-10-04) reports:
+- manual/parking brake;
+- dynamic engine braking;
+- reinforced/Jake-style engine braking;
+- brake temperature/fade/failure;
+- trailer air reservoir and spring brakes;
+- hose connection through manualAttach / Interactive Control;
+- RDS truck-air integration;
+- AI bypass behavior;
+- Enhanced Vehicle coexistence.
+
+This is enough to establish an ownership **gate**, not enough for source
+findings.
+
+Before P4/trailer work, exact source must answer:
+- who owns final wheel brake force and at which hook;
+- whether parking force is modeled as an actuator limit or recomputed from
+  vehicle weight/slope;
+- how engine/Jake braking collides with MR's existing engine-brake owner;
+- brake thermal/fade cadence/authority;
+- trailer reservoir units and equalization/conservation;
+- spring-brake wheel/axle scope;
+- hose connection authority/network lifecycle;
+- AI bypass semantics;
+- Enhanced Vehicle arbitration;
+- save/MP state;
+- cleanup on detach/delete.
+
+Until that audit, do not broaden RDS assimilation into "all realistic brakes".
+
+---
+
+## Final negative-space check
+
+The following prior domains were deliberately checked and produce **no direct
+RDS integration** today:
+- SoilCompaction;
+- RealisticHarvesting processing;
+- terrain deformation/recovery;
+- persistent visual tracks;
+- crop interaction;
+- loose-load/spill;
+- tire pressure/CTIS.
+
+Only generic architecture precedents carry over.
+
+This is intentional. Do not manufacture integrations merely because the systems
+exist in the same realism stack.
