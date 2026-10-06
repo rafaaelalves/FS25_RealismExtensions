@@ -14,7 +14,7 @@ The decision unit is a **capability**, not a mod.
 | base traction / friction | MR + Mud + Reifen composition through RC | no write |
 | physical ground wetness | MudSystemPhysics | read-only input |
 | sink / terrain resistance / stuck | MudSystemPhysics | read-only input |
-| permanent tire wear / worn structural radius | Reifenverschleiss + RC composition | read-only input |
+| permanent tire wear / worn structural radius | Reifenverschleiss + RC composition (current) | read-only input now; clean-room RE `RunningGearWear` is a candidate future owner only after parity/migration/retirement gates |
 | persistent soil compaction | SoilCompaction | no duplicate model |
 | PTO operating mode / effective ratio | Dynamic PTO + RC composition | consume only |
 | mechanical subsystem / PTO stress | RMS where active | no duplicate model |
