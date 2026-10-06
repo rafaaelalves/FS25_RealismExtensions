@@ -1,6 +1,6 @@
 # Hydraulic Suspension System assimilation audit
 
-Updated: 2026-10-04
+Updated: 2026-10-06
 
 Exact package audited:
 - mod: `FS25_HydraulicSuspensionSystem`
@@ -13,6 +13,46 @@ Exact package audited:
 - Lua source: 4 files, 1,837 lines, ~79 kB
 - public distribution line: KingMods Hydraulic Suspension System
 - source-code reuse license: **not found in the ZIP**
+
+## Release 1.0.0.0 update
+
+Latest package audited:
+- mod: `FS25_HydraulicSuspensionSystem`
+- title: Hydraulic Suspension System
+- author: Zasty Chalk
+- version: `1.0.0.0`
+- lineage: public release succeeding `1.6.9.0 BETA 2`; the version number reset does **not** represent an older code line
+- ZIP SHA-256: `b338a28d13cadfe8b00949c7d0461079a04f6ee29a5afdd6fc79c3567038d40e`
+- declared multiplayer support: true
+- package: 43 files; no executable payload / path-traversal issue found
+- Lua source: 9 files, 3,126 lines, 134,660 bytes
+- XML: 26 files including `modDesc.xml` and 25 translations; parsed successfully during this audit
+- source-code reuse license: **not found in the ZIP**
+
+The release retains the BETA 2 active-suspension controller and its MoreRealistic ownership strategy, while adding four material areas:
+- in-game settings/menu infrastructure;
+- redesigned/movable HUD;
+- client-side cab-isolation visualization;
+- front-loader ride-control experimentation.
+
+Therefore this is an **update audit**, not a new unrelated mod and not a downgrade from 1.6.9.0.
+
+### Capability decision matrix
+
+| Capability | Decision | Owner if pursued | Current reason |
+| --- | --- | --- | --- |
+| Active front suspension / leveling | **CANDIDATE_ABSORB / REDESIGN** | RE, composed over MR/vanilla baseline | valuable phenomenon; external ownership model still suppresses competing spring/damper writes |
+| Loader ride control | **CANDIDATE_ABSORB / REDESIGN** | RE, separate capability | real useful phenomenon, but current movingTool binding/ownership is experimental |
+| Cab isolation | **LEARN / POSSIBLE_RE** | RE presentation layer | currently camera filtering rather than physical cab suspension |
+| Settings/menu adapter | **LEARN_ONLY** | shared RE infrastructure only if needed | useful declarative/shared-hook pattern, but coupled to internal Settings UI controls |
+| HUD | **LEARN_ONLY** | feature UI | no physics capability worth absorbing as a unit |
+| Third-party HSS compatibility patch | **DO NOT ADD BY DEFAULT** | none | RC should not become a repair layer for HSS-specific implementation choices |
+
+The overall decision remains:
+
+**CANDIDATE_ABSORB / REDESIGN. DO NOT PORT THE IMPLEMENTATION.**
+
+The new release broadens what is worth learning from, but it does not remove the original ownership blocker.
 
 Purpose: evaluate whether the useful suspension phenomena should become a clean RealismExtensions capability. This is not a recommendation to add the external mod to the target stack and not a source-port exercise.
 
