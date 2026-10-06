@@ -175,4 +175,49 @@ assert(state.hasPtoConsumer==false)
 assert(state.requiredShaftRpm==nil)
 assert(state.revision>revisionBefore)
 
+-- Save callbacks receive the specialization key already namespaced by GIANTS.
+-- Writing the mod/spec namespace again would produce an invalid duplicated path.
+spec.mode=M.MODE.RPM_1000
+spec.handThrottlePercent=0.5
+local written={}
+local saveXml={
+    setValue=function(self,key,value)
+        written[key]=value
+    end
+}
+local specializationSaveKey=
+    "vehicles.vehicle(0).FS25_RealismExtensions.realismExtensionsPTO"
+C.saveToXMLFile(vehicle,saveXml,specializationSaveKey,{})
+assert(written[specializationSaveKey.."#mode"]==M.MODE.RPM_1000)
+assert(math.abs(written[specializationSaveKey.."#handThrottle"]-0.5)<0.000001)
+assert(written[
+    specializationSaveKey
+    ..".FS25_RealismExtensions.realismExtensionsPTO#mode"
+]==nil)
+
+-- onPostLoad receives the vehicle base key, so it must still resolve the
+-- registered mod specialization namespace from that base key.
+local readKeys={}
+local loadXml={
+    getValue=function(self,key)
+        readKeys[#readKeys+1]=key
+        if key==
+            "vehicles.vehicle(0).FS25_RealismExtensions.realismExtensionsPTO#mode" then
+            return M.MODE.RPM_540
+        end
+        if key==
+            "vehicles.vehicle(0).FS25_RealismExtensions.realismExtensionsPTO#handThrottle" then
+            return 0.25
+        end
+        return nil
+    end
+}
+C.onPostLoad(vehicle,{
+    key="vehicles.vehicle(0)",
+    xmlFile=loadXml
+})
+assert(spec.mode==M.MODE.RPM_540)
+assert(math.abs(spec.handThrottlePercent-0.25)<0.000001)
+assert(#readKeys==2)
+
 print("pto_control_harness: OK")
