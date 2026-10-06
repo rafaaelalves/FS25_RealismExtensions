@@ -689,3 +689,157 @@ Potential capabilities:
 - last transition/rejection reason.
 
 Do not copy the unlicensed RB source; preserve the diagnostic idea.
+
+
+## Final source-pass additions
+
+### RB-54 — parking-brake save field is written/read but not registered in XML schema
+**CONFIRMED_STATIC / PERSISTENCE HIGH**
+
+The 1.3 source correctly changed parking persistence to typed
+`getBool()/setBool()`, but the schema-registration paths declare only:
+- `#brakeDamage`;
+- `#brakeTempC`.
+
+`saveToXMLFile()` also writes:
+`#parkBrakeOn`,
+and `onLoad()` reads it, yet neither `RealisticBrakes.initSpecialization()`
+nor `RBRegister.injVehicleInit()` registers that BOOL path.
+
+The source comments explicitly note that FS25 rejects unregistered save paths.
+
+Therefore the parking-persistence repair is incomplete at the schema boundary.
+
+Target/upstream fix:
+- register `XMLValueType.BOOL ...#parkBrakeOn` in the one canonical schema
+  registration path;
+- add a save/reload harness/test so a comment-level fix cannot regress again.
+
+### RB-55 — long inactive/sleep cooling intervals over 300 s are deliberately discarded
+**CONFIRMED_STATIC / THERMAL LIFECYCLE**
+
+Brake cooling tries to compensate for sparse vehicle updates by measuring
+`g_currentMission.time`.
+
+However the measured interval is used only when:
+`0 < realDiffSec < 300`.
+
+At 300 s or more the code falls back to the ordinary current-frame `dtSec`.
+
+Consequences:
+- a vehicle not updated for >5 minutes can retain much more heat than the
+  exponential model implies;
+- sleeping/time acceleration or long inactive periods are not reconciled;
+- `brakeTempC` is persisted, but no timestamp is persisted to cool it across
+  save/reload/offline elapsed time.
+
+Positive lesson: exact exponential cooling is ideal for elapsed-time
+reconciliation.
+
+Future model:
+- persist/track an explicit thermal timestamp;
+- clamp elapsed time to a documented maximum if necessary;
+- evaluate `T=Tamb+(T0-Tamb)*exp(-k*elapsed)` directly rather than discarding
+  a valid large interval.
+
+### RB-56 — a parking brake that has exceeded hold capacity stops contributing forced thermal demand
+**CONFIRMED_STATIC / MODEL LIMIT**
+
+For thermal input the source forces `pedal=1` only when:
+`parkBrakeOn and not parkHoldExceeded`.
+
+But `parkHoldExceeded` is precisely the state in which the parked vehicle may
+roll/drag against the residual parking brake.
+
+Therefore the current thermal model can under-represent frictional heating
+during a dragged/slipping failed parking brake.
+
+A brake-work model fixes this naturally:
+- if the actuator still develops brake torque and the wheel rotates, it
+  dissipates energy and heats;
+- no special parking-state thermal heuristic is required.
+
+### RB-57 — input actions do not use the collision-safe registration pattern learned from RDS/PTO
+**CONFIRMED_STATIC / UX-COMPATIBILITY**
+
+RB declares:
+- `RB_EXHAUST_TOGGLE` default `B`;
+- `RB_PARK_BRAKE` default `N`;
+with `ignoreComboMask=false`.
+
+Vehicle action registration uses the ordinary `addActionEvent` call and does
+not:
+- request the optional collision-bypass registration used by current RDS/native
+  RE PTO;
+- explicitly call `setActionEventActive(..., true)`;
+- expose registration-failure telemetry.
+
+This is not proof that the defaults currently collide, but the stack has
+already produced real silent input-collision failures in RDS/PTO work.
+
+If RB enters the target stack:
+- test both actions in the full keymap;
+- add observable registration health;
+- preserve user bindings during any future default migration.
+
+### RB-58 — capability modules cannot be cleanly disabled independently
+**CONFIRMED_STATIC / INTEGRATION HIGH**
+
+The physical specialization bundles:
+- parking;
+- engine/exhaust brake;
+- thermal/fade;
+while trailer air is separately toggleable through settings.
+
+There is no equivalent stable user/config/API switch to keep, for example,
+thermal fade while disabling only RB engine-brake physical ownership under MR.
+
+This materially affects stack adoption.
+
+A high-value upstream improvement would expose independent capability switches:
+```text
+parkingEnabled
+serviceThermalEnabled
+engineRetarderEnabled
+trailerPneumaticEnabled
+```
+with authoritative server settings.
+
+That could make "keep RB external" much easier than writing compatibility
+suppression around global hooks.
+
+### RB-59 — schema registration itself is duplicated across two installation paths
+**CONFIRMED_STATIC / MAINTAINABILITY**
+
+The source deliberately attempts save-schema registration from both:
+- `RealisticBrakes.initSpecialization()`;
+- an appended `Vehicle.init` callback,
+
+guarded by `RBRegister.schemaRegistered`.
+
+The defensive intent came from real save bugs and is understandable, but the
+duplication helped make `parkBrakeOn` easy to omit from both places.
+
+General lesson:
+- define the schema field list once;
+- call one idempotent registrar from any necessary lifecycle entry;
+- test the final registered schema rather than duplicating field declarations.
+
+### RB-60 — service-brake thermal technology should be profile-driven if ever replaced
+**DESIGN OPPORTUNITY**
+
+RB distinguishes car/truck/tractor through heating/cooling multipliers but uses
+one vehicle-level fade/damage curve.
+
+A future higher-fidelity implementation should separate:
+- brake family: dry disc / drum / wet multi-disc / other;
+- effective thermal mass;
+- cooling coefficient;
+- fade curve;
+- burn/damage thresholds;
+- front/rear or axle bias when justified.
+
+This is the brake-domain analogue of RDS glow-technology profiles and
+TerraFarm-style declarative capability profiles.
+
+Do not infer the final brake family from store category alone.
