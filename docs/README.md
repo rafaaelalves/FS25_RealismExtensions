@@ -34,3 +34,8 @@ Do not duplicate current status into audit/research notes. Link back to `CURRENT
 ## Current assimilation research
 - `audits/hydraulic-suspension/README.md`: active/self-leveling suspension candidate and MR composition requirements.
 - `audits/4x4-traction/README.md`: drivetrain-demand ideas for RMS without a second physical drivetrain owner.
+
+
+## Running-gear wear research
+- `audits/realtirewear/README.md` — Real Tire Wear 1.6.0.0 clean-room assimilation audit and `RunningGearWear` candidate design.
+- `audits/reifenverschleiss/README.md` — Reifenverschleiss deep architecture audit and 1.2.2.70 interoperability update.
