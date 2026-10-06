@@ -528,3 +528,128 @@ Rules:
 
 This mirrors the lifecycle lesson from RMS external-power relationships and the
 transaction-validation lesson from RMS fluid transfer.
+
+
+## Exact Realistic Brakes 1.3 closure
+
+Exact package:
+- FS25_RealisticBrakes 1.3.0.0
+- SHA-256 c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05
+
+The source closes the trailer-air research gap and adds several corrections to
+the target model.
+
+### Supply and service hoses are separate state
+
+RB correctly identifies native hose types as red supply and yellow control,
+but its current lock test treats any disconnected air hose as an emergency.
+
+The RE model must instead expose:
+- supplyConnected;
+- serviceConnected.
+
+Consequences:
+- supply lost / supply pressure low -> spring brakes apply;
+- service line lost -> service brake command unavailable/degraded;
+- healthy supply can continue holding spring brakes released even if the
+  service/control line is disconnected.
+
+Do not use one allHosesConnected boolean.
+
+### Tractor protection valve is now an explicit requirement
+
+RB instant equalization can pull truck pressure down into the trailer.
+
+The future model must stop trailer supply flow when towing-vehicle supply falls
+below its protection threshold.
+
+This protects truck reserve while allowing trailer pressure to fall and its
+spring brakes to apply.
+
+### Finite transfer
+
+RB pressure equalization is conservation-inspired but instantaneous.
+
+Future transfer must be bounded by flow/valve capacity.
+
+This is necessary for:
+- realistic trailer charge time;
+- meaningful hose/valve profiles;
+- stable server stepping;
+- truck reserve/protection behavior.
+
+### Native trailer service-demand metadata
+
+FS25 Attachable exposes airConsumer#usage and getAttachbleAirConsumerUsage().
+
+This becomes a new PneumaticProfile evidence source.
+
+It may calibrate relative service chamber/circuit demand, but the final RE
+service-air law remains application-based rather than continuously draining
+air while a pedal is held.
+
+### Trailer reservoir network state
+
+RB persists trailer pressure but does not synchronize a dedicated trailer
+reservoir state.
+
+That works only because connected pressure is instantly equalized to RDS.
+
+Finite transfer requires:
+- full initial trailer state;
+- revision/dirty sync;
+- discrete spring/service availability state.
+
+### Detached trailer
+
+RB defers detached braking to vanilla Attachable instead of using its persisted
+pneumatic pressure.
+
+Native RE should keep one physical truth:
+- disconnected supply state;
+- stored trailer air;
+- spring release/apply result;
+- final BrakeDemand.
+
+Vanilla parking behavior is then composed with or suppressed by the selected
+actuator owner rather than silently replacing pneumatics.
+
+### Actuator improvement
+
+RB's trailer path proves a useful concept:
+- apply brake force to wheels;
+- let wheel/ground physics decide dragging/skid.
+
+Do not copy its exact torque formula:
+- assumed mu=1;
+- total trailer mass divided uniformly among wheels;
+- all wheels assumed spring-braked.
+
+Target:
+- hardware/profile brake torque;
+- measured/normalized load only for diagnostics/calibration where needed;
+- wheel-group topology;
+- no assumed road friction inside actuator capacity.
+
+### Controller policy
+
+RB main and trailer paths use different AI detection and both bypass physics in
+some automated-control situations.
+
+RE target remains:
+- same pneumatic/spring physical state;
+- controller-specific interaction/preparation only.
+
+AutoDrive, Courseplay and GIANTS AI are acceptance gates.
+
+### Realistic Brakes itself is not a new default owner
+
+This exact audit does not change the project's current decision to build a
+clean RDS-derived pneumatic model eventually.
+
+RB may still be used externally in the stack first, but:
+- engine/Jake brake conflicts with MR;
+- parking brake conflicts with RMS/Enhanced Vehicle ownership;
+- trailer model is incomplete.
+
+See ../realistic-brakes/README.md.
