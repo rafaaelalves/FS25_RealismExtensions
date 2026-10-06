@@ -242,3 +242,23 @@ RC source/harness validation: pending final CI confirmation on
 `research/reifen-1.2.2.70-current-base`.
 
 Remaining work after CI: in-game/runtime validation only.
+
+
+### Canonical-name migration safety
+
+The stable filename is an upstream improvement, but migration itself creates a
+new stack hazard: an old versioned technical mod and the new canonical mod can
+coexist as two distinct active script mods if both ZIPs are left installed.
+
+RC previously preferred the canonical identity and could miss that both sets of
+hooks were live.
+
+The Reifen 1.2.2.70 RC branch now treats:
+- canonical + legacy;
+- or multiple legacy release identities;
+
+as ambiguous and fails closed.
+
+This is a reusable lesson:
+> when an upstream project changes technical identity, compatibility discovery
+> must detect migration duplicates, not merely learn the new name.
