@@ -333,22 +333,22 @@ function Control:saveToXMLFile(xmlFile, key, usedModNames)
     local spec = getSpec(self)
     if spec == nil or spec.enabled ~= true then return end
 
-    local modName = tostring(g_currentModName or "FS25_RealismExtensions")
-    local specKey = key .. "." .. modName .. "." .. Control.SPEC_NAME
-
+    -- GIANTS passes the specialization save key here already namespaced as
+    -- <vehicle>.<modName>.<specialization>. Appending our namespace again
+    -- produces an unregistered path and breaks persistence.
     if type(xmlFile.setValue) == "function" then
-        xmlFile:setValue(specKey .. "#mode", spec.mode)
+        xmlFile:setValue(key .. "#mode", spec.mode)
         xmlFile:setValue(
-            specKey .. "#handThrottle",
+            key .. "#handThrottle",
             spec.handThrottlePercent or 0
         )
     else
         if type(xmlFile.setInt) == "function" then
-            xmlFile:setInt(specKey .. "#mode", spec.mode)
+            xmlFile:setInt(key .. "#mode", spec.mode)
         end
         if type(xmlFile.setFloat) == "function" then
             xmlFile:setFloat(
-                specKey .. "#handThrottle",
+                key .. "#handThrottle",
                 spec.handThrottlePercent or 0
             )
         end
