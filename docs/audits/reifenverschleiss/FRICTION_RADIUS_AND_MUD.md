@@ -149,3 +149,79 @@ The normal visual worker directly writes the worn structural target into `physic
 Mud compatibility subsequently prepares the pressure baseline rather than immediately recomputing the transient Mud radius itself.
 
 Because wear changes slowly and current stack runtime was healthy, this is a watchpoint rather than a proven conflict. Still, a cleaner future owner contract would express structural radius to Mud before any current-radius writer executes.
+
+
+# 1.2.2.70 API/radius update
+
+## Compatibility API v1
+
+The release now exposes an explicit compatibility surface:
+
+```lua
+getCompatibilityApiVersion() -- 1
+getWearAppliedTargetForScale(vehicle, wheel, nativeStart)
+getWheelWearRadius(vehicle, wheel)
+getWheelCompatibilityData(vehicle, wheel, nativeFrictionScale)
+```
+
+This materially improves the ownership model.
+
+### Friction
+
+`getWearAppliedTargetForScale` evaluates Reifen's own curve against a
+caller-provided stable scale. The caller no longer needs to mutate
+`physics.frictionScale` temporarily just to ask Reifen a question.
+
+However, the final Reifen hook is still absolute:
+
+```lua
+physics.tireGroundFrictionCoeff = targetApplied / physics.frictionScale
+```
+
+So MRTireWear remains required with MR.
+
+Important RC design decision:
+- **do not wrap API v1 itself** to inject MR;
+- doing so would change a public Reifen provider into an RC-composed provider;
+- keep the API semantically pure and compose only at the exact final-target
+  boundary already used by Reifen/Mud.
+
+### Radius
+
+`getWheelWearRadius` explicitly defines:
+- `wearRadius`: Reifen-owned wear-only structural radius;
+- `originalRadius`: unworn baseline;
+- `wear01`: Reifen wear state.
+
+The source contract explicitly permits a temporarily smaller external/effective
+radius without allowing that value to become Reifen's next structural baseline.
+
+This cleanly separates:
+
+```
+permanent tread loss     -> Reifen wearRadius
+pressure/puncture/sink   -> temporary external/effective radius
+final physics.radius     -> engine actuator
+```
+
+RC now prefers the public wearRadius for current Reifen source.
+
+## Mud 1.3.6 coordinated path
+
+When Mud publishes
+`__MudRadiusCombiner.supportsReifenverschleissRadiusChannel=true`, Reifen uses
+`__rvOrigRadius/__rvDesiredRadius/__rvWear01` and stops overloading
+`__tpOrigRadius` for permanent wear.
+
+That is a semantic improvement.
+
+It is still a private shared-state bridge, so RC treats it as fallback when the
+public Reifen API can answer the structural question directly.
+
+## What this update does not solve
+
+- local Mud wetness is still absent from Reifen's wear accumulation inputs;
+- Reifen still has an absolute final friction writer;
+- the high-wear low-baseline monotonicity edge remains;
+- visual current-radius writes still require runtime observation beside Mud
+  transient radius updates.
