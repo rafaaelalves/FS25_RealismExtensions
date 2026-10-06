@@ -471,3 +471,23 @@ Source still deliberately gates the roller cruise/max-speed penalty to
 `RUBBER_TRACK` and excludes `STEEL_TRACK`.
 
 R-13 therefore remains open.
+
+
+## R-63 Canonical filename migration creates a duplicate-package hazard
+**CONFIRMED_STATIC / RC HARDENING**
+
+1.2.2.70 changes the technical mod identity to the stable
+`FS25_Reifenverschleiss`, while older releases used versioned identities such
+as `FS25_Reifenverschleiss_RELEASE_1_2_2_67`.
+
+If both archives remain in the mods folder, FS25 can treat them as distinct
+script mods and both can install physics hooks.
+
+The previous RC detector preferred the canonical exact name and could therefore
+hide the simultaneous legacy package from diagnostics.
+
+RC now collects all accepted Reifen identities and fails closed when canonical
+and/or multiple legacy identities are active together.
+
+This is a justified compatibility-layer change because it protects the shared
+ownership boundary; it is not a third-party bug fix inside Reifen.
