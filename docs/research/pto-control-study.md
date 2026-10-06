@@ -582,3 +582,104 @@ dependent on a single physical key.
 The dashboard texture is now supersampled to 512x320 and packaged as
 uncompressed ARGB DDS to avoid DXT block artifacts at the small ~30 px rendered
 size. The SVG remains the editable source of truth.
+
+
+## Runtime semantics checkpoint — manual PTO causality — 2026-10-06
+
+The first full 6R 155 runtime with the RPM-based hand throttle corrected an
+important conceptual assumption.
+
+### Manual PTO baseline
+
+For the realism target of RE, the default/manual causal model is:
+
+1. operator selects the PTO gear/family (540, 540E, 1000, etc.);
+2. operator engages the PTO clutch;
+3. operator/governor raises engine RPM with the hand throttle;
+4. physical PTO shaft RPM follows from engine RPM and the selected PTO ratio;
+5. the implement imposes torque/load on the drivetrain and performs according
+   to the shaft speed/power it actually receives.
+
+An attached implement demanding PTO power is therefore **a load**, not by
+itself an operator engine-speed command.
+
+Modern tractors may provide automatic engine/PTO management that raises or
+maintains engine speed when PTO work is active, but that is a distinct
+automation feature and must not be assumed for every tractor or every manual
+PTO workflow.
+
+This distinction is now a project requirement: do not describe automatic
+engine-speed enforcement caused by an active PTO consumer as inherently
+realistic manual PTO behaviour.
+
+### Current MR behaviour observed
+
+The 2026-10-06 runtime shows a separate owner behaviour still present in
+MoreRealistic:
+
+- RE hand throttle was released (`handTarget=0`);
+- selected PTO mode was 1000;
+- the attached consumer was active;
+- actual PTO speed remained roughly 1080 rpm.
+
+MR source review explains the behaviour. When consumed PTO torque is positive,
+MR resolves `motor:getRequiredMotorRpmRange()` into `minRotForPTO` and uses
+that value in its own `controlVehicle` calls. In several drivetrain states,
+that minimum/target engine rotation can raise the engine without any RE hand
+throttle target.
+
+Therefore:
+- the RE/RC hand-throttle governor is not responsible for this automatic RPM
+  rise;
+- the behaviour belongs to MR's PTO requirement/control model;
+- whether RC should suppress, reinterpret or leave this owner behaviour is
+  **deferred for a dedicated design decision and controlled runtime test**;
+- no change is made at this checkpoint.
+
+The desired future comparison is:
+- ROAD + PTO engaged + implement active;
+- explicit low hand-throttle target + implement active;
+- correct rated hand-throttle target + implement active;
+- load high enough to pull RPM below target.
+
+The test should distinguish requested engine RPM, actual engine RPM, actual PTO
+RPM, consumed PTO torque and fuel consumption.
+
+### Runtime results retained
+
+The same test validated:
+- 6R 155 profile is active and exposes mode mask 7 (540 / 540E / 1000);
+- selector changes are reaching the state model;
+- implement mismatch presentation works;
+- selecting 1000 for a 1000-rpm consumer clears mismatch;
+- attached-consumer engagement detection works;
+- transport-speed warning enters the warning state while PTO work remains
+  active;
+- RC native MR and RMS bridges are active and heavily exercised;
+- the RPM-based MR governor bridge is reached during explicit hand-throttle use.
+
+Transport warning consequences remain deliberately deferred. It is currently
+advisory presentation only.
+
+### Fuel-consumption observation
+
+Gameplay observation reported:
+- stationary high engine RPM via hand throttle consumed more fuel than idle;
+- in one moving comparison, displayed fuel consumption was substantially lower
+  than the stationary high-RPM case.
+
+The current log does not record enough fuel-rate / engine-load data to validate
+that comparison. Do not infer a fuel-model bug or correctness from this session.
+A future controlled test should capture the same engine target, actual RPM,
+gear/speed, engine load/torque, PTO state and fuel-rate measurement.
+
+### PTO dashboard asset follow-up
+
+The supersampled uncompressed DDS improved source-edge preservation but FS25
+logs a performance warning for the raw DDS format. This is not considered a
+final asset solution.
+
+The final small HUD pictogram should be authored for its actual ~30 px display
+size (simpler silhouette / thicker features / controlled negative space) and
+then packaged in a GPU-friendly compressed texture format. Increasing source
+resolution alone is not sufficient to make a dense icon legible when reduced.
