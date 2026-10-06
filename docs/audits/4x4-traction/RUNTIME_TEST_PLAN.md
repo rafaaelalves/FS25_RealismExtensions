@@ -158,3 +158,212 @@ It is:
 - comparative trigger timing.
 
 A subjective "engages earlier" is not sufficient.
+
+
+# Release 1.7.0.0 additional runtime plan
+
+The original A-K decision/drivetrain tests remain valid. Add the following for the new settings/HUD layer and the coverage gaps found during this review.
+
+## L. Settings authority matrix
+
+Test:
+1. single-player;
+2. listen server + client;
+3. dedicated server + client.
+
+Deliberately give server and client different profile settings for:
+- road speed limit;
+- brake engagement;
+- implement-lowered engagement;
+- prediction strength;
+- manual tire pressure.
+
+Record:
+- value shown in each Settings menu;
+- value used by server decision logs;
+- whether client input is locally blocked before sending;
+- whether server accepts/rejects the request;
+- resulting HUD state.
+
+Goal:
+prove which values are authoritative and where local config leaks into behavior/presentation.
+
+Target architecture must have one authoritative simulation config.
+
+## M. Live toggle of manual tire pressure
+
+On a generic tractor without built-in CTIS:
+
+### Case 1
+- start mission with `manualTirePressure=true`;
+- confirm pressure actions/HUD exist;
+- turn it OFF in the new menu;
+- re-register action events if practical;
+- test pressure keys without reloading vehicle.
+
+### Case 2
+- start with it false;
+- turn it ON at runtime;
+- check whether the current vehicle gains the feature.
+
+Expected from static source:
+- existing `spec.hasCtis/ctisMode` remains unchanged until vehicle capability is rebuilt/reloaded.
+
+This test determines whether the UI should become:
+- explicit reload-required; or
+- backed by a real live rebind implementation.
+
+## N. Server/client pressure capability mismatch
+
+Dedicated server.
+
+Run both mismatches:
+
+### Server OFF / client ON
+Check:
+- client pressure actions;
+- pressure HUD;
+- client visual/radius response;
+- server effective wheel radius/pressure behavior;
+- event/broadcast traffic.
+
+### Server ON / client OFF
+Check:
+- server pressure simulation;
+- client pressure actions/HUD;
+- client tire visual/radius response.
+
+Goal:
+characterize the consequence of not synchronizing `hasCtis/ctisMode`.
+
+A future implementation must make capability identity authoritative.
+
+## O. Smart-mode settings correctness
+
+With Smart mode, independently disable:
+- `brakeEngage`;
+- `engageOnImplementLower`.
+
+Then trigger:
+- braking above 3 km/h;
+- lowered implement on field with otherwise low traction demand.
+
+Static source predicts:
+- brake can still drive Smart target;
+- lowered implement can still contribute `smartImplementLevel`.
+
+Log:
+- canonical sensor state;
+- configured setting;
+- target level;
+- reason;
+- engage level.
+
+This validates 4WD-06 and 4WD-32 as user-visible settings defects.
+
+## P. Dedicated-server terminal tuning
+
+On a dedicated client:
+- open the 4x4 terminal;
+- change slip-engage threshold;
+- change slip-disengage threshold;
+- change terrain strength;
+- repeat a controlled traction event.
+
+Compare:
+- client terminal value;
+- server debug/log value;
+- actual trigger threshold.
+
+Then press telemetry reset and compare:
+- client terminal;
+- server persisted telemetry after save/reload.
+
+Static expectation:
+- tuning/reset is local-only and does not mutate server authority.
+
+## Q. Manual-event authoritative safety
+
+Use an instrumented test client or temporary debug harness to send requests that normal UI would prevent:
+- engage rear/front lock above lock speed;
+- engage front lock while 4WD is not effectively engaged;
+- close/lock center above lock speed;
+- same-farm non-controller request.
+
+Record server:
+- acceptance/rejection;
+- immediate physical state;
+- next automatic safety update;
+- center-lock persistence.
+
+Do not use this test to justify an RC hotfix. Its purpose is to define the validation contract any future RMS/advisor API must enforce.
+
+## R. Settings-menu lifecycle across missions/mod sets
+
+Within one game process:
+- load save A with the mod;
+- return to menu;
+- load save B with the mod;
+- if practical, load a save/mod set without it and then back again.
+
+Check:
+- duplicate section headers;
+- duplicate option rows;
+- stale callbacks/menu objects;
+- whether old registry entries persist;
+- focus/navigation integrity.
+
+The shared registry pattern is promising, but needs explicit lifecycle proof before reuse.
+
+## S. HUD asset/cache lifecycle
+
+Use icon HUD and cycle through many vehicle models so multiple shop-photo overlays are cached.
+
+Then:
+- change save;
+- reload mission;
+- change HUD style;
+- disable/show photo repeatedly.
+
+Observe:
+- memory/resource growth if measurable;
+- stale/missing store images;
+- duplicate overlay creation;
+- whether map unload frees handles automatically.
+
+Target RE UI infrastructure should pair cache ownership with teardown even if the engine later proves forgiving.
+
+## T. RMS coexistence claim
+
+Controlled comparison only; do not treat dual ownership as target architecture.
+
+With current RMS:
+- log differential graph/topology before both mods initialize;
+- after RMS mode changes;
+- after external 4x4 engage/lock ramps;
+- after vehicle reset/workshop.
+
+Look for:
+- which owner writes last;
+- graph restoration/rebuild churn;
+- stale topology assumptions;
+- effective driven-wheel state disagreement.
+
+The success criterion is **not** "no crash".
+
+The question is:
+> is there a stable ownership/composition contract?
+
+Static evidence predicts no explicit contract; therefore the preferred final design remains RMS ownership plus improved AUTO semantics.
+
+## Updated evidence needed before implementation
+
+In addition to the original evidence:
+- authoritative server settings snapshot;
+- client-visible settings snapshot;
+- capability identity (`hasCtis/ctisMode`) on server and client;
+- accepted/rejected manual request logs;
+- per-vehicle tuning value on both sides;
+- HUD resource/lifecycle observations.
+
+These results should inform shared configuration/network architecture even if no 4x4 feature is absorbed into RE.
