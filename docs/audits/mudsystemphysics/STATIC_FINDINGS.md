@@ -1,6 +1,8 @@
 # MudSystemPhysics static findings ledger
 
-Current baseline: MudSystemPhysics `1.3.4.0`, SHA-256 `268f64f03c14ae003c16a6a66d5841485c1cd5a1f82393350593ea00daca1f1e`.
+Current baseline: MudSystemPhysics `1.3.6.0`, SHA-256 `fba0536405f082c3bec2e69452591fe2e051a87d652ee0be66f4124f855601f7`.
+
+Historical MUD-01 through MUD-18 describe the 1.3.4 lineage. MUD-06's two-order wrapper proof is **not sufficient for the 1.3.6 API-v1 fast path**; MUD-22 below supersedes that part for 1.3.6.
 
 Evidence labels:
 - **CONFIRMED_STATIC**
@@ -157,3 +159,160 @@ Mud local wetness remains physical wheel-ground state and should not be conflate
 Useful Mud fields include `__fg*`, `__mp*`, pressure/load state and drive-coordinator state.
 
 RE feature modules should consume the RC normalized provider instead of adding direct private Mud dependencies.
+
+
+# MudSystemPhysics 1.3.6.0 delta findings
+
+## MUD-19 Core RC runtime contracts survive 1.3.6
+**CONFIRMED_STATIC positive compatibility result**
+
+The exact 1.3.6 package retains the RC-critical public/private owner surfaces used by:
+- MRMud;
+- MudRMS;
+- MudSoil;
+- ExtensionsStateProvider.
+
+Retained contracts include local wetness, wheel contact, WheelLoadSystem, terramechanics resistance, puncture grip, tire-pressure state and field/generic Mud desired-radius markers.
+
+No existing RC Mud bridge is invalidated solely by source shape.
+
+## MUD-20 Dual/twin support width is still not native
+**CONFIRMED_STATIC retained compatibility need**
+
+No `mrTotalWidth` consumption was found in Mud 1.3.6.
+
+Mud's own width/load/radius logic therefore still does not receive MoreRealistic's total dual/triple tire support width automatically.
+
+RC's MRMud support-width composition remains required.
+
+## MUD-21 Reifen structural-radius channel is now an explicit capability
+**POSITIVE_PATTERN / INTEGRATION OPPORTUNITY**
+
+Mud 1.3.6 publishes:
+
+`__MudRadiusCombiner.supportsReifenverschleissRadiusChannel = true`
+
+and consumes:
+- `__rvOrigRadius`;
+- `__rvDesiredRadius`.
+
+The same combiner capability is exposed to Reifen's private environment when the coordinated API is available.
+
+This is preferable to independent inference of permanent worn radius.
+
+RC now consumes that contract explicitly.
+
+Engineering lesson:
+> publish capability plus semantic state together; do not require peers to infer a contract from the accidental presence of private fields.
+
+## MUD-22 Reifen API-v1 changes wrapper-order semantics
+**CONFIRMED_STATIC cross-mod compatibility change**
+
+Mud 1.3.6 can obtain the Reifen wear target through:
+
+`getWearAppliedTargetForScale(vehicle, wheel, baseScale)`
+
+rather than calling its captured original `getWearAppliedTarget`.
+
+That is a cleaner Mud↔Reifen API, but it invalidates the 1.3.4 assumption that RC MRTireWear necessarily remains in the call chain regardless of wrapper order.
+
+If:
+1. RC wraps Reifen first;
+2. Mud installs its API-v1 compatibility wrapper later;
+
+then Mud's outer wrapper may bypass RC's older inner wrapper.
+
+The normal expected startup order is favorable, but Mud's delayed partner-discovery retry makes the adverse order plausible.
+
+RC therefore gained a narrow identity-checked ordering repair for the known Mud API-v1 wrapper.
+
+## MUD-23 Native Mud↔Reifen integration does not replace RC MRTireWear
+**CONFIRMED_STATIC ownership result**
+
+The native bridge composes:
+- Reifen wear with Mud friction scale;
+- Reifen worn structural radius with Mud radius effects;
+- Reifen wear with Mud puncture probability.
+
+It does not compose Reifen wear with MoreRealistic's healthy terrain/wetness coefficient.
+
+MRTireWear remains necessary in an MR stack.
+
+## MUD-24 Permanent wear becomes the base for Mud temporary radius effects
+**POSITIVE_PATTERN**
+
+Mud's field sink, generic mud, tire pressure and puncture systems now recognize the Reifen structural radius channel when available.
+
+This expresses a useful state hierarchy:
+
+`permanent structure -> temporary equipment/terrain deformation -> effective radius`
+
+That is better than each owner independently preserving an unworn "original" radius and relying on later arbitration.
+
+## MUD-25 Local wetness job slices computation but commits atomically
+**POSITIVE_PATTERN**
+
+The revised local wetness layer performs its heavier update in staged/budgeted work using non-committed buffers.
+
+The externally visible moisture state is replaced only after the complete pass is ready.
+
+The vehicle-wetness cache includes committed-buffer identity, so a completed publication naturally changes its cache generation.
+
+This is an important RE terrain precedent:
+
+> distribute computation over frames while preserving atomic publication of observable simulation state.
+
+A consumer should see generation N or N+1, not a spatial mixture of both.
+
+## MUD-26 In-progress wetness work does not become savegame truth
+**POSITIVE_PATTERN**
+
+Persistence uses the last complete committed moisture state rather than partially publishing an unfinished staged job.
+
+This is the persistence counterpart to MUD-25.
+
+For future RE long-running terrain transforms:
+- working state may be incremental;
+- save state should represent a coherent committed generation.
+
+## MUD-27 Tire visual discovery adds bounded negative caching
+**POSITIVE_PATTERN**
+
+An empty tire visual cache is no longer rebuilt on every call. Discovery retries after a bounded delay.
+
+General lesson:
+- cache negative/empty lookups when repeated discovery is expensive;
+- pair the negative cache with time/generation invalidation so late-created resources remain discoverable.
+
+## MUD-28 Tire deformation/friction paths use more semantic dirtying
+**POSITIVE_PATTERN**
+
+The update avoids several unchanged repeated writes:
+- unchanged tire deformation shader state;
+- unnecessary physical friction updates.
+
+This reinforces:
+> update cadence and actuator dirty cadence are separate design decisions.
+
+The controller may run frequently while the expensive engine write occurs only after a meaningful effective-state change.
+
+## MUD-29 TractorTerrainDynamics compatibility is removed upstream
+**CONFIRMED_STATIC scope change**
+
+The 1.3.6 package no longer contains `TractorTerrainDynamicsCompatibility.lua` and no TTD references remain in the current source.
+
+Current RC Mud bridges do not require that integration, so this is not a direct RC regression.
+
+Do not recreate it in RC without a dedicated exact-TTD audit and evidence that the active target stack actually needs the lost behavior.
+
+## MUD-30 1.3.6 remains SOURCE_COMPATIBLE for MRMud/MudSoil/MudRMS
+**CONFIRMED_STATIC project evidence**
+
+After exact-source review:
+- MRMud: SOURCE_COMPATIBLE;
+- MudSoil: SOURCE_COMPATIBLE;
+- MudRMS: SOURCE_COMPATIBLE;
+- MRMud dual-support extension: SOURCE_COMPATIBLE;
+- RC→RE provider: SOURCE_COMPATIBLE after recognizing the new Reifen structural-radius channel.
+
+The upgrade still requires runtime smoke before promotion to runtime-verified evidence.
