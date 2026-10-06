@@ -568,3 +568,124 @@ Its strongest target-stack conflicts are:
 - incomplete trailer pneumatic model.
 
 The mod should be evaluated **by capability**, not adopted or rejected wholesale.
+
+
+## Additional cross-source findings
+
+### RB-49 — MR/RB wheel-physics composition is load-order dependent
+**CONFIRMED_STATIC / HIGH**
+
+Exact MR source also installs:
+`WheelsUtil.updateWheelsPhysics = Utils.overwrittenFunction(...)`.
+
+MR's ordinary physical path usually does **not** call its `superFunc`; it only
+returns to the previous implementation for specific fallbacks such as active
+AutoDrive/CVTAddon.
+
+Therefore:
+
+If RB wraps MR:
+```text
+RB -> MR
+```
+RB can modify arguments before MR runs.
+
+If MR wraps RB:
+```text
+MR -> (RB only when MR chooses super fallback)
+```
+RB's `rbUpdateWheelsPhysics` parking path can be skipped during ordinary MR
+control.
+
+Meanwhile MR dynamically calls `WheelsUtil.getSmoothedAcceleratorAndBrakePedals`,
+which RB also wraps, so another RB parking-control path may still execute.
+
+Result: partially active RB parking semantics can vary by wrapper order.
+
+This needs an explicit RC/upstream owner boundary before target-stack adoption.
+
+### RB-50 — RB smoothed-pedal hook feeds directly into MR's control path
+**CONFIRMED_STATIC / HIGH**
+
+Exact MR uses the global `WheelsUtil.getSmoothedAcceleratorAndBrakePedals()`
+inside its own drivetrain controller.
+
+RB can force accelerator/brake values through that function for parking.
+
+Therefore RB is not merely "after MR"; its parking demand can become an input
+to MR itself.
+
+This is potentially a useful integration point if formalized, but the current
+global overwrite is an implicit contract.
+
+Preferred:
+- explicit normalized BrakeDemand input;
+- MR consumes it deliberately;
+- no hidden global function interception.
+
+### RB-51 — low-speed thermal heating has a large flat speed floor
+**CONFIRMED_STATIC / PHYSICS**
+
+RB uses:
+`speedFactor = max(speedKmh / 60, 0.55)`.
+
+Above the minimum heating speed, all speeds below about 33 km/h therefore use
+the same speed contribution.
+
+At equal pedal/mass:
+- 5 km/h;
+- 15 km/h;
+- 30 km/h
+
+can produce essentially the same heating-rate speed factor.
+
+This was intentionally added to fix under-heating of heavy slow vehicles, but
+it is another reason to prefer actual dissipated brake work rather than a
+speed proxy.
+
+### RB-52 — parking "roll free" can suppress another owner's base brake force
+**CONFIRMED_STATIC / HIGH OWNERSHIP**
+
+For an unattended non-AI vehicle with parking released or classified as
+exceeded, RB multiplies the `superFunc` brake force by
+`PARK_SLIP_BRAKE_FACTOR=0.06`.
+
+Because `superFunc` can already include base/other-owner brake force, this is
+not only "removing RB parking". It can reduce another subsystem's effective
+brake capability.
+
+This strengthens the requirement for one final brake actuator/composition
+boundary.
+
+### RB-53 — RBDiagBrazo is a valuable generic developer-tool precedent
+**POSITIVE_PATTERN / CROSS-PROJECT**
+
+The package includes a diagnostics module unrelated to brake simulation.
+
+It can explain hydraulic moving-tool failure by checking:
+- selected control group;
+- Easy Arm semantics;
+- whether the action event actually registered;
+- key-collision symptoms;
+- last input time;
+- move command;
+- movement limits;
+- getIsPowered();
+- motor state;
+- mod specializations present.
+
+This is directly relevant to the recent native PTO input debugging experience.
+
+RE opportunity:
+build a generic dev-only `InputActionDiagnostics` / `VehicleControlDiagnostics`
+service instead of embedding similar diagnostics independently in features.
+
+Potential capabilities:
+- input action registered/active/collision state;
+- current action event ID/text;
+- feature-specific callback counters;
+- selected/controlled vehicle;
+- power/interlock blockers;
+- last transition/rejection reason.
+
+Do not copy the unlicensed RB source; preserve the diagnostic idea.
