@@ -39,3 +39,5 @@ Do not duplicate current status into audit/research notes. Link back to `CURRENT
 ## Running-gear wear research
 - `audits/realtirewear/README.md` — Real Tire Wear 1.6.0.0 clean-room assimilation audit and `RunningGearWear` candidate design.
 - `audits/reifenverschleiss/README.md` — Reifenverschleiss deep architecture audit and 1.2.2.70 interoperability update.
+
+- `audits/realistic-diesel-start/README.md` — RDS 1.4 update audit; native ADS/Fuel/RealisticBrakes integration partially retires the legacy RDSADS bridge.
