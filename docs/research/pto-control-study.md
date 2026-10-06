@@ -683,3 +683,53 @@ The final small HUD pictogram should be authored for its actual ~30 px display
 size (simpler silhouette / thicker features / controlled negative space) and
 then packaged in a GPU-friendly compressed texture format. Increasing source
 resolution alone is not sufficient to make a dense icon legible when reduced.
+
+
+## Runtime follow-up — causal probe and savegame persistence — 2026-10-06
+
+The next mixed PTO session validated the native migration boundary:
+
+- RC detected the external Dynamic PTO owner as inactive;
+- MR+RE PTO and RMS+RE PTO were ACTIVE;
+- the 6R 155 profile continued to expose 540 / 540E / 1000;
+- mismatch cleared when 1000 was selected for the 1000-rpm consumer;
+- implement engagement and transport warning states were observed;
+- the MR bridge continued to exercise ratio and hand-throttle scopes heavily.
+
+### Causality telemetry instrumentation miss
+
+The first RC causality probe did not emit any detailed runtime samples even
+though the bridge itself was active. The end-of-session RC summary reported
+`causalitySamples=0` while `motorizedUpdateCalls`,
+`effectiveRatioScopes`, `handThrottleGovernorScopes` and related counters
+were non-zero.
+
+This is a diagnostic failure, not evidence of a PTO physics failure.
+
+RC now samples from its already-existing `Motorized.onUpdate` bridge path,
+after the MR motor update, only for the controlled vehicle, at 1 Hz while
+MRPTO telemetry is DETAILED. Probe-health counters distinguish polls, samples
+and misses. No gameplay/physics hook was added.
+
+### Savegame path defect found and corrected
+
+The runtime save exposed a separate RE defect. GIANTS called the
+specialization `saveToXMLFile` callback with an already namespaced key:
+
+`vehicles.vehicle(N).FS25_RealismExtensions.realismExtensionsPTO`
+
+RE incorrectly appended `FS25_RealismExtensions.realismExtensionsPTO` a
+second time, producing an unregistered XML path and preventing mode / hand
+throttle persistence.
+
+The correction is intentionally narrow:
+
+- `saveToXMLFile` writes `key .. "#mode"` and
+  `key .. "#handThrottle"` directly;
+- `onPostLoad` remains based on the vehicle-level `savegame.key`, then
+  resolves the registered mod/specialization namespace;
+- the harness now covers both callback key contracts so a future refactor
+  cannot silently duplicate the namespace again.
+
+This defect affected persistence only; it does not explain the runtime PTO
+ratio/hand-throttle behavior observed before the save.
