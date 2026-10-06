@@ -554,3 +554,29 @@ If independent upstream/module switches are added, test:
 - RB thermal/trailer continue normally.
 
 This is a high-value adoption configuration for the target stack.
+
+
+### RB-T50 — stale restore ownership
+
+#### Motor baseline
+1. let RB capture motor low-brake baseline;
+2. while RB owns player retarder state, simulate/observe an MR/owner baseline
+   change;
+3. leave player control so RB performs its restore.
+
+Expected safe target:
+the newer authoritative owner state survives.
+
+Current source risk:
+RB restores the original captured snapshot.
+
+#### Trailer custom brake force
+1. apply RB trailer spring brake so it snapshots `customBrakeForce`;
+2. alter the baseline through another legitimate owner;
+3. release spring state.
+
+Expected safe target:
+new owner baseline survives.
+
+Current source risk:
+RB restores the stale pre-spring snapshot.
