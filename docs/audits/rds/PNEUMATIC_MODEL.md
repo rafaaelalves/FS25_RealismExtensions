@@ -395,3 +395,136 @@ Candidate `PneumaticProfile` fields:
 - trailer supply capability.
 
 Category/name heuristics are not acceptable as final physical truth.
+
+
+## Service/failure ownership — deliberately deferred
+
+Do not let the pneumatic MVP silently grow its own workshop/maintenance economy.
+
+MVP:
+- profile baseline leakage;
+- externally supplied fault/condition if one exists;
+- no random compressor/line/chamber wear system.
+
+Future degradation can include:
+- compressor condition/efficiency;
+- reservoir/line leakage;
+- chamber leakage;
+- brake-adjustment effectiveness;
+- dryer/valve faults.
+
+Preferred ownership:
+1. extend RMS/service through an explicit subsystem/provider API when practical;
+2. otherwise expose RE pneumatic condition through a normalized mechanical
+   contract that an external service owner can consume;
+3. only create an independent RE service lifecycle if no existing mechanical
+   owner can represent the capability cleanly.
+
+This follows RMS's strong Condition / Stress / Service separation.
+
+## Actuator topology must stay evolvable
+
+Official air-brake documentation confirms:
+- primary/secondary service circuits can feed different wheel groups;
+- brake chamber sizes affect force;
+- spring brakes are a separate subsystem and need not map identically to all
+  service-brake wheels.
+
+Therefore a scalar `springDemand01` is only an MVP convenience.
+
+Future-capable output:
+
+```text
+BrakeDemand {
+    service {
+        global01
+        wheelGroups[] optional
+    }
+    spring {
+        global01
+        wheelGroups[] optional
+    }
+    manualParking {
+        global01
+        wheelGroups[] optional
+    }
+    reasonMask
+}
+```
+
+The first implementation may use only the global fields, but the public
+contract must not assume every axle receives identical spring/service demand.
+
+This also improves later trailer modeling.
+
+## Compressor mechanical load — future fidelity feature
+
+The current RDS compressor changes pressure without imposing engine power
+demand.
+
+A later RE refinement may model:
+- compressor shaft/power demand while governor is loaded;
+- optional compressor fast-idle request.
+
+Do not synthesize a generic "load percentage".
+
+Preferred composition:
+- compressor computes physical auxiliary power/torque demand;
+- RC translates that once into the active MR/GIANTS engine owner;
+- optional fast-idle uses the shared EngineRpmDemand path.
+
+Keep RPM demand and power demand separate.
+
+Do not create a generic auxiliary-load bus until a second concrete consumer
+justifies it.
+
+## Safe persistence / wake ordering
+
+When restoring low pressure:
+1. restore storage state;
+2. derive low-air/spring state;
+3. apply forced-brake demand;
+4. only then permit normal wake/motion.
+
+A vehicle/trailer must not receive one free physics frame before its safety
+brake returns.
+
+This is an explicit save/load and join-in-progress gate.
+
+## Legacy RDS state migration
+
+RDS 1.4 persists:
+- `realDieselStart#airPressure`;
+- `realDieselStart#engineHeat`;
+- `realDieselStart#lastStamp`.
+
+When RDS is eventually retired, a one-time migration may preserve air state.
+
+Rules:
+- import only after the chosen backend/profile defines how bar maps to stored
+  air;
+- apply bounded elapsed leakage with a documented time basis;
+- never inject RDS `engineHeat` into RMS/ADS thermal state;
+- schema/version marker makes migration one-shot;
+- emit diagnostics describing source and conversion.
+
+If native AIR storage wins P0, conversion waits until native AIR capacity
+semantics are proven.
+
+## Connected truck/trailer resource solver
+
+Future trailer air should behave like a paired conserved-resource solve, not
+two scripts writing each other's pressure.
+
+Rules:
+- each vehicle persists only its own reservoir;
+- connection topology is transient;
+- solve each connected pair once per server step;
+- amount transfer is symmetric/conservative;
+- detach/delete clears both sides;
+- stale partner references fail closed;
+- client input never supplies an arbitrary pressure/amount;
+- server validates connection state and action authority.
+
+This mirrors the lifecycle lesson from RMS external-power relationships and the
+transaction-validation lesson from RMS fluid transfer.
