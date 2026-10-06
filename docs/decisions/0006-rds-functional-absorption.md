@@ -58,3 +58,32 @@ Reasons the proposed absorption remains justified:
 - duplicate temperature/torque/damage ownership;
 - weak pressure-only pneumatic model;
 - fragmented HUD/settings and lifecycle debt.
+
+
+## Realistic Brakes 1.3 exact-source closure
+
+The former trailer-air source gate is now closed against the exact supplied
+`FS25_RealisticBrakes 1.3.0.0` package
+(SHA-256 `c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05`).
+
+This does not change the core RDS absorption decision.
+
+It refines the pneumatic boundary:
+- native ConnectionHoses is a useful connector-state provider;
+- truck/trailer transfer should be finite and conservation-aware;
+- red supply/emergency and yellow service/control lines need distinct semantics;
+- towing-vehicle protection reserve is required;
+- trailer service-air demand/leakage must be modeled;
+- trailer reservoir requires authoritative MP state once pressure can differ from truck;
+- spring/service brake demand must allow wheel/axle groups;
+- final wheel actuation remains an owner-composition problem.
+
+Realistic Brakes itself remains **capability-by-capability EVALUATE**, not an
+automatic absorption target.
+
+Its engine/Jake brake path directly conflicts with MR, and its parking brake
+needs arbitration with RMS/Enhanced Vehicle. Brake thermal/fade remains a
+separate interesting future capability.
+
+Dedicated audit:
+`docs/audits/realistic-brakes/README.md`.
