@@ -420,3 +420,115 @@ than once when multiple specialists are active.
 
 The rule comes directly from previous PTO canonicalization and MR+Soil
 throughput composition work.
+
+
+## Single-owner channels vs contributor sets
+
+The exact RDS 1.4 + RMS/ADS/fuel cross-pass shows that not every facet should
+be resolved with the same ownership primitive.
+
+### Authoritative channels
+Normally one owner at a time:
+- engine temperature;
+- battery/SOC/voltage;
+- starter active/failed state;
+- final motor state.
+
+Shape:
+```text
+AuthoritativeChannel<T> {
+    value
+    owner
+    revision
+    sourceVersion
+}
+```
+
+### Contributor sets
+Several independent causes may coexist:
+- start interlocks;
+- fuel delivery/quality constraints;
+- hard blocks;
+- advisory reasons.
+
+Shape:
+```text
+ConstraintSet {
+    contributors[]
+    hardBlocks[]
+    modifiers[]
+    provenance
+}
+```
+
+This prevents a common design error:
+"FuelFacet belongs to provider X, therefore provider Y's clogged-filter state
+must disappear."
+
+RMS fuel-system degradation and an independent diesel-fuel-quality specialist
+can both legitimately contribute if they describe different physical causes.
+
+Every contributor must identify its cause domain so duplicate adapters can be
+detected.
+
+## Provider availability must be optional per capability
+
+The existing RE StateContract is currently wheel-context centric and validates
+`getWheelContext()`.
+
+Do not make native start depend on that provider.
+
+EngineStartControl should be able to operate with:
+- RE profile;
+- native GIANTS Motorized state;
+- no RC/external provider.
+
+External START/MECHANICAL contexts are optional enrichments.
+
+Provider metadata should version contexts separately so adding START does not
+break WHEEL consumers.
+
+Conceptual discovery:
+```text
+native GIANTS/profile fallback always available
++ optional RC START context
++ optional RC MECHANICAL context
+```
+
+The coordinator fills missing values according to explicit fallback policy.
+
+## Controller policy is not physics ownership
+
+Add controller identity to start orchestration:
+
+```text
+PLAYER
+GIANTS_AI
+COURSEPLAY
+AUTODRIVE
+```
+
+The transition graph remains server authoritative in every case.
+
+Only the interaction policy changes:
+- PLAYER uses key gesture;
+- automated controllers perform contact/preheat/crank automatically;
+- physical readiness/hard blocks still apply.
+
+A controller that calls native `startMotor()` directly must not bypass the
+same readiness policy. Runtime adapters/tests are required for Courseplay and
+AutoDrive.
+
+## Auxiliary RPM demand phase rules
+
+If `EngineRpmDemand` becomes real after a second consumer exists, define
+phase arbitration explicitly.
+
+Candidate rules:
+- OFF/IGNITION/PREHEAT: no running-RPM floor;
+- CRANKING: running idle/PTO/compressor floors are inhibited;
+- RUNNING: compatible floors compose;
+- PTO mechanical hand-throttle setting may persist through OFF without being
+  physically applied during CRANKING.
+
+Do not use a simple unconditional `max(allDemands)` across all motor phases.
