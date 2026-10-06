@@ -190,3 +190,84 @@ A future normalized state can expose without transferring ownership:
 - wear owner/version/confidence.
 
 RE should normally need only structural radius/running-gear identity, not Reifen's full wear internals.
+
+
+# 1.2.2.70 integration delta
+
+## Public TireWear provider is now the preferred boundary
+
+For 1.2.2.70, prefer these owner APIs over private fields:
+- `getCompatibilityApiVersion()`;
+- `getWearAppliedTargetForScale()`;
+- `getWheelWearRadius()`;
+- `getWheelCompatibilityData()`.
+
+Use cases:
+- RC version/runtime contract checking;
+- structural radius for MRMud;
+- structural radius/provenance for RE state provider;
+- diagnostics.
+
+Do **not** use the public evaluation API as a global composition hook. It must
+remain Reifen-owned/pure so another consumer can ask Reifen a Reifen question.
+
+## Updated structural-radius ownership
+
+Preferred read order:
+
+```
+Reifen public API v1 wearRadius
+        |
+        +--> MRMud structural baseline
+        +--> ExtensionsStateProvider
+        +--> MRTireWear helper
+        |
+Mud __rvDesiredRadius fallback
+        |
+legacy rvRoundPhysicalRadius fallback
+```
+
+The final engine `physics.radius` remains an actuator/effective state, not an
+owner truth source.
+
+## MRTireWear remains a required bridge
+
+API v1 does not change Reifen's final absolute friction write.
+
+Keep:
+- MR = healthy/base terrain/tire grip owner;
+- Reifen = wear state/curve owner;
+- RC = translate Reifen wear into non-boosting degradation of MR's result.
+
+The exact Mud 1.3.6 order repair remains narrow and bounded because changing
+Reifen API v1 itself would corrupt public API semantics.
+
+## Possible future RunningGearProvider
+
+The new API makes a normalized provider technically cleaner.
+
+Do not create it merely because the API exists.
+
+Gate:
+- at least two independent consumers need wear/running-gear state beyond the
+  structural radius already exposed through ExtensionsStateProvider;
+- provider must normalize semantics, not duplicate Reifen's entire state model.
+
+## RMS FORCE-WEAR remains open
+
+1.2.2.70 does not expose a dynamic drivetrain/topology revision input.
+
+Therefore the existing source mismatch remains:
+- RMS changes effective topology;
+- Reifen caches GIANTS differential shares.
+
+Do not create a broad RMSTireWear bridge yet. Runtime test T19/T20 remains the
+gate for a narrow driven-wheel/share provider or cache-invalidation adapter.
+
+## Mud local wetness remains open
+
+The new Mud/Reifen work solves friction/radius cooperation, not wear-climate
+provenance.
+
+A future adapter may feed Mud physical local wetness into Reifen's own formulas,
+but only after cross-auditing any other moisture owner in the target stack.
