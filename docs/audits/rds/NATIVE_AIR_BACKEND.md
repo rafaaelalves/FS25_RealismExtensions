@@ -364,3 +364,71 @@ This also means the old soundExpansion reverse AIR correction may become
 semantically redundant while RE policy is active. Do not disable it blindly;
 prove that the RE service-command input no longer depends on the corrected
 accInput before any suppression/retirement decision.
+
+
+## Storage-backend interface — decide policy before representation
+
+Do not let `PneumaticBrakeSystem` know whether stored air currently lives in:
+- GIANTS AIR fill units; or
+- an RE-owned reservoir.
+
+Introduce a narrow backend boundary before P1.
+
+Conceptual:
+
+```text
+PneumaticStorageBackend {
+    getCapacity(vehicle)
+    getAmount(vehicle)
+    getPressure(vehicle, profile)
+    applyAmountDelta(vehicle, delta, reason)
+    getRevision(vehicle)
+    getSourceInfo(vehicle)
+}
+```
+
+Optional native-presentation bridge:
+```text
+setCompressorLoaded(vehicle, loaded)
+```
+
+Physical policy consumes/stores amount through this boundary.
+
+Benefits:
+- P0 can swap native/re-owned storage without rewriting governor/service logic;
+- migration from legacy RDS pressure has one conversion point;
+- trailer transfer can operate on a conserved amount domain;
+- HUD never reads backend-private fields;
+- tests can use an in-memory backend.
+
+Do not expose a public arbitrary `setPressure()` mutator from the gameplay
+module.
+
+## Native AIR mapping rule
+
+If GIANTS AIR wins as storage, do not assume native fill-unit units are liters
+or bar.
+
+P0 must determine whether a stable mapping exists.
+
+Possible safe abstraction:
+- native fill level/capacity provide a normalized stored-air fraction;
+- PneumaticProfile supplies physical equivalent volume/pressure calibration;
+- backend maps between native fraction and RE conserved amount.
+
+Accept this only if:
+- save/reload remains stable;
+- native refill/sounds/dashboard remain coherent;
+- representative vehicles do not require filename-specific conversion hacks.
+
+Otherwise select RE-owned storage and deliberately bridge native presentation.
+
+## Provider API evolution
+
+A native AIR backend is a storage implementation, not a new cross-mod provider.
+
+External consumers should see only:
+- normalized PneumaticContext;
+- safe transfer/action API.
+
+They must not depend on whether the backend currently uses GIANTS fill units.
