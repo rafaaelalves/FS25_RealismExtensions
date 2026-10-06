@@ -290,3 +290,256 @@ A clean architecture does not make "4WD system" owner of tire pressure.
 Several files/readme sections retain internal `2.x` development history while shipped modDesc/readme package version is `1.6.0.0`.
 
 The package explains some of this intentionally, so it is not a runtime defect, but version-gated compatibility must use the modDesc/exact hash rather than source-comment version text.
+
+
+# Release 1.7.0.0 delta and coverage findings
+
+Delta package SHA-256: `1cf0b19c5e9625d21c0c4b4b9bc2c8ef5bc6128a446ec000faa37c06eb0edc2f`.
+
+Unless superseded below, 4WD-01 through 4WD-28 remain applicable.
+
+Notably still present in 1.7:
+- fixed-per-update slip filters (4WD-05);
+- Smart brake target bypassing `brakeEngage=false` (4WD-06);
+- private provider reads and coarse fallback demand inputs;
+- ambiguous center/topology ownership;
+- repeated differential rebuild ownership;
+- CTIS/radius and global tire-visual ownership;
+- weak manual-event authorization.
+
+## 4WD-29 Simulation settings are persisted per peer, not replicated authoritatively
+**CONFIRMED_STATIC / MULTIPLAYER DESIGN RISK**
+
+`FourWDSettings.readSettings()` runs on each peer and mutates the local global `FourWDTractionSystem_DriveModeConfig` from that machine's profile-level:
+
+`modSettings/FS25_4x4TractionSystem.xml`
+
+The new menu correctly marks most physical options as `serverOnly` and disables their controls on non-server clients.
+
+However:
+- disabling a control is only UI policy;
+- authoritative values are not sent from the server;
+- clients can retain different local values for the same physical settings.
+
+This can produce misleading disabled UI and divergent client-side prechecks/presentation.
+
+Example:
+- `toggleFourWD()` checks the **client-local** `roadSpeedLimitKmh` before sending;
+- the server then checks its own `roadSpeedLimitKmh`.
+
+A stricter client can refuse a request the server would allow; a looser client can send one the server later rejects.
+
+Target-stack rule:
+> authoritative simulation configuration must have one source of truth and an explicit replication/read-only presentation contract.
+
+## 4WD-30 manualTirePressure is a structural load-time capability exposed as a live setting
+**CONFIRMED_STATIC functional mismatch**
+
+During vehicle `onLoad`:
+
+- a vehicle without built-in CTIS is promoted to `spec.hasCtis=true`;
+- `spec.ctisMode="manual"`;
+
+only when global `manualTirePressure ~= false`.
+
+The new Settings menu changes only the global config value. Existing vehicle specs are not reclassified.
+
+Therefore, for already loaded vehicles:
+- turning the setting OFF does not remove manual pressure capability/actions;
+- turning it ON does not add the capability to vehicles loaded while it was OFF.
+
+This is a strong design lesson:
+> a setting that changes capability structure needs an explicit rebind/reconfigure path or must be clearly declared reload-required.
+
+## 4WD-31 hasCtis / pressure capability is not authoritative network state
+**CONFIRMED_STATIC multiplayer divergence**
+
+The initial specialization stream sends:
+- CTIS preset;
+- manual target;
+- pressure level;
+- override state;
+
+but does **not** send:
+- `hasCtis`;
+- `ctisMode`;
+- hardware/capability identity.
+
+Clients derive those locally during `onLoad`, including from their local `manualTirePressure` setting.
+
+Consequences when server/client profile settings differ:
+- client may expose pressure HUD/actions when server has no active pressure capability;
+- or hide them when the server is simulating pressure;
+- client-side `applyTirePressure()` may apply visual/local radius behavior under a different capability interpretation than the authoritative server.
+
+The existing unauthenticated pressure event makes this boundary weaker because the server accepts/broadcasts target state without revalidating pressure capability/permission first.
+
+Future contract:
+- synchronize capability identity first;
+- synchronize effective pressure state second;
+- validate every pressure request against authoritative capability and controller permission.
+
+## 4WD-32 Smart mode ignores the new engageOnImplementLower setting
+**CONFIRMED_STATIC defect**
+
+The binary reason path respects:
+
+`cfg.engageOnImplementLower ~= false`
+
+before adding the implement-lowered reason.
+
+But Smart mode independently computes:
+
+`implLevel = (s.implementLowered and s.onField) and smartImplementLevel or 0`
+
+without checking the setting.
+
+Therefore the 1.7 menu can show **Engage 4WD with implement lowered = Off** while Smart mode still receives a direct implement-lowered engagement target.
+
+A secondary inconsistency remains in the general keep condition, which can keep engagement because the implement is lowered even when that trigger is disabled.
+
+This is the same class of defect already documented in 4WD-06 for `brakeEngage`: policy branches duplicate trigger logic instead of consuming one normalized trigger state.
+
+Learning:
+> compute each trigger once, with configuration applied once, then feed all decision modes from that canonical trigger set.
+
+## 4WD-33 Diagnostic log setting is presented as client-editable but effective on the server path
+**CONFIRMED_STATIC UI/authority mismatch**
+
+The new `debugLog` menu option is not marked `serverOnly`.
+
+The diagnostic decision logging is executed from the authoritative decision/update path, which runs server-side.
+
+On a dedicated-server client, toggling this option changes the client's local config/file but does not enable the server's diagnostic logging.
+
+Treat diagnostics that observe authoritative simulation as server/admin settings, while keeping purely local UI diagnostics client-local.
+
+## 4WD-34 Per-vehicle terminal tuning is local-only on dedicated clients
+**CONFIRMED_STATIC / COVERAGE GAP DISCOVERED IN 1.7 REVIEW**
+
+`FourWDTerminalDialog` directly mutates local vehicle fields for:
+- `slipEngageThreshold`;
+- `slipDisengageThreshold`;
+- `terrainAnticipationStrengthOverride`.
+
+There is no request event or server-side setter for those changes.
+
+In a listen-server host this can affect authoritative state because host and server share the process.
+
+In a dedicated-server client it changes only the local copy; the server decision continues with its own values.
+
+The same terminal also resets `spec.telemetry` locally. Telemetry accumulation is server-owned and the full telemetry history is not synchronized through the specialization stream, so the dedicated-client terminal cannot be treated as authoritative telemetry administration.
+
+Target-stack rule:
+> editable physical tuning must use server-authoritative commands; telemetry reset must be an authorized server operation.
+
+## 4WD-35 Manual drivetrain event only partially revalidates safety on the server
+**CONFIRMED_STATIC / COVERAGE REFINEMENT OF 4WD-19**
+
+`FourWDToggleEvent:run()` validates:
+- sender farm ownership;
+- road-speed limit when changing from disengaged to engaged 4WD.
+
+It does not equivalently revalidate the client-side rules for:
+- differential-lock engagement speed;
+- front-lock capability;
+- center-lock engagement speed/state.
+
+Most normal UI paths check those constraints before sending, but the server boundary should not trust the sender to have used that UI path.
+
+The automatic decision loop can later release unsafe front/rear lock state, but `centerOpen` is not governed by the same lock-mode safety release.
+
+This reinforces:
+> every physical request must be validated from authoritative state at the receiving boundary, even when the normal input handler already checked it.
+
+## 4WD-36 ZCSettingsMenu is a genuine reusable cross-mod micro-framework
+**POSITIVE_PATTERN / CROSS-AUDIT CONFIRMED**
+
+The exact `ZCSettingsMenu.lua` in 4x4 1.7.0.0 is byte-for-byte identical to Hydraulic Suspension System 1.0.0.0:
+- SHA-256 `fcecf67f494048485fd6c4b9a3fe90ca0db0bf452ea017559fcd89f57599eb1a`.
+
+Useful architecture:
+- one registry on `InGameMenuSettingsFrame`;
+- one shared `onFrameOpen` hook;
+- feature modules register declarative options;
+- duplicate control IDs are checked before cloning;
+- each feature owns getters/setters, not native UI layout logic.
+
+This is stronger than every feature independently patching the Settings frame.
+
+For RE, preserve the host-adapter + descriptors pattern, but enrich descriptors with authority, validation and apply semantics.
+
+## 4WD-37 Settings persistence has no schema-level validation/authority metadata
+**DESIGN_RISK / LEARNING**
+
+The persistence layer enumerates known keys and infers serialization only from the current Lua value type.
+
+For numeric simulation settings loaded from XML, there is no shared descriptor enforcing:
+- minimum/maximum;
+- enumerated legal values;
+- scope;
+- authority;
+- migration/version;
+- live-vs-reload semantics.
+
+The menu itself constrains selectable values, but a stale/corrupt/manually edited XML can bypass those menu bounds.
+
+Recommended RE pattern:
+
+```
+SettingDescriptor {
+  id,
+  type,
+  default,
+  min/max or enum,
+  scope = LOCAL_UI | SERVER_SIM,
+  persistence = PROFILE | SAVEGAME,
+  apply = LIVE | REBIND | RELOAD,
+  replication,
+  validate()
+}
+```
+
+Use the same descriptor for UI, persistence, networking and application.
+
+## 4WD-38 Icon HUD caches image overlays instead of recreating them per frame
+**POSITIVE_PATTERN**
+
+The new icon HUD lazily creates shared layer overlays once and caches store-photo overlays by image filename.
+
+This is the right performance direction:
+- no image creation in the steady-state draw loop;
+- graphics are decomposed into semantic layers so state is expressed by tint/visibility.
+
+The exact visuals are not an absorption target, but the resource-caching principle is sound.
+
+## 4WD-39 HUD overlay caches have no explicit map-unload teardown
+**DESIGN_RISK / RUNTIME_PENDING**
+
+`iconOverlays` and `photoOverlays` retain image-overlay handles after creation.
+
+`FourWDSettings:deleteMap()` persists settings but does not clear/delete those cached overlay resources, and the main specialization has no matching resource-manager teardown for them.
+
+Whether the engine frees these automatically across mission changes must be runtime-confirmed.
+
+Our preferred rule:
+- cache expensive UI assets;
+- pair every cache with explicit lifecycle ownership and teardown/recreation semantics.
+
+## 4WD-40 RMS coexistence claim has no explicit code-level composition contract
+**CONFIRMED_STATIC ownership conclusion**
+
+The current public release is advertised as tested together with RMS 0.10.0.0.
+
+Static source contains no RMS-specific provider/adapter/ownership negotiation for the differential graph.
+
+The 4x4 mod still:
+- captures GIANTS differential data;
+- removes/rebuilds or updates the differential graph;
+- applies its own 2WD/4WD/lock policy.
+
+RMS audit independently establishes RMS as target-stack live drivetrain/topology owner.
+
+Therefore the 1.7 release does not change our architectural conclusion:
+- do not run two drivetrain solvers as the intended final design;
+- improve/submit the useful AUTO demand semantics to RMS or a normalized advisor boundary instead.
