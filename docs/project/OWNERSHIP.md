@@ -11,6 +11,8 @@ This file is normative. When implementation and this table disagree, stop and re
 | Tire wear / structural radius | Reifenverschleiss + RC **currently** | consume until an explicit RunningGearWear ADR + parity/runtime gate retires Reifen; future RE ownership is a candidate, not active |
 | Persistent agronomic compaction | SoilCompaction | consume |
 | Mechanical subsystem degradation | RMS | consume |
+| Diesel ignition / glow-plug sequence | Realistic Diesel Start | consume; RC composes ADS thermal/readiness boundary only where needed |
+| Truck compressed-air reservoir / spring brakes | Realistic Diesel Start | external owner; do not duplicate |
 | PTO mode / effective PTO state | Dynamic PTO + RC | consume |
 | Harvest processing realism | RealisticHarvesting | consume/bridge only when justified |
 | Player slip/scrub geometric ruts | currently unowned in target profile | **planned owner** |
