@@ -103,6 +103,7 @@ Global presentation/config hooks include:
 - `TRAILER_AIR_AND_RDS.md` — exact RDS/trailer relationship and future RE pneumatic consequences.
 - `NETWORK_PERSISTENCE_AUTHORITY.md` — MP, settings, save and security.
 - `PERFORMANCE_AND_LIFECYCLE.md` — cadence/hot-path/lifecycle audit.
+- `DESIGN_LESSONS.md` — reusable engineering ideas for RE/RC beyond brakes.
 - `INTEGRATION_OPPORTUNITIES.md` — MR/RMS/RDS/Mud/Reifen/AI/HUD integration decisions.
 - `RUNTIME_TEST_PLAN.md` — evidence gates before stack adoption or assimilation.
 - RDS-side closure: `../rds/REALISTIC_BRAKES_PREAUDIT.md` and related pneumatic docs.
@@ -119,3 +120,24 @@ If RB is considered for the active stack:
 5. only then classify each capability as KEEP, INTEGRATE, PATCH or ABSORB.
 
 Static phase: **CLOSED**. Runtime phase: **OPEN**.
+
+
+## Exact cross-source addendum
+
+The dedicated MR cross-read found a stronger compatibility issue than generic
+"both touch wheel physics":
+
+- MR and RB both overwrite `WheelsUtil.updateWheelsPhysics`;
+- MR's normal path generally does not call the previous implementation;
+- depending wrapper order, RB's wheel-physics parking layer can be skipped;
+- RB's smoothed-pedal hook can still feed MR, leaving RB partially active;
+- AutoDrive can change this again because MR deliberately falls back to
+  `superFunc` there.
+
+Therefore mod load order is not an acceptable compatibility contract.
+
+A future stack adoption needs an explicit parking/brake-demand owner boundary.
+
+The audit also extracted `RBDiagBrazo.lua` as a useful **developer-tool idea**:
+generic action-registration/control-state diagnostics are worth centralizing in
+RE after the recent PTO input-debugging experience.
