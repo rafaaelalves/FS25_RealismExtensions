@@ -432,3 +432,65 @@ External consumers should see only:
 - safe transfer/action API.
 
 They must not depend on whether the backend currently uses GIANTS fill units.
+
+
+## Exact Realistic Brakes 1.3 + native Attachable AIR result
+
+The exact RB 1.3 trailer audit adds an important native-data source that the
+original P0 scope did not emphasize enough.
+
+FS25 Attachable declares:
+- vehicle.attachable.airConsumer#usage;
+- getAttachbleAirConsumerUsage().
+
+The attacher chain aggregates attached implement air usage through the towing
+vehicle's getAirConsumerUsage() path.
+
+### Consequence
+
+P0 must inventory both sides:
+
+Truck/native motorized AIR:
+- fill unit;
+- storage capacity;
+- refill threshold/rate;
+- doRefill;
+- lastAirUsage.
+
+Trailer/attachable AIR:
+- airConsumer#usage;
+- brake-force metadata;
+- hose types/topology;
+- wheel/axle count only as fallback evidence.
+
+This native attachable usage may be useful as:
+- pneumatic capability evidence;
+- relative chamber/circuit demand calibration;
+- fallback PneumaticProfile input.
+
+Do not assume the vanilla meaning "usage while fully braking" is already the
+desired physical air-consumption law.
+
+The existing GIANTS algorithm still consumes AIR continuously from brake input,
+so RE may reuse **metadata/storage/presentation** while replacing the policy.
+
+### New P0 representative matrix
+
+Inspect at least:
+1. vanilla air-brake truck with no trailer;
+2. same truck + trailer with nonzero attachable airConsumer usage;
+3. mod trailer with hoses but zero/missing airConsumer usage;
+4. MR active, because MR owns the effective AIR consumer path;
+5. soundExpansion active, because doRefill drives compressor audio.
+
+Record provenance for every inferred pneumatic parameter.
+
+### Realistic Brakes comparison
+
+RB does not consume native attachable airConsumer usage for its custom trailer
+reservoir.
+
+It instead estimates relative reservoir capacity from wheel count.
+
+The native XML field is therefore a potential improvement over exact RB, not
+something already accounted for by that mod.
