@@ -234,3 +234,58 @@ One provider improvement was made in RC: if Mud 1.3.6 exposes the Reifen structu
 It is mostly an optimization/compatibility release, and its architectural changes are generally improvements.
 
 Use it with the focused RC branch first and run the smoke matrix before promoting the exact hash to the normal verified stack.
+
+
+## Was the native integration implemented the best possible way?
+
+**No — but several parts are very good.**
+
+The 1.3.6 Mud↔Reifen bridge solves the immediate physics problem competently:
+- stable friction baseline is captured;
+- Reifen's own wear curve remains authoritative;
+- API-v1 accepts an explicit baseline instead of requiring temporary mutation;
+- Mud's multiplier is reapplied once;
+- worn structural radius is separated from temporary radius effects.
+
+Those are strong decisions.
+
+The implementation is still constrained by an ad-hoc cross-mod environment:
+- partner semantics are inferred mainly from function shape;
+- Mud publishes its `__MudRadiusCombiner` directly into Reifen's private environment;
+- compatibility can install late, making wrapper order observable;
+- private `__rv*` fields carry the state contract;
+- development/test override wrappers are installed in the normal compatibility path;
+- hook teardown is not fully explicit.
+
+A clean-room design for our ecosystem would instead use versioned provider registration and semantic channels:
+
+```
+TireWearProvider
+  apiVersion
+  capabilities
+  getWear01(wheel)
+  getStructuralRadius(wheel)
+  evaluateRelativeGrip(wheel, baseline)
+        |
+        +--> Mud puncture/radius consumer
+        +--> RC/MR grip composition
+
+GroundPhysicsProvider
+  physicalWetness
+  sink
+  resistance
+        |
+        +--> RC normalized state
+        +--> RE consequences
+```
+
+One owner would write each final actuator.
+
+Therefore our response is deliberately **not** to reproduce Mud's compatibility architecture. RC only adapts the exact external boundary we cannot change, and the adapter is:
+- minimal;
+- version/semantic gated;
+- identity checked;
+- bounded to setup;
+- fail-closed for unknown wrappers/future Mud versions.
+
+That is currently the best compromise between architectural purity and compatibility with the mods we actually use.
