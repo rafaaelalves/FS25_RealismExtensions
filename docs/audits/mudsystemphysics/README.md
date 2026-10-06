@@ -1,6 +1,6 @@
 # MudSystemPhysics deep architecture/compatibility audit
 
-Updated: 2026-10-04
+Updated: 2026-10-06
 
 ## Exact source baselines
 
@@ -18,6 +18,22 @@ MudSystemPhysics has now produced two materially different packages that both de
 - still declares `<version>1.3.4.0</version>`
 
 This is therefore a **same-version source rebuild**, not a normal version-number update. Future audit/provenance must identify this Mud line by version **and hash/source shape**, not version alone.
+
+## Current 1.3.6.0 package
+
+- ZIP SHA-256: `fba0536405f082c3bec2e69452591fe2e051a87d652ee0be66f4124f855601f7`
+- 36 Lua files / 29,412 Lua lines
+- source audit: **closed**
+- RC result: existing bridges remain valid; focused MR+Mud+Reifen API-v1 ordering hardening prepared in `research/mud-1.3.6-compat`
+- upgrade status: **recommended after targeted runtime smoke with the RC hardening**
+
+Key 1.3.6 changes:
+- chunked/atomic local-wetness scheduling;
+- reduced redundant tire visual/friction writes;
+- stronger Reifen structural-radius/API integration;
+- temporary removal of TractorTerrainDynamics integration.
+
+See [1.3.6 update audit](./UPDATE_1_3_6.md).
 
 ## Recommendation
 
@@ -164,7 +180,7 @@ Important retained findings:
 
 ## Audit status
 
-Static/source audit: **UPDATED / CLOSED for current SHA `268f64f0...daca1f1e`**.
+Static/source audit: **UPDATED / CLOSED through Mud 1.3.6.0 SHA `fba05364...5601f7`**.
 
 Runtime validation for the current rebuild is not yet recorded.
 
