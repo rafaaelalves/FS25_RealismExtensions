@@ -66,8 +66,15 @@ Important remaining reasons to redesign:
 - 1.2 static/source phase: **CLOSED**
 - exact 1.2 -> 1.4 source diff: **CLOSED**
 - 1.4 static/source review: **CLOSED**
+- cross-audit against prior RE/RC audits: **CLOSED**
+- final transversal architecture/optimization pass: **CLOSED**
 - runtime phase: **pending**
-- native RE implementation: **not started on this research branch**
+- Realistic Brakes exact-source audit: **pending / explicit trailer-phase gate**
+- native RE implementation: **DEFERRED — not started on this research branch**
+
+The research package is intentionally frozen at a "ready to resume" point.
+When implementation resumes, start from `FUTURE_IMPLEMENTATION_BLUEPRINT.md`
+instead of repeating a broad RDS audit.
 
 ## Companion documents
 
@@ -76,5 +83,12 @@ Important remaining reasons to redesign:
 - `ABSORPTION_ARCHITECTURE.md` — proposed RE modules/provider boundary.
 - `PNEUMATIC_MODEL.md` — compressed-air physics redesign.
 - `DESIGN_LESSONS.md` — reusable ideas for future RE/RC systems and optimization.
+- `PERFORMANCE_AND_LIFECYCLE.md` — cadence, caching and lifecycle opportunities.
+- `START_MODEL.md` — canonical readiness/outcome/provenance model.
+- `NATIVE_AIR_BACKEND.md` — native GIANTS AIR vs RE-owned storage decision.
+- `MECHANICAL_OWNER_COEXISTENCE.md` — RMS/ADS authority modes.
+- `CROSS_AUDIT_INTEGRATION_MATRIX.md` — final cross-stack ownership/integration ledger.
+- `REALISTIC_BRAKES_PREAUDIT.md` — public-evidence gate before trailer/general brake work.
+- `FUTURE_IMPLEMENTATION_BLUEPRINT.md` — canonical return handoff and implementation sequence.
 - `RUNTIME_TEST_PLAN.md` — future implementation/runtime gates.
 - `UPSTREAM_1_4_NOTES.md` — historical pre-source notes; superseded by the exact source diff.
