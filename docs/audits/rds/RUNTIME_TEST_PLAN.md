@@ -463,3 +463,152 @@ source is available and audited for:
 - RDS pressure API use.
 
 Public behavior alone is not sufficient to choose final ownership.
+
+
+## Final transversal gates
+
+### T32 — standalone without RC
+Run native RE start with RealismCompatibility absent.
+
+Expected:
+- EngineStartControl still works using GIANTS/profile fallback;
+- no WHEEL-context/provider dependency;
+- diagnostics clearly report external START provider unavailable rather than
+  disabling the feature.
+
+### T33 — capability-version independence
+Use a provider that supports WHEEL but not START, then START but not WHEEL.
+
+Expected:
+- TerrainDeformation only validates WHEEL;
+- EngineStartControl only validates START;
+- one context upgrade does not invalidate unrelated consumers.
+
+### T34 — multiple independent start contributors
+Construct:
+- RMS fuel-system block;
+- independent low-cetane/fuel-quality penalty;
+- healthy ADS starter.
+
+Expected:
+- both independent fuel causes remain visible;
+- no "winner takes all" loss;
+- duplicate provenance for the same physical cause is rejected/not counted
+  twice.
+
+### T35 — multi-interlock composition
+Profile requires:
+- neutral;
+- brake;
+- optional PTO disengaged.
+
+Toggle each independently.
+
+Expected:
+- all active block reasons are representable;
+- clearing one does not clear another;
+- user-facing primary reason is deterministic while diagnostics preserve the
+  complete set.
+
+### T36 — controller matrix
+Same vehicle/state under:
+- PLAYER;
+- GIANTS AI;
+- Courseplay;
+- AutoDrive.
+
+Expected:
+- interaction policy differs;
+- physical start readiness and low-air forced-brake state do not disappear;
+- no controller can bypass the authoritative transition graph.
+
+### T37 — MR AutoDrive brake fallback
+With low-air spring demand active, enable AutoDrive.
+
+Expected:
+- forced brake remains physically effective even though MR falls back from its
+  central wheel-control path for AutoDrive.
+
+### T38 — low-air load ordering
+Save/reload a vehicle below spring-release pressure on a slope.
+
+Expected:
+- no free-roll frame before forced brake restoration.
+
+Repeat for a disconnected trailer once trailer phase exists.
+
+### T39 — legacy RDS pressure migration
+Disposable save with RDS 1.4 persisted pressure/lastStamp.
+
+After native RE replacement:
+- import exactly once;
+- conversion source/backend/profile logged;
+- elapsed leak bounded;
+- RDS engineHeat not injected into RMS/ADS;
+- second reload does not re-import.
+
+### T40 — storage backend parity
+Run the same governor/brake-demand scenario with:
+- in-memory test backend;
+- native AIR backend candidate;
+- RE-owned backend candidate.
+
+Expected:
+- physical policy results are equivalent within representation tolerance;
+- backend-specific persistence/presentation differences do not leak into
+  gameplay logic.
+
+### T41 — paired-resource lifecycle
+Future truck/trailer phase:
+- connect;
+- fill;
+- detach;
+- reconnect;
+- delete truck;
+- delete trailer;
+- sell either side;
+- load second save in same process.
+
+Expected:
+- conservation;
+- one solve/pair/step;
+- no stale reciprocal refs;
+- no phantom transfer.
+
+### T42 — server authorization for air/connector actions
+Malicious/invalid client attempts:
+- target another player's vehicle;
+- set arbitrary pressure;
+- request transfer without valid hose/attachment;
+- request impossible amount.
+
+Expected:
+- server rejects;
+- server derives transfer quantity/state.
+
+### T43 — pneumatic condition ownership
+With RMS active and no pneumatic-condition integration:
+- RE uses only baseline leak / explicit provider fault;
+- no hidden second maintenance/wear system appears.
+
+Later, if a condition provider exists:
+- owner provenance is visible;
+- service/fault state composes exactly once.
+
+### T44 — wheel-group brake demand compatibility
+Harness future BrakeDemand with:
+- global-only MVP;
+- rear-axle spring group;
+- dual service groups.
+
+Expected:
+- legacy/global consumer still works;
+- richer adapter can target groups without schema break.
+
+### T45 — in-cab vs HUD presentation
+Vehicle with native AIR/dashboard support.
+
+Expected:
+- native indicator/gauge can be primary;
+- RE HUD avoids redundant duplicate gauge unless configured;
+- warnings remain available when attention is needed.
