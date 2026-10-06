@@ -476,3 +476,81 @@ adopt the RB implementation.
 Exit:
 document the minimum stable GIANTS surfaces needed for generic input/action
 diagnostics.
+
+
+## O. Final source-pass regressions
+
+### RB-T44 — parking save-schema regression
+Save two vehicles:
+- parking ON;
+- parking OFF.
+
+Reload.
+
+Expected after upstream/fix:
+- each state survives independently;
+- no XML path validation warning;
+- old save without the key uses documented default.
+
+Current exact-source prediction:
+`parkBrakeOn` path is not registered in the save schema.
+
+### RB-T45 — long inactive cooling
+Heat brakes, then leave vehicle inactive for:
+- 60 s;
+- 299 s;
+- 301 s;
+- long sleep/time acceleration.
+
+Compare against closed-form exponential cooling.
+
+Expected current source:
+- <300 s gap can reconcile from mission clock;
+- >=300 s gap falls back to ordinary dt and can remain too hot.
+
+### RB-T46 — hot save/reload cooling
+Save a hot vehicle, advance meaningful game time / reload according to test
+setup.
+
+Expected current source:
+- temperature persists;
+- no persisted thermal timestamp applies elapsed cooling.
+
+Future target:
+bounded timestamp-based exact reconciliation.
+
+### RB-T47 — dragged failed parking brake thermal
+Put parking brake ON on a slope/load that exceeds the hold classifier and allow
+the vehicle to roll/drag.
+
+Compare temperature against:
+- same motion with parking off;
+- parking holding successfully.
+
+Goal:
+confirm whether `parkHoldExceeded` removes the intended parking thermal
+contribution despite real brake drag.
+
+### RB-T48 — full-stack input registration
+With the normal large mod keymap:
+- default B exhaust toggle;
+- default N parking toggle;
+- custom remaps.
+
+Inspect:
+- both action events register;
+- callback counts;
+- no silent collision;
+- custom mappings survive.
+
+If upstream changes defaults, preserve user customization rather than
+overwriting it.
+
+### RB-T49 — capability-disable matrix
+If independent upstream/module switches are added, test:
+- thermal ON / retarder OFF / parking OFF / trailer ON;
+- MR remains sole engine-brake owner;
+- RMS/EV remains sole parking owner;
+- RB thermal/trailer continue normally.
+
+This is a high-value adoption configuration for the target stack.
