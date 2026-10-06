@@ -371,3 +371,34 @@ If RB is tested in the MR stack:
 
 The load-order problem is architectural evidence for an adapter/API, not a
 reason to choose a preferred accidental wrapper order.
+
+
+## Restore-ownership rule
+
+Exact source adds another reason not to compose RB with MR/RMS by accidental
+load order.
+
+RB keeps long-lived baseline snapshots for:
+- motor low-brake fields;
+- trailer `customBrakeForce`.
+
+It later restores those snapshots when its temporary ownership ends.
+
+A later external owner can therefore be overwritten even if RB only restores
+once.
+
+Any future integration should prefer:
+```text
+current authoritative baseline
++ active normalized demands
+-> one composed final actuator
+```
+instead of:
+```text
+capture baseline
+mutate shared field for a while
+restore captured baseline
+```
+
+If RB remains external, an upstream capability API/module-disable path is safer
+than RC trying to continually repair stale restores.
