@@ -71,6 +71,34 @@ Preferred composition:
 - MR remains motor/drivetrain response owner;
 - RC translates only the specific requested state into an MR-owned boundary.
 
+### Native AIR under MR
+
+Exact MR 0.26.08.03 source overwrites `Motorized.updateConsumers` and
+reimplements the AIR consumer block.
+
+MR changes brake detection to use its wheel brake-pedal state, but keeps the
+native-style:
+- AIR fill-unit consumption;
+- refill threshold;
+- `consumer.doRefill`;
+- refill amount.
+
+Therefore a native-AIR-backed RE pneumatic policy must compose at the **effective
+MR owner path**, not assume vanilla Motorized remains the final writer.
+
+The user's exact soundExpansionMP then wraps this same consumer path for
+reverser behavior and synchronizes `doRefill` for compressor audio.
+
+Target RC behavior:
+- suppress only the existing AIR calculation during the effective owner call;
+- preserve MR fuel/DEF/other consumers;
+- apply RE pneumatic policy exactly once to the same AIR storage;
+- leave final `consumer.doRefill` in the RE-authoritative state before
+  sound/presentation consumers observe it;
+- restore any scoped owner state immediately.
+
+Do not permanently replace/nil the whole consumer table.
+
 ### New opportunity — one engine-RPM demand aggregator
 
 Native PTO already creates an MR minimum-RPM demand from hand throttle.
