@@ -304,3 +304,75 @@ Future native implementation should still test:
 7. correct safe-load ordering for spring brakes.
 
 Until then multiplayer support may work in normal cooperative play, but the trust boundaries are weaker than the preferred RE/RMS model.
+
+
+## Parking save-schema defect
+
+Exact 1.3 source has an incomplete persistence fix.
+
+`saveToXMLFile()` writes:
+```text
+realisticBrakes#parkBrakeOn
+```
+
+`onLoad()` reads it with the correct typed `getBool()`.
+
+But the save schema is registered in two places and both declare only:
+- `#brakeDamage` FLOAT;
+- `#brakeTempC` FLOAT.
+
+No BOOL schema entry exists for `#parkBrakeOn`.
+
+This is particularly notable because source comments explicitly document prior
+parking-persistence bugs and note that FS25 requires registered paths.
+
+Before runtime stack adoption:
+- register the BOOL field;
+- prove park on/off survives save/reload;
+- test old saves where the key is absent;
+- consolidate schema declarations through one idempotent field definition.
+
+## Thermal persistence lacks an elapsed-time timestamp
+
+`brakeTempC` is persisted, but the clock used for sparse-update cooling is
+not.
+
+During a running mission, elapsed cooling is accepted only for intervals
+strictly below 300 seconds. Larger gaps fall back to current-frame dt.
+
+Across save/reload there is no timestamp to reconcile time away.
+
+If brake thermal state remains persistent, a stronger contract is:
+```text
+temperature
+thermalTimestamp
+thermalModelVersion
+```
+
+On restore:
+- derive ambient;
+- apply bounded exact exponential cooling for valid elapsed game time;
+- normalize stale/changed-schema state safely.
+
+Do not replay missed frames.
+
+## Capability settings need server ownership, not only sync after the fact
+
+Because RB currently cannot disable parking/retarder/thermal independently,
+future authoritative settings should be capability-scoped.
+
+Example:
+```text
+SimulationConfig.brakes {
+    parkingEnabled
+    serviceThermalEnabled
+    engineRetarderEnabled
+    trailerPneumaticEnabled
+}
+```
+
+This allows the server to run:
+- RB thermal + trailer air;
+- MR engine braking;
+- RMS/EV parking;
+without relying on global-hook load order or client-local preferences.
