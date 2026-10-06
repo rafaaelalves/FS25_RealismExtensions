@@ -310,3 +310,57 @@ Before implementation:
 - use conservation-aware transfer;
 - support hose connection providers (native/manualAttach/Interactive Control)
   without making them pneumatic solvers.
+
+
+## MoreRealistic effective AIR owner
+
+Exact MR 0.26.08.03 source does not merely call vanilla
+`Motorized.updateConsumers`.
+
+It overwrites that function and includes its own AIR block:
+- brake condition uses MR/wheel brake-pedal state;
+- AIR consumption writes the native fill unit;
+- refill uses the native refill threshold/rate;
+- `consumer.doRefill` remains the compressor-state signal;
+- `spec.lastAirUsage` remains populated.
+
+Therefore backend arbitration must be **owner-aware**.
+
+In the intended stack:
+
+```text
+RE pneumatic physical policy
+        |
+        v
+RC MR+RE-Air adapter
+        |
+        v
+effective Motorized.updateConsumers chain
+  MR consumer implementation
+  + soundExpansion reverser wrapper
+        |
+        v
+native AIR fill + doRefill
+```
+
+The RC adapter must preserve all non-AIR consumers.
+
+A plausible research prototype is a narrow scoped suppression of only the AIR
+portion during the effective owner call, followed by one RE physical AIR step
+before returning. Exact technique must be proven with function-chain identity
+and soundExpansion ordering; do not codify the technique from this document
+alone.
+
+Acceptance invariant:
+
+```text
+one AIR storage
+one AIR consumption/refill policy
+one final doRefill state
+zero disruption to fuel/DEF/methane
+```
+
+This also means the old soundExpansion reverse AIR correction may become
+semantically redundant while RE policy is active. Do not disable it blindly;
+prove that the RE service-command input no longer depends on the corrected
+accInput before any suppression/retirement decision.
