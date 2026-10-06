@@ -24,7 +24,7 @@ This is therefore a **same-version source rebuild**, not a normal version-number
 - ZIP SHA-256: `fba0536405f082c3bec2e69452591fe2e051a87d652ee0be66f4124f855601f7`
 - 36 Lua files / 29,412 Lua lines
 - source audit: **closed**
-- RC result: existing bridges remain valid; focused MR+Mud+Reifen API-v1 ordering hardening prepared in `research/mud-1.3.6-compat`
+- RC result: existing bridges remain valid; focused MR+Mud+Reifen API-v1 ordering hardening prepared in `research/mud-1.3.6-current-base`
 - upgrade status: **recommended after targeted runtime smoke with the RC hardening**
 
 Key 1.3.6 changes:
