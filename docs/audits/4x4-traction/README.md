@@ -1,6 +1,6 @@
 # Realistic 4x4 Traction System assimilation audit
 
-Updated: 2026-10-04
+Updated: 2026-10-06
 
 Exact package audited:
 - mod: `FS25_4x4TractionSystem`
@@ -13,6 +13,66 @@ Exact package audited:
 - Lua source: 12 files, 4,175 lines, ~185 kB
 - source-code reuse license: **not found in the ZIP**
 - note: several source comments retain internal `2.x` development numbering; the shipped modDesc/readme public package line is `1.6.0.0`
+
+## Release 1.7.0.0 update
+
+Latest package audited:
+- mod: `FS25_4x4TractionSystem`
+- modDesc title: `4x4 Traction System`
+- public distribution title: Realistic 4x4 Traction System
+- author: Zasty Chalk
+- version: `1.7.0.0`
+- ZIP SHA-256: `1cf0b19c5e9625d21c0c4b4b9bc2c8ef5bc6128a446ec000faa37c06eb0edc2f`
+- declared multiplayer support: true
+- package: 52 entries; no executable payload, duplicate entry or path-traversal issue found
+- Lua source: 13 files, 4,681 lines, 208,624 bytes
+- XML: 28 files; all parsed successfully during this audit
+- source-code reuse license: **not found in the ZIP**
+
+This is a **same-lineage update audit** from the exact 1.6.0.0 package recorded below.
+
+The public 1.7 changelog is primarily a presentation/configuration release:
+- in-game settings under the native General Settings page;
+- persistent profile-level settings in `modSettings/FS25_4x4TractionSystem.xml`;
+- a new icon HUD with layered tractor graphics, lock/slip/pressure indication and optional store photo;
+- mouse HUD positioning.
+
+Static review confirms that the core physical ownership decision has **not** changed:
+- the mod still owns/rebuilds the GIANTS differential graph;
+- 2WD/4WD and diff locks still compete conceptually with RMS's drivetrain ownership;
+- CTIS/tire-radius ownership remains bundled;
+- the 1.6 decision-model strengths and defects remain present, including fixed-update slip smoothing and the Smart brake-setting bypass.
+
+The public page now lists RMS 0.10.0.0 as tested together, but this package contains no RMS-specific ownership/composition bridge. "No observed conflict" therefore does not establish a safe dual-owner drivetrain contract.
+
+### 1.7 capability delta
+
+| Area | Decision | Why |
+| --- | --- | --- |
+| Physical 2WD/4WD + differential writer | **DO NOT ABSORB** | RMS remains the stronger live topology/mechanical owner |
+| Traction-demand / AUTO policy ideas | **ABSORB / REDESIGN AS SEMANTICS** | pure decision/reason model remains valuable |
+| Tire pressure / radius / tire visuals | **DO NOT ABSORB** | separate ownership already belongs elsewhere in target stack |
+| Settings menu adapter | **LEARN_ONLY** | useful shared declarative hook; needs stronger authority/schema semantics |
+| Icon HUD | **LEARN_ONLY** | good cached layered presentation, not a physics capability |
+| External-mod compatibility patch in RC | **NOT RECOMMENDED** | no new reusable contract justifies repairing this mod's private drivetrain writer |
+
+### Cross-audit engineering note
+
+The 1.7 package's `scripts/ZCSettingsMenu.lua` is byte-for-byte identical to the helper in the audited Hydraulic Suspension System 1.0.0.0 package (SHA-256 `fcecf67f494048485fd6c4b9a3fe90ca0db0bf452ea017559fcd89f57599eb1a`).
+
+That confirms the author has extracted a reusable settings micro-framework across mods.
+
+The valuable principle is:
+> feature modules declare settings; one host adapter owns the native Settings-page hook.
+
+For our codebase, take that principle further by making every setting descriptor also declare:
+- authority/scope: local presentation vs authoritative simulation;
+- type/default/range/validation;
+- persistence scope: profile vs savegame;
+- application semantics: live, rebind/reconfigure, or restart/reload;
+- replication policy.
+
+That avoids several 1.7 defects caused by treating every persisted setting as merely "a value in a table".
 
 Purpose: extract useful automatic-drivetrain reasoning from the mod without creating a second physical drivetrain owner beside RMS.
 
