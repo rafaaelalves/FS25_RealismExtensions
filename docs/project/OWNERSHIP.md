@@ -8,7 +8,7 @@ This file is normative. When implementation and this table disagree, stop and re
 | Base traction / friction | MR + Mud + RC composition | consume only |
 | Local wetness / mud ground state | MudSystemPhysics | consume |
 | Wheel sink / terrain resistance / stuck | MudSystemPhysics | consume |
-| Tire wear / structural radius | Reifenverschleiss + RC | consume |
+| Tire wear / structural radius | Reifenverschleiss + RC **currently** | consume until an explicit RunningGearWear ADR + parity/runtime gate retires Reifen; future RE ownership is a candidate, not active |
 | Persistent agronomic compaction | SoilCompaction | consume |
 | Mechanical subsystem degradation | RMS | consume |
 | PTO mode / effective PTO state | Dynamic PTO + RC | consume |
