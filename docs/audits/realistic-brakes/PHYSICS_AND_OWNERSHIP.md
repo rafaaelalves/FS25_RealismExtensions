@@ -371,3 +371,57 @@ Do not infer final physical truth from store-category strings alone.
 4. engine/Jake brake physical implementation.
 
 This ranking is not a roadmap commitment.
+
+
+## Final exact-source refinements
+
+### Parking drag heat
+
+Current thermal code treats parking brake as full thermal demand only while the
+parking-hold classifier says it is still holding.
+
+Once `parkHoldExceeded=true`, that forced thermal contribution disappears even
+though the vehicle may be moving against residual parking brake force.
+
+This is another case where an energy/work-based thermal model is cleaner:
+```text
+actual brake torque × wheel angular velocity
+ -> dissipated power
+ -> heat
+```
+No separate parking heuristic is required.
+
+### Thermal family profiles
+
+If this capability is ever assimilated, do not preserve one universal
+temperature/fade curve merely with car/truck/tractor heat multipliers.
+
+A profile should be able to describe:
+- drum;
+- dry disc;
+- wet multi-disc;
+- thermal mass;
+- cooling;
+- fade onset/curve;
+- damage temperature/time;
+- axle bias.
+
+Unknown vehicles can use conservative semantic-family defaults.
+
+### Integration-friendly external RB would benefit from module switches
+
+The cleanest path to use RB externally beside the target stack may be upstream
+capability toggles rather than an RE replacement:
+
+```text
+parking              -> RB / RMS / EV owner selected
+service thermal/fade -> RB
+engine retarder      -> MR
+trailer pneumatic    -> RB or future RE
+```
+
+Current 1.3 does not expose enough independent physical switches for this
+ownership matrix.
+
+This is a strong candidate upstream request before building suppressive RC
+patches.
