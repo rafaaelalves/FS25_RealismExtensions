@@ -41,7 +41,10 @@ Previous exact baseline:
 Exact cross-source:
 - soundExpansionMP 1.2.0.0;
 - SHA-256:
-  `51c428cb12d975ee8b7cb555eea4d142b81b0574bc89de63e13c27999b0ca8f4`.
+  `51c428cb12d975ee8b7cb555eea4d142b81b0574bc89de63e13c27999b0ca8f4`;
+- FS25_RealisticBrakes 1.3.0.0;
+- SHA-256:
+  `c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05`.
 
 Existing audited owners:
 - MR 0.26.08.03;
@@ -313,30 +316,43 @@ Only if calibration justifies:
 
 ### Phase P4 — trailer air
 
-Blocked until exact-source Realistic Brakes audit.
+The exact-source Realistic Brakes 1.3 audit gate is now CLOSED.
 
-Then:
-- connection state;
-- truck/trailer reservoir capacities;
-- conservation-aware transfer/equalization;
-- emergency/supply semantics;
+Implementation remains deferred until P0-P3 and the stack ownership decision are
+ready.
+
+Required design:
+- distinguish red supply/emergency from yellow service/control line;
+- native ConnectionHoses remains connector-state provider;
+- truck/trailer storage capacity/amount;
+- finite conservation-aware transfer;
+- tractor-protection cutoff / truck reserve;
+- trailer service-air demand;
+- leakage;
+- spring/service availability/priority semantics;
+- authoritative trailer pressure initial + dirty sync;
+- wheel-group spring/service brake demand;
+- controller parity;
 - manualAttach/Interactive Control only as connector providers.
 
-## Realistic Brakes audit gate
+Use exact RB behavior as a runtime comparison, not as the algorithm authority.
 
-Before trailer-air or generalized brake simulation:
-- obtain exact current Realistic Brakes source;
-- audit manual parking brake;
-- spring brakes;
-- engine/Jake brake;
-- fade/temperature;
-- trailer reservoir;
-- hoses;
-- Enhanced Vehicle ownership;
-- AI bypass;
-- RDS API usage.
+## Realistic Brakes audit gate — CLOSED for 1.3.0.0
+
+Exact source audit:
+`docs/audits/realistic-brakes/README.md`.
+
+Results:
+- engine/Jake brake is a direct MR ownership conflict;
+- parking brake needs arbitration with RMS/Enhanced Vehicle;
+- brake thermal/fade is a distinct, interesting future capability;
+- trailer spring actuation has useful wheel-physics ideas;
+- trailer pneumatic policy is incomplete and should not be copied as-is;
+- ConnectionHoses is a good connector-state boundary;
+- native Attachable airConsumer metadata becomes part of P0 research.
 
 Do **not** absorb engine/Jake/fade simply because it is adjacent to pneumatics.
+RB remains capability-by-capability EVALUATE, not a current replacement target.
 
 ## Audio/presentation rule
 
@@ -576,12 +592,20 @@ or direct RE fields.
 
 P0 chooses the backend after runtime evidence.
 
-### G6 — Realistic Brakes source audit before trailer phase
+### G6 — Realistic Brakes source audit before trailer phase — CLOSED
 
-Current 1.3 public behavior is documented in
-`REALISTIC_BRAKES_PREAUDIT.md`.
+Exact RB 1.3 source is audited.
 
-P4 remains blocked until exact-source ownership is understood.
+The remaining P4 blockers are design/runtime blockers, not missing source:
+- storage backend;
+- supply/service line semantics;
+- finite transfer;
+- tractor protection;
+- service demand;
+- leak/priority model;
+- trailer MP state;
+- brake actuator ownership;
+- controller matrix.
 
 ### G7 — legacy RDS migration policy
 
