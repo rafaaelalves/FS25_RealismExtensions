@@ -939,3 +939,92 @@ Only generic architecture precedents carry over.
 
 This is intentional. Do not manufacture integrations merely because the systems
 exist in the same realism stack.
+
+
+## Realistic Brakes 1.3 — exact-source cross-audit result
+
+The former public-description-only gate is now closed.
+
+Exact supplied baseline:
+- 1.3.0.0;
+- SHA-256 c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05.
+
+### What RB actually owns
+
+Independent capability owners inside the same mod:
+- parking brake;
+- engine/exhaust/Jake-style braking;
+- service-brake thermal/fade/damage;
+- trailer reservoir/hoses/spring brake.
+
+Do not make one KEEP/ABSORB decision for all four.
+
+### MR result
+
+RB engine braking directly writes:
+- lowBrakeForceScale;
+- lowBrakeForceSpeedLimit;
+- automatic setGear requests.
+
+This is a confirmed direct collision with MR's engine-brake/drivetrain owner.
+
+If RB enters the target stack, this submodule requires disable/demand-translation
+before being considered clean.
+
+### RMS / Enhanced Vehicle result
+
+RB deliberately neutralizes Enhanced Vehicle parking state through EV private
+tables.
+
+RMS also has parking-brake ownership and already arbitrates against EV.
+
+Therefore RB + RMS + EV cannot be assumed compatible merely because each pair
+contains coexistence logic.
+
+One final parking owner must be selected.
+
+### Trailer result
+
+Useful:
+- native ConnectionHoses state;
+- persisted trailer pressure;
+- conservation-inspired equalization;
+- custom wheel brake force;
+- native air-release sample reuse.
+
+Missing/incorrect:
+- service vs supply hose distinction in spring-brake decision;
+- finite flow;
+- tractor protection;
+- trailer service-air demand;
+- leakage;
+- spring/service priority;
+- wheel-group topology;
+- trailer pressure MP stream;
+- full controller coverage.
+
+### Native AIR result
+
+FS25 attachables already expose airConsumer#usage.
+
+The native AIR P0 probe is expanded to include trailer/implement demand metadata,
+not only towing-vehicle storage/refill state.
+
+### Thermal result
+
+RB brake thermal/fade is a genuinely separate phenomenon not currently owned by
+RMS engine/transmission thermal.
+
+It remains an interesting future capability, but its current heat algorithm is
+pedal/speed/mass based rather than actual dissipated brake work and its damage
+repair is coupled to generic vehicle damage.
+
+### Controller result
+
+RB source confirms why the final RDS controller principle matters:
+external mods often fix AI freezes by disabling physics.
+
+RE should instead preserve physical state and vary only interaction policy.
+
+Full audit:
+../realistic-brakes/README.md
