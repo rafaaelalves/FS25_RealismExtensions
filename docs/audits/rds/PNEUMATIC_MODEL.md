@@ -165,7 +165,8 @@ owner proving volume/mass conservation.
 
 RE direction:
 - do not implement trailer air in the first pneumatic MVP;
-- audit Realistic Brakes first;
+- exact Realistic Brakes 1.3 source is now audited; use its trailer behavior as
+  evidence/reference, not as the target algorithm;
 - represent reservoir capacity/air amount explicitly enough to conserve
   transfer;
 - expose owner-managed transfer/withdraw/deposit operations rather than a
