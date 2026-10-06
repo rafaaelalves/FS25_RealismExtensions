@@ -1,6 +1,6 @@
 # Project status
 
-Updated: 2026-10-02
+Updated: 2026-10-06
 
 ## Release / development state
 
@@ -77,3 +77,20 @@ Detailed sequencing and acceptance criteria:
 ## External precedent work
 
 TerraFarm architecture audit remains active at `docs/audits/terrafarm/README.md`. It is a design precedent, not a patch/bridge requirement.
+
+
+## RunningGearWear assimilation research
+
+Real Tire Wear 1.6.0.0 exact-source audit is complete:
+`docs/audits/realtirewear/README.md`.
+
+Decision:
+- high-value **CANDIDATE_ABSORB / REDESIGN**;
+- no implementation started;
+- Reifen remains current tire/track wear owner;
+- target future module is `RunningGearWear`, combining Real Tire Wear's
+  server-authoritative state/network/service/failure ideas with Reifen's
+  stronger first-class track and structural-radius semantics;
+- target wear physics must be redesigned around per-unit rolling/slip work,
+  absolute load/contact stress and explicit surface abrasiveness;
+- no dual wear ownership is permitted in normal play.
