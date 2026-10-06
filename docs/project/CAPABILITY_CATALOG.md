@@ -18,8 +18,8 @@ Status vocabulary:
 | physical ground wetness / sink / terrain resistance / stuck | MudSystemPhysics | DO_NOT_DUPLICATE | consume terrain/contact state; do not conflate with agronomic/material moisture |
 | agronomic field moisture | MoistureSystem | EXTERNAL/BRIDGE | keep specialist; consume for crop/field systems |
 | material moisture | MoistureSystem | EXTERNAL/BRIDGE | keep specialist; consume for piles/bales/storage/quality |
-| tire/track wear state | Reifenverschleiss | CANDIDATE_ABSORB | audit logic, persistence, visuals and workshop separately |
-| visual tire/track wear | Reifenverschleiss custom shader/material path | EVALUATE | asset/shader strategy required before replacement |
+| tire/track wear state | Reifenverschleiss | CANDIDATE_ABSORB | RealTireWear 1.6 + Reifen audits support a clean-room RE `RunningGearWear` target: server-authoritative typed running-gear units, better physical wear inputs, relative grip provider and explicit structural/failure state; Reifen remains owner until parity/runtime retirement gate |
+| visual tire/track wear | Reifenverschleiss / RealTireWear custom shader paths | EVALUATE | both prove feasibility; build new RE shaders/assets with dirty/lifecycle ownership rather than reusing ambiguous external assets |
 | mechanical system degradation | RMS | EXTERNAL | keep specialist; Extensions may surface normalized state |
 | active/self-leveling front suspension | no dedicated target-stack owner; MR owns passive WheelPhysics/spring baseline | CANDIDATE_ABSORB | research clean ActiveSuspension controller with load/ride-height feedback; implementation requires explicit MR baseline composition and must not suppress MR suspension writes |
 | 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | keep RMS physical topology/lock owner; exact 4x4 audit confirms only demand/decision semantics are worth redesigning (dt-normalized slip, traction reserve, explainable reasons, richer lock demand), preferably upstream in RMS or via a normalized advisor |
