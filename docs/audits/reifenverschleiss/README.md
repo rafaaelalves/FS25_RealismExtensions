@@ -1,6 +1,6 @@
 # Reifenverschleiss deep architecture/compatibility audit
 
-Updated: 2026-10-03
+Updated: 2026-10-06
 
 Exact source audited:
 - mod: `FS25_Reifenverschleiss_RELEASE_1_2_2_67`
@@ -14,6 +14,32 @@ Comparison baseline:
 - previous RC source: `1.2.2.65`
 - ZIP SHA-256: `06a5b97cf3a9abebd98922cdba8861a06269324ac111e91acc64e2d357155712`
 - `.65 -> .67` changes are almost entirely Mud compatibility/version-detection changes. The wear core differs only by its version string; Visual, WFS, Workshop, Settings and purchase-event source are unchanged.
+
+## 1.2.2.70 update
+
+Latest exact source:
+- mod: `FS25_Reifenverschleiss`
+- internal version: `1.2.2.70`
+- ZIP SHA-256: `938363f661dc8a6943fcddc5fa766d63ff79702962746b513e39cdef3e172d6a`
+- public release label: `V1.2.2.7`
+- detailed delta: [UPDATE_1_2_2_70.md](./UPDATE_1_2_2_70.md)
+
+The recommendation remains **KEEP + INTEGRATE**.
+
+The important release change is not a new wear solver. It is a substantially
+better interoperability surface:
+- compatibility API v1 with explicit friction baseline;
+- public wear-only structural radius;
+- bundled compatibility data with ownership semantics;
+- coordinated Mud radius channel;
+- stable mod filename and real l10n.
+
+RC now prefers the public structural API but deliberately does **not** wrap or
+change the meaning of `getWearAppliedTargetForScale()`. MRTireWear remains
+necessary because Reifen's own final friction writer is still absolute.
+
+The older 1.2.2.67 section below remains the historical baseline rather than
+being rewritten.
 
 Purpose: complement the existing RealismCompatibility Reifen audit. RC already proved MR tire-wear friction composition and worn structural-radius composition. This audit studies Reifenverschleiss itself: wear model, wheel/track classification, force/load semantics, visuals, physical radius, EWFS, workshop economy, persistence/networking, lifecycle, performance and cross-stack opportunities.
 
@@ -154,7 +180,7 @@ This is now a confirmed static cross-mod mismatch. Focused runtime remains usefu
 
 ## Audit status
 
-Static/source audit: **CLOSED for 1.2.2.67 after a focused second pass over Visual/crawler shaders and EWFS low-level wrappers**. Further source work should be triggered by a runtime finding or a concrete cross-mod question.
+Static/source audit: **CLOSED for 1.2.2.67 and updated through exact 1.2.2.70 source**. Further source work should be triggered by a runtime finding or a concrete cross-mod question.
 
 Runtime validation: **deferred**. Tests are listed in `RUNTIME_TEST_PLAN.md`.
 
