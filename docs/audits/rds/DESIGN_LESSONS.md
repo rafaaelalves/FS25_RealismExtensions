@@ -259,3 +259,213 @@ This is especially important for future RE state providers so external mods do n
 8. settings/migration handled by existing RE lifecycle;
 9. no duplicate visual writes in both update and post-update;
 10. no unused overlay/state allocation.
+
+
+## 15. Reuse native infrastructure before replacing its algorithm
+
+Crossing RDS with current FS25 Motorized exposed a better question than
+"should RE create an air tank?":
+
+> can RE keep the native AIR storage/persistence/sound infrastructure while
+> replacing only the weak physical policy?
+
+This is a broadly reusable pattern.
+
+Before replacing an external/base capability, separate:
+- state/storage;
+- algorithm;
+- presentation;
+- persistence/network;
+- actuator.
+
+A weak algorithm does not imply every surrounding subsystem should be
+reimplemented.
+
+## 16. Native fallback can be better than a custom fallback
+
+FS25 already maintains:
+- motor temperature;
+- neutral;
+- clutch-related state;
+- motor state;
+- AIR consumer state.
+
+When a specialist is absent, prefer trustworthy native facts before inventing
+another RE simulation.
+
+This reduces:
+- duplicate state;
+- calibration burden;
+- save/network code;
+- compatibility surface.
+
+## 17. Aggregate normalized state; do not grow per-mod consumers
+
+Existing RE/RC architecture already has:
+`RealismExtensionsState <- RealismCompatStateProvider`.
+
+RDS assimilation should extend that pattern by capability context rather than
+creating direct `RMSProvider`, `ADSProvider`, `FuelProvider` accesses in
+gameplay modules.
+
+Benefits:
+- ownership can change without rewriting consumers;
+- one cache/invalidation point;
+- provenance can be standardized;
+- external private contracts remain quarantined in RC.
+
+## 18. Read contracts and action contracts are different
+
+Read-only state should not become a disguised mutation API.
+
+Use:
+- StateContract for normalized observations;
+- Action/Interop contract for crank/brake/owner requests.
+
+This makes authorization, authority and side effects inspectable.
+
+## 19. Compose by physical domain, exactly once
+
+Prior audits repeatedly found the same class of bug:
+- PTO physical vs canonical RPM;
+- Soil yield vs MR throughput;
+- RDS glow vs ADS hard-start.
+
+General adapter metadata should document:
+- source domain;
+- target domain;
+- factors already included;
+- missing factors;
+- authority.
+
+This is more important than matching function names.
+
+## 20. Separate decision from actuator
+
+4x4 and active-suspension audits both support:
+
+```text
+state/sensors -> decision/demand -> one actuator owner
+```
+
+Use it for:
+- start readiness;
+- pneumatic brake demand;
+- engine RPM demand.
+
+Pure/normalized decision layers are easier to unit test and explain.
+
+## 21. Resource transfer APIs should conserve a quantity
+
+RDS 1.4's pressure setter is a useful interoperability step, but not a strong
+physical transaction.
+
+For air:
+- pressure alone is not conserved;
+- equivalent amount plus reservoir capacity enables safe transfer.
+
+The same design lesson applies to future:
+- fluids;
+- energy;
+- material flow;
+- workshop stock.
+
+Prefer owner-managed transactions over arbitrary state setters.
+
+## 22. Shared demand aggregators prevent wrapper proliferation
+
+PTO hand throttle already creates a minimum-RPM demand.
+
+If cold idle and compressor fast idle are later added, create one
+`EngineRpmDemand` aggregator rather than multiple modules wrapping the same MR
+control method.
+
+General trigger for an aggregator:
+- at least two genuine consumers;
+- same physical actuator domain;
+- deterministic composition rule;
+- one authoritative output adapter.
+
+Do not generalize before the second real consumer exists.
+
+## 23. AI policy can differ from human interaction without changing physics
+
+AI may skip:
+- key hold;
+- dashboard wait;
+- manual clutch gesture.
+
+It should not skip:
+- fuel blockage;
+- true starter failure;
+- required pressure unless an explicit abstract preparation advances it
+  consistently.
+
+Keep:
+- physical state;
+- interaction policy;
+- controller policy
+
+as separate layers.
+
+## 24. Profiles should be declarative corrections, not hidden truth
+
+TerraFarm audit's profile architecture generalizes well:
+
+```text
+native inference
+ -> family default
+ -> declarative override
+ -> runtime sanity check
+```
+
+Apply to StartProfile/PneumaticProfile.
+
+Diagnostics must show where a value came from.
+
+## 25. One semantic sound event should have one presentation owner
+
+Native AIR, soundExpansionMP, RMS/ADS and future Realistic Brakes may all have
+sound surfaces.
+
+Gameplay modules should expose semantic state/events; presentation resolves the
+one active sound owner.
+
+Avoid "it is cheap to play another sample" as an integration strategy.
+
+## 26. Performance optimization starts with eliminating redundant semantics
+
+Examples:
+- do not cache RDS mass queries if a better air model no longer needs mass;
+- do not optimize duplicate thermal integration if native/RMS temperature can
+  be reused;
+- do not micro-optimize multiple RPM wrappers if one shared demand removes them.
+
+First ask whether the computation should exist at all.
+
+## 27. Full initial state is part of correctness, not optional polish
+
+RDS tolerated delayed pneumatic state on join because of its dynamic
+specialization constraints.
+
+Native RE has no reason to repeat that compromise.
+
+Any persistent authoritative module should define:
+- full initial state;
+- incremental dirty/revision state;
+- reconnect/second-save lifecycle;
+- ownership authorization.
+
+## 28. Provenance belongs in runtime diagnostics
+
+BuildIdentity solved one class of provenance.
+
+Capability contexts should also report:
+- owner;
+- source/profile;
+- context version;
+- revision;
+- fallback reason.
+
+This turns "why did this tractor behave differently?" into an answerable
+diagnostic question.
