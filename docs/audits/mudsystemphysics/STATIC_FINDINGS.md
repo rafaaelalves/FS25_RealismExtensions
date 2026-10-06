@@ -316,3 +316,208 @@ After exact-source review:
 - RC→RE provider: SOURCE_COMPATIBLE after recognizing the new Reifen structural-radius channel.
 
 The upgrade still requires runtime smoke before promotion to runtime-verified evidence.
+
+
+# MudSystemPhysics 1.3.6 integration-quality review
+
+## MUD-31 Native Mud↔Reifen friction composition is mathematically strong
+**POSITIVE_PATTERN**
+
+The 1.3.6 compatibility layer does more than "support Reifen".
+
+It installs an outer boundary around `WheelPhysics.updateTireFriction` and records the stable `frictionScale` present at the outermost entry. When Reifen later asks for its wear target, Mud:
+1. evaluates wear against that stable baseline through `getWearAppliedTargetForScale(..., baseScale)` when API-v1 is available;
+2. derives the complete current Mud scale as `currentScale / baseScale`;
+3. reapplies that Mud multiplier exactly once to Reifen's target.
+
+For the Mud↔Reifen pair, this is a sound composition strategy because it keeps:
+- Reifen owner of the wear curve;
+- Mud owner of its temporary friction consequence;
+- the evaluation baseline explicit.
+
+The principle is worth retaining:
+
+> ask a specialist to evaluate against an explicit stable baseline, then compose independent consequences once.
+
+This does **not** imply we should copy the wrapper implementation.
+
+## MUD-32 Partner discovery is capability-shaped but not semantically versioned
+**DESIGN_RISK / LEARNING**
+
+Reifen discovery primarily identifies a mod environment by API shape:
+- `ReifenVerschleissCore`;
+- `getWearAppliedTarget`;
+- `getWheelWearValue`.
+
+This is better than binding only to one archive/mod name and it includes sensible legacy fallbacks.
+
+However function presence proves shape, not meaning. There is no explicit negotiated descriptor such as:
+- API version;
+- supported friction contract;
+- supported structural-radius contract;
+- authority/lifecycle semantics.
+
+This is the same distinction RC makes between runtime-contract shape and source-semantic evidence.
+
+Preferred future cross-mod contract:
+
+```
+provider = {
+  apiVersion,
+  capabilities = {...},
+  getWear01(...),
+  getStructuralRadius(...),
+  evaluateGrip(...),
+  authority = ...
+}
+```
+
+Capability detection should be semantic and versioned, not inferred only from method names.
+
+## MUD-33 Radius interoperability uses cross-environment shared-state injection
+**CONFIRMED_STATIC / DESIGN_RISK**
+
+Mud publishes its own `__MudRadiusCombiner` table into Reifenverschleiss' private Lua environment.
+
+That allows Reifen's API-v1 path to recognize:
+- `supportsReifenverschleissRadiusChannel`;
+- and publish `__rvOrigRadius/__rvDesiredRadius`.
+
+This is effective and materially better than silently fighting over `wheelPhysics.radius`.
+
+It is still a tightly coupled mechanism:
+- one mod mutates another mod's environment;
+- the contract is represented by shared mutable fields;
+- there is no lifecycle/version registration object;
+- ownership is implicit in names beginning with private-style `__`.
+
+Preferred architecture:
+- Reifen publishes a stable structural-radius provider;
+- Mud consumes that provider;
+- or both register semantic radius channels into an explicitly versioned composition service.
+
+RC should consume the existing channel because it is the strongest contract currently available, but should not reproduce this environment-injection pattern in RE.
+
+## MUD-34 Delayed compatibility installation creates a real wrapper-order race
+**CONFIRMED_STATIC**
+
+Mud retries Reifen discovery every 500 ms until its compatibility object becomes active.
+
+Therefore:
+1. RC may install MRTireWear first;
+2. Mud may discover Reifen later;
+3. Mud may install its API-v1 wrapper outside RC;
+4. Mud's explicit API-v1 call bypasses the older RC wrapper it captured.
+
+This is why the 1.3.4 algebraic "both wrapper orders are equivalent" proof is no longer sufficient.
+
+The current RC hardening is intentionally narrow:
+- exact Mud 1.3.6.0 semantic evidence;
+- exact known Mud wrapper identity;
+- one-time reordering only when that audited boundary is observed;
+- no generic "RC must always be last" behavior.
+
+## MUD-35 Compatibility installs test-only wrappers into production paths
+**DESIGN_RISK / LEARNING**
+
+`installWearValueTestBridge()` wraps several Reifen wear-reading functions so Mud's console test command can override wear.
+
+Those wrappers are installed as part of normal compatibility activation, even when no test override is active.
+
+This is convenient for development but not a pattern to reproduce in RC/RE.
+
+Preferred rule:
+- production composition hooks should exist only for production semantics;
+- debug/test overrides should be injected by diagnostics/test infrastructure and remain removable/explicit.
+
+This keeps hot paths and ownership graphs smaller.
+
+## MUD-36 Compatibility hooks have incomplete explicit teardown
+**DESIGN_RISK / RUNTIME_PENDING**
+
+`ReifenverschleissCompatibility:deleteMap()` resets transient tables/flags such as `active`, wheel frames and discovery timing.
+
+It does not explicitly restore:
+- `WheelPhysics.updateTireFriction`;
+- Reifen `getWearAppliedTarget`;
+- wear-value test wrappers;
+
+and does not reset all corresponding installation identity flags.
+
+This may be harmless if the FS25 script environments/functions remain stable for the whole process, but mission/save/mod-set transitions need runtime validation.
+
+Project rule:
+> if we mutate another owner's function or hierarchy, capture identity and define install/settle/teardown semantics explicitly.
+
+## MUD-37 Radius combiner is order-independent because channels are constraints, not additive deltas
+**POSITIVE_PATTERN / MODEL_BOUNDARY**
+
+`__MudRadiusCombiner.apply()`:
+- derives a candidate original/baseline radius;
+- takes the minimum of active desired-radius channels;
+- writes one effective physical radius.
+
+Mud 1.3.6 also makes field sink, generic mud, pressure and puncture calculations use `__rvDesiredRadius` as their structural baseline when available.
+
+This makes wear structural while the other channels remain temporary.
+
+The important semantic detail is that the combiner treats channels as **effective-radius constraints**. It does not add every radius reduction together.
+
+That gives useful properties:
+- commutative/order-independent arbitration;
+- idempotence;
+- no accidental double shrink simply because two owners run;
+- permanent Reifen wear naturally underlies temporary effects.
+
+It is not a claim that pressure deformation, puncture deformation and soil penetration are physically identical phenomena.
+
+For a future clean RC/RE contract, name channel semantics explicitly, for example:
+- `STRUCTURAL_BASE`;
+- `EFFECTIVE_RADIUS_CEILING`;
+- `VISUAL_DEFORMATION`;
+
+instead of exposing a generic collection of private desired-radius fields.
+
+## MUD-38 Strongest correlated wear signal wins puncture-risk composition
+**POSITIVE_PATTERN**
+
+When both Use Your Tyres and Reifen are present, Mud does not multiply both wear-derived puncture multipliers.
+
+It chooses the strongest per-wheel signal.
+
+That is a good default when two providers describe substantially the same physical degradation:
+> correlated representations of the same cause should arbitrate, not multiply.
+
+This prevents duplicate punishment while retaining the more severe observed state.
+
+## MUD-39 Best architecture differs from the current native bridge
+**ARCHITECTURE_CONCLUSION**
+
+If Mud/Reifen/MR interoperability were designed clean-room from zero, the preferred structure would be:
+
+```
+TireWearProvider
+  - apiVersion
+  - getWear01
+  - getStructuralRadius
+  - evaluateRelativeGrip
+          |
+          +--> Mud: puncture risk + structural baseline
+          |
+          +--> RC/MR: healthy grip × relative wear
+
+MudGroundProvider
+  - physical wetness
+  - sink
+  - terramechanics consequence
+          |
+          +--> RC normalized composition
+```
+
+No partner should need to:
+- inject globals into another mod environment;
+- guess API semantics by function presence;
+- depend on wrapper install order;
+- temporarily mutate shared physics state to ask a question.
+
+Given the external APIs we actually have today, the native Mud bridge is a meaningful improvement and the narrow RC adaptation remains justified. It is **not** the architectural endpoint we should imitate.
