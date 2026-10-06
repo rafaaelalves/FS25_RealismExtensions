@@ -9,6 +9,59 @@ Absorb the useful RDS behavior into RE without creating a second RMS/ADS/MR mech
 
 The target is **not** a renamed `RealDieselStart.lua`. It is a small set of capability owners and provider contracts.
 
+## 0. Reuse the existing RE/RC contract architecture
+
+RE already has a public `RealismExtensionsState` contract and RC already owns
+an aggregate reuse-first provider for specialist state.
+
+Do not create a second parallel "RDS provider framework".
+
+Preferred evolution:
+
+```text
+external owner internals
+        |
+        v
+RC aggregate provider/adapters
+        |
+        +--> getWheelContext()      existing
+        +--> getStartContext()      future
+        +--> getMechanicalContext() future only when justified
+        +--> getPneumaticContext()  future when external air owner exists
+        |
+        v
+RE StateContract
+        |
+        v
+RE gameplay modules
+```
+
+Each context should be independently versioned so extending START does not
+invalidate WHEEL consumers.
+
+### Reads and actions are different contracts
+
+`RealismExtensionsState` should remain read-oriented.
+
+Mutation/intent must use a separate narrow action boundary:
+
+```text
+RE EngineStartControl intent
+        |
+        v
+RE Interop/ActionContract
+        |
+        v
+RC owner adapter
+        |
+        v
+RMS / ADS / GIANTS action
+```
+
+This prevents gameplay code from directly writing specialist private tables.
+
+The same distinction applies to final pneumatic brake demand.
+
 ## 1. RE `EngineStartControl`
 
 RE-owned operator state.
@@ -105,6 +158,18 @@ start. The behavior is good; the coupling is not.
 Native RE should replace that private boundary with capability-facet adapters
 rather than reproducing ADS private state inside RE core.
 
+### GIANTS fallback
+
+Current FS25 Motorized already exposes useful fallback state:
+- native motor temperature;
+- neutral state;
+- clutch-pedal state;
+- getCanMotorRun;
+- MotorState.
+
+When no deeper specialist owns a facet, prefer those native facts before
+creating RE duplicate thermal/interlock state.
+
 ### Fuel-system providers
 
 Exact RDS 1.4 demonstrates a useful independent fuel facet:
@@ -146,6 +211,20 @@ Glow timing should be technology-aware. Manufacturer references show old standar
 
 This is the strongest unique physical absorption candidate because RMS has no equivalent compressed-air supply simulation.
 
+Storage/backend ownership is **not yet fixed**. Current FS25 already exposes a
+native AIR consumer/fill path used by vehicle compressor sounds and by the exact
+soundExpansionMP stack.
+
+### Native AIR backend
+
+The first prototype must compare:
+- native-AIR-backed storage + RE physical policy;
+- fully RE-owned reservoir + deliberate native bridge.
+
+Never keep both as independent authoritative air states.
+
+See `NATIVE_AIR_BACKEND.md`.
+
 Responsibilities:
 - compressor/governor;
 - reservoir/circuit state;
@@ -156,9 +235,31 @@ Responsibilities:
 - save/network state;
 - later trailer supply contract.
 
-It does **not** blindly own final wheel braking when MR/RMS owns vehicle physics. RC composes only the final effect where required.
+It does **not** blindly own final wheel braking when MR/RMS owns vehicle physics.
+
+RE produces normalized `BrakeDemand`; RC/owner adapters apply it once at the
+active physical owner boundary.
+
+Low-air spring brake is a forced constraint distinct from an ordinary manual
+parking-brake request. This matters with RMS, whose parking-brake policy may
+release for throttle or AI.
 
 See `PNEUMATIC_MODEL.md`.
+
+## 4b. Shared engine-RPM demand
+
+PTO hand throttle already needs an engine minimum-RPM request.
+
+If cold idle or compressor fast-idle becomes a real second consumer, introduce
+one shared `EngineRpmDemand` domain and one final MR/GIANTS adapter rather than
+multiple independent `controlVehicle` wrappers.
+
+Potential sources:
+- PTO hand throttle;
+- cold-idle profile;
+- future auxiliary-compressor fast idle.
+
+Do not generalize this before a second validated consumer exists.
 
 ## 5. Shared RE HUD/settings
 
@@ -189,9 +290,11 @@ Avoid duplicate temperature gauges beside RMS/ADS.
 | drivetrain torque response | MR/RMS | no direct write |
 | generic mechanical damage | RMS/ADS | no direct write |
 | electrical/light consequences | RMS/ADS/vanilla | ignition intent only |
-| compressed-air supply | RE | owner |
+| compressed-air physical policy | RE | owner |
+| compressed-air storage backend | GIANTS AIR or RE after prototype | arbitrate one owner |
 | pneumatic condition | provider/fallback | consume |
-| final brake force | active physics owner | compose if needed |
+| brake demand | RE pneumatic policy + manual owner state | compose |
+| final brake force | active physics owner | apply once through adapter |
 | start/air HUD | RE shared HUD | owner |
 
 ## AI policy
@@ -284,3 +387,29 @@ The current source adds four architecture constraints:
 
 These refinements generalize beyond RDS and should influence future RE provider
 contracts.
+
+
+### F — presentation / audio integration
+- native AIR compressor/release samples preferred when using native backend;
+- preserve soundExpansionMP synchronization;
+- low-air warning remains RE presentation;
+- do not duplicate specialist starter/parking-brake sounds;
+- move active start/PTO/pneumatic indicators into shared semantic HUD slots.
+
+## Cross-audit implementation rule
+
+Every new integration must answer before code is written:
+
+1. Who owns the physical state?
+2. Who owns the decision/policy?
+3. Who owns the final actuator write?
+4. What existing normalized state can be reused?
+5. What translation is performed exactly once?
+6. What is server authoritative?
+7. What happens when the specialist is absent?
+8. Which profile evidence makes the capability eligible?
+9. How is the result invalidated/revised/cached?
+10. Which external dependency can be retired after validation?
+
+The consolidated cross-stack reasoning is in
+`CROSS_AUDIT_INTEGRATION_MATRIX.md`.
