@@ -1,186 +1,211 @@
-# Realistic Brakes 1.3 preliminary ownership gate for RDS assimilation
+# Realistic Brakes 1.3 ownership gate — exact-source closure
 
 Updated: 2026-10-06
-Status: **public-description pre-audit only; exact source not yet available**
+Status: **EXACT SOURCE AUDIT COMPLETE**
 
-Purpose: preserve what must be checked before RDS-derived pneumatics expands into
-trailer air or generalized brake simulation.
+The original purpose of this file was to block RDS trailer-air work until the
+current Realistic Brakes source could be inspected.
 
-## Current public line
+That gate is now closed with the user-supplied exact archive:
 
-Public pages dated 2026-10-04 describe `FS25_RealisticBrakes 1.3.0.0` by
-GN Realism.
+- mod: FS25_RealisticBrakes
+- version: 1.3.0.0
+- author: NegroATR / GN Realism
+- SHA-256: c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05
+- no public GitHub repository found
+- no LICENSE file found in the supplied ZIP
 
-Relevant public claims:
-- manual/parking brake;
-- dynamic engine braking;
-- reinforced/Jake-style engine braking;
-- brake temperature / efficiency / failure presentation;
-- trailer air-brake hoses;
-- trailer-owned air reservoir;
-- trailer spring brakes apply when supply hoses are disconnected;
-- manualAttach and Interactive Control hose-state integration;
-- automatic game coupling connects hoses automatically;
-- with RDS, trailer reservoir fills from truck supply and truck pressure drops;
-- trailer spring brakes release around a reported pressure threshold;
-- Enhanced Vehicle coexistence;
-- AI bypass/exclusion changes in earlier versions;
-- ADS-aware HUD positioning.
+Full audit:
+../realistic-brakes/README.md
 
-Public references:
-- https://www.fs25.info/realistische-bremsen/
-- https://fs25.net/realistic-brakes-v1-0/
-
-These descriptions are **not source proof**.
-
-## Why this blocks RDS trailer Phase P4
-
-The mod now appears to own capabilities adjacent to both RE pneumatics and MR/RMS:
-
-```text
-parking brake
-service/final wheel brake effects
-engine/Jake braking
-brake thermal/fade
-trailer spring brakes
-trailer air reservoir
-hose connectivity
-```
-
-Implementing those blindly in RE risks duplicating another active specialist.
-
-## Exact-source questions
+## Questions answered
 
 ### Final brake actuator
-- Which GIANTS/MR/RMS function actually receives parking/spring brake force?
-- Is the mod applying brake input, wheel torque, direct velocity constraint or
-  another mechanism?
-- Does its path remain active under AutoDrive / Courseplay / GIANTS AI?
 
-### Parking brake physics
-Public text says holding force depends on vehicle weight and slope.
+Main parking behavior is spread across:
+- getBrakeForce;
+- WheelsUtil.updateWheelsPhysics;
+- getSmoothedAcceleratorAndBrakePedals;
+- direct vehicle:brake(1) in manual-clutch cases.
 
-Need source to distinguish:
-- a fixed actuator/brake-torque capability tested against required grade force;
-- versus recomputing "brake force" directly from current weight/slope.
+Trailer spring brakes use a better physical path:
+- setCustomBrakeForce;
+- forced brake pedal;
+- normal wheel physics.
 
-The first is physically coherent; the second may hide the actuator limit inside
-the demand calculation.
+RB does not directly rewrite tire friction for the trailer spring-brake path.
+
+### Parking-brake physics
+
+The main parking model does **not** use one fixed hardware actuator torque and
+let gravity determine the result.
+
+It classifies whether the brake "holds" from:
+- mass;
+- slope;
+- fixed reference mass/slope;
+- gear multiplier;
+- RDS spring-brake multiplier.
+
+If the threshold is exceeded, RB deliberately reduces residual brake force so
+the vehicle may roll.
+
+Future RE/RB integration should prefer actual brake actuator capacity and let
+vehicle/ground physics determine hold vs roll.
 
 ### Engine/Jake brake
-MR already owns engine braking in the target stack.
 
-Need exact source for:
-- hook;
-- gear-ratio semantics;
-- torque sign/magnitude;
-- interaction with MR engine-load/brake path;
-- manual/automatic activation;
-- whether "Jake" is a separate retardation owner.
+Exact source confirms a direct MR conflict.
 
-Until then:
-**do not absorb or enable a second engine-brake algorithm as part of RDS work.**
+RB writes:
+- motor.lowBrakeForceScale;
+- motor.lowBrakeForceSpeedLimit;
+- motor:setGear() for automatic downshift.
 
-### Thermal / fade
-Need:
-- state units;
-- integration cadence;
-- server/client authority;
-- cool-down model;
-- wheel/axle granularity;
-- failure threshold;
-- persistence;
-- AI bypass;
-- relationship to RMS brake/chassis stress if any.
+MR already owns engine-brake/drivetrain behavior.
+
+Therefore the target stack must not run both physical algorithms independently.
+
+### Brake thermal/fade
+
+RB owns:
+- one brakeTempC per motorized vehicle;
+- server-side heating/cooling;
+- exact exponential ambient cooling;
+- one fade curve;
+- persistent brake damage after sustained overtemperature.
+
+Heating is based on pedal, speed, mass and vehicle-class factors rather than
+actual dissipated brake work.
+
+Fade/parking physical effects are bypassed for AI.
+
+Generic base vehicle repair resets RB brake damage.
 
 ### Trailer reservoir
-Need:
-- stored quantity/units;
-- capacity;
-- pressure mapping;
-- fill/equalization algorithm;
-- whether RDS `rdsSetAirPressure` is used as an absolute assignment or a
-  conservation-aware transfer;
-- separation of truck safety reserve from trailer fill;
-- release/apply thresholds;
-- offline leakage/persistence.
 
-### Spring brake actuator topology
-Need:
-- which trailer wheels/axles are braked;
-- whether all wheels are locked uniformly;
-- brake torque versus direct lock;
-- release hysteresis;
-- low-speed behavior.
+RB owns one persisted trailer pressure scalar in bar.
+
+With RDS connected it immediately equalizes truck and trailer pressures using
+relative volume proxies:
+- truck: 12 * wheel count;
+- trailer: 8 * wheel count.
+
+This is conservation-inspired and useful as a reference, but:
+- transfer is instantaneous;
+- no tractor-protection cutoff;
+- no trailer service-brake air consumption;
+- no trailer leak;
+- no separate spring/service reservoirs or priority behavior;
+- trailer pressure has no dedicated MP stream.
+
+### RDS API use
+
+RB uses the public RDS methods:
+- rdsGetAirPressure();
+- server-side rdsSetAirPressure(bar).
+
+This is cleaner than private spec access.
+
+The future RE API should improve it further by exposing owner-managed
+conservation-aware transfer rather than arbitrary absolute setPressure.
+
+### Trailer spring actuator
+
+RB applies custom brake force to all trailer wheels.
+
+The torque proxy uses:
+- assumed mu = 1;
+- total trailer mass / wheel count;
+- maximum wheel radius.
+
+This allows ordinary wheel/ground physics to decide drag/skid, which is a good
+direction, but actuator capacity should not depend on assumed surface friction.
 
 ### Hose topology
-Need:
-- manualAttach API contract;
-- Interactive Control API contract;
-- automatic coupling state;
-- MP authority;
-- detach/delete cleanup;
-- save/load topology;
-- whether hose visuals/connection are state providers or physical owners.
 
-### AI
-Public older changelog says AI vehicles were fully excluded from brake
-simulation to stop freezes.
+RB reads GIANTS ConnectionHoses state directly.
 
-Need source to decide whether 1.3 still:
-- bypasses thermal/wear/parking/spring physics;
-- bypasses only interaction;
-- treats trailers differently.
+This means manualAttach and Interactive Control can compose indirectly by
+changing the native hose state; RB does not need their private APIs.
 
-Native RE target remains: AI skips manual gestures, not physical safety state.
+Important exact-source defect:
+RB applies spring-brake lock if **either** compatible air hose is disconnected.
+Supply/emergency and service/control lines must be modeled separately.
+
+### AI/controllers
+
+Main RB controller resolver includes:
+- GIANTS AI;
+- Courseplay;
+- Follow Me.
+
+AutoDrive is explicitly not covered.
+
+Main brake physics is largely bypassed under AI.
+
+Trailer-air path uses only getIsAIActive(), so its controller policy is even
+narrower.
+
+This confirms the RDS/RE rule:
+different interaction policy is acceptable; silently removing physical safety
+state by controller type is not.
 
 ### Enhanced Vehicle
-Need exact ownership arbitration for parking brake.
 
-RMS also has an optional parking-brake owner and already steps aside for
-Enhanced Vehicle.
+RB directly neutralizes Enhanced Vehicle parking state using EV private tables
+and event surface.
 
-A future RE brake-demand adapter must not create a three-way ownership fight.
+This makes RB the intended parking owner on RB-managed vehicles rather than a
+passive coexistence layer.
+
+RMS parking ownership therefore needs explicit arbitration before RB is added
+to the target stack.
 
 ### HUD/audio
-Need:
-- current HUD lifecycle;
-- ADS-aware layout logic;
-- air/parking sound ownership;
-- cleanup on vehicle delete;
-- duplicate low-air/compressor presentation with native AIR/soundExpansion.
 
-## Likely ownership boundary after source audit
+RB owns another independent HUD/settings/calibration surface.
 
-Until disproven:
+Per-vehicle audio is cleaned on delete.
 
-```text
-RE PneumaticBrakeSystem
-    owns truck supply state + low-air/spring demand policy
+Trailer supply disconnect reuses native air-release sound, which is a useful
+presentation pattern.
 
-Realistic Brakes
-    candidate owner for trailer actuator/hoses and broader brake mechanics
+The project should still prefer shared RE HUD slots and one semantic sound owner.
 
-MR
-    engine-brake/drivetrain owner in target stack
+## New native-AIR result
 
-RMS / EV
-    parking/brake mechanical state may require arbitration
+FS25 Attachable itself exposes:
+- vehicle.attachable.airConsumer#usage;
+- getAttachbleAirConsumerUsage().
 
-RC
-    composes exact overlap only after source evidence
-```
+The attacher chain aggregates these usages into towing-vehicle air demand.
 
-This is intentionally provisional.
+Therefore the RDS Native AIR P0 probe must include **trailer/implement AIR
+metadata**, not only the truck Motorized AIR consumer.
 
-## Acceptance before P4
+This metadata may be valuable as capability/demand evidence even if the vanilla
+continuous-consumption algorithm is replaced.
 
-Do not implement trailer-air replacement until:
-1. exact current Realistic Brakes ZIP/source obtained;
-2. source audit completed;
-3. final brake owner identified under MR/RMS/EV;
-4. trailer stored-air units/conservation understood;
-5. hose lifecycle and MP authority understood;
-6. AI/controller behavior classified;
-7. decision made: KEEP / INTEGRATE / FUNCTIONALLY ABSORB by capability.
+## P4 status after exact source
 
+"Obtain/audit Realistic Brakes source" is now **CLOSED**.
+
+Trailer implementation is still intentionally deferred because design decisions
+remain:
+1. storage backend;
+2. supply vs service-line state;
+3. finite transfer;
+4. tractor protection;
+5. service-demand model;
+6. leakage;
+7. trailer MP state;
+8. wheel-group actuator topology;
+9. controller policy;
+10. whether RB remains external owner during migration.
+
+See:
+- ../realistic-brakes/TRAILER_AIR_AND_RDS.md
+- PNEUMATIC_MODEL.md
+- NATIVE_AIR_BACKEND.md
+- FUTURE_IMPLEMENTATION_BLUEPRINT.md
