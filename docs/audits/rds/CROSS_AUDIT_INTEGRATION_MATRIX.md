@@ -362,24 +362,41 @@ See `NATIVE_AIR_BACKEND.md`.
 
 ---
 
-## Realistic Brakes
+## Realistic Brakes — exact 1.3 source closure
 
-Public 1.3 behavior indicates overlap in:
-- manual/parking brake;
-- engine/Jake brake;
-- brake thermal/fade;
-- trailer air hoses/reservoir/spring brake;
-- RDS truck-air integration.
+Exact package:
+- `FS25_RealisticBrakes 1.3.0.0`;
+- SHA-256 `c6cec8b89fb7bf409ee55f2a2421b989ff7392da0f5c5dedf65bc5d76912aa05`.
 
-Exact source has not yet been audited.
+The former source gate is closed.
 
-Therefore:
-- do **not** absorb engine brake/Jake/fade as part of the RDS project;
-- do not implement trailer-air final ownership before an exact Realistic Brakes
-  audit;
-- first RDS replacement milestone may own tractor/truck pneumatic supply state
-  only;
-- the trailer phase requires a separate ownership decision.
+Capability result:
+- **engine/Jake brake**: direct MR conflict; do not run two physical owners;
+- **parking brake**: useful but overlaps RMS/Enhanced Vehicle and spans several
+  wheel/control hooks;
+- **service-brake thermal/fade**: distinct, valuable future capability; not
+  inherently owned by MR/RMS, but service/condition ownership must be explicit;
+- **trailer pneumatic/spring brake**: directly useful to the RDS roadmap and
+  closes the exact trailer integration gap;
+- **HUD/audio/settings**: presentation/reference only.
+
+Exact trailer lessons now added to the RDS target:
+- red supply/emergency and yellow service/control lines are separate state;
+- ConnectionHoses is a good connector-state provider;
+- transfer must be finite and conservation-aware;
+- tractor protection/reserve is required;
+- trailer service applications must consume modeled air;
+- trailer leakage/persistence/network state are required;
+- spring/service wheel groups must remain representable;
+- brake actuator capacity must not depend on assumed tire-road friction;
+- detached trailer pneumatic state must remain authoritative;
+- GIANTS Attachable `airConsumer#usage` is useful native metadata for P0.
+
+Do not expand RDS absorption into RB's engine/Jake or general parking subsystem
+merely because exact source is now available.
+
+Full audit:
+`../realistic-brakes/README.md`.
 
 ---
 
@@ -547,7 +564,7 @@ RDS work is intentionally parked.
 | Persistent Tracks / VMT / True AI Tracks | yes | only lifecycle/revision/bounded-work precedents apply; no direct RDS integration |
 | Reifen workshop/persistence | yes | reinforces server authorization, lifecycle cleanup and no local-only mechanical persistence |
 | project StateContract/provider | yes | requires capability-version refactor before START can be added safely |
-| current Realistic Brakes 1.3 public behavior | preliminary only | exact-source audit remains a hard gate before trailer-air/general brake ownership |
+| Realistic Brakes 1.3 | yes, exact source | trailer/RDS gap closed; MR engine-brake conflict, RMS/EV parking overlap, service thermal/fade candidate, ConnectionHoses/native AIR lessons |
 
 No previous audit uncovered a reason to cancel RDS functional absorption.
 Several did narrow the allowed implementation boundary.
