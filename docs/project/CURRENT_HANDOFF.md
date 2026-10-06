@@ -1053,3 +1053,32 @@ toggle: the external loader currently wires core, persistence, workshop,
 immobilizer and visual systems together. Implement the visual-provider bridge
 explicitly when the RE running-gear-wear feature starts; do not disable pieces
 blindly in RC.
+
+
+## Native PTO runtime checkpoint — 2026-10-06 (second session)
+
+Latest runtime evidence confirms:
+- native RE PTO active with external Dynamic PTO owner inactive;
+- RC MR+RE PTO and RMS+RE PTO bridges active;
+- 6R 155 selector/profile/mismatch semantics working;
+- implement engagement and transport-warning state detected;
+- hand-throttle and ratio scopes reaching MR/RMS.
+
+Two implementation issues were isolated:
+
+1. RC causal telemetry produced zero samples despite active bridge counters.
+   This was diagnostic-only and has been moved onto the existing
+   `Motorized.onUpdate` wrapper after MR completes its motor tick.
+2. RE savegame persistence duplicated the mod/specialization namespace in
+   `saveToXMLFile`, causing GIANTS schema-validation errors. The save callback
+   now writes directly to the specialization key supplied by GIANTS; load
+   semantics remain vehicle-base-key + namespaced specialization.
+
+Next runtime gate:
+- use the updated RE + RC artifacts;
+- confirm no PTO savegame schema errors;
+- confirm MRPTO summary reports non-zero `causalityPolls` and
+  `causalitySamples`;
+- compare stationary/moving/working states using torque, power, load, fuel,
+  actual PTO RPM and tire-pressure/drag/slip fields before changing any fuel
+  or drivetrain behavior.
