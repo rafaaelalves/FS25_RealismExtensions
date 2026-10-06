@@ -69,7 +69,7 @@ Important remaining reasons to redesign:
 - cross-audit against prior RE/RC audits: **CLOSED**
 - final transversal architecture/optimization pass: **CLOSED**
 - runtime phase: **pending**
-- Realistic Brakes exact-source audit: **pending / explicit trailer-phase gate**
+- Realistic Brakes 1.3 exact-source audit: **CLOSED**; trailer implementation remains deferred by design/runtime gates
 - native RE implementation: **DEFERRED — not started on this research branch**
 
 The research package is intentionally frozen at a "ready to resume" point.
@@ -88,7 +88,8 @@ instead of repeating a broad RDS audit.
 - `NATIVE_AIR_BACKEND.md` — native GIANTS AIR vs RE-owned storage decision.
 - `MECHANICAL_OWNER_COEXISTENCE.md` — RMS/ADS authority modes.
 - `CROSS_AUDIT_INTEGRATION_MATRIX.md` — final cross-stack ownership/integration ledger.
-- `REALISTIC_BRAKES_PREAUDIT.md` — public-evidence gate before trailer/general brake work.
+- `REALISTIC_BRAKES_PREAUDIT.md` — exact-source closure of the former trailer/general-brake gate.
+- `../realistic-brakes/README.md` — dedicated Realistic Brakes 1.3 audit.
 - `FUTURE_IMPLEMENTATION_BLUEPRINT.md` — canonical return handoff and implementation sequence.
 - `RUNTIME_TEST_PLAN.md` — future implementation/runtime gates.
 - `UPSTREAM_1_4_NOTES.md` — historical pre-source notes; superseded by the exact source diff.
