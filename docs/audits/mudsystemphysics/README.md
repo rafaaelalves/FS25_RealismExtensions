@@ -11,7 +11,7 @@ MudSystemPhysics has now produced two materially different packages that both de
 - Lua files: 36
 - Lua source: ~28,947 lines
 
-### Current uploaded 1.3.4.0 rebuild
+### Later audited 1.3.4.0 rebuild
 - ZIP SHA-256: `268f64f03c14ae003c16a6a66d5841485c1cd5a1f82393350593ea00daca1f1e`
 - Lua files: 37
 - Lua source: ~29,773 lines
@@ -49,9 +49,9 @@ Current ownership:
 
 The new rebuild does not change that ownership.
 
-## Current update decision
+## Historical 1.3.4 rebuild decision
 
-The current SHA `268f64f0...daca1f1e` is **source-compatible with the current RC/RE contracts**.
+The SHA `268f64f0...daca1f1e` was **source-compatible with the then-current RC/RE contracts**.
 
 No RC gameplay-code change is required before updating from the older SHA `29a6a580...9828ef`.
 
@@ -106,13 +106,11 @@ They solve different boundaries:
 - Mud native bridge: Mud friction scale × Reifen wear target;
 - RC MRTireWear: MR healthy/base grip × Reifen relative degradation.
 
-Static composition analysis shows the two wrappers produce the same final expression in either install order:
+For the 1.3.4 compatibility path, static composition analysis reduced both wrapper orders to:
 
 `MR grip × Mud scale × Reifen wear factor`
 
-Mud is therefore not multiplied twice, and Reifen still cannot replace MR terrain grip with an absolute coefficient when RC is active.
-
-This three-way source composition is accepted as source-compatible. A short runtime smoke remains desirable before calling the new build fully runtime-verified.
+Mud 1.3.6 later introduced the API-v1 `getWearAppliedTargetForScale` fast path, which changes that wrapper-order call graph. The old algebra remains historical evidence for 1.3.4 but is **superseded for 1.3.6** by the focused RC hardening documented in `UPDATE_1_3_6.md`.
 
 ## New current-build changes
 
