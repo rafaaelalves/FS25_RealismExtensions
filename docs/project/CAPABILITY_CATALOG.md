@@ -1,6 +1,6 @@
 # Capability catalog
 
-Updated: 2026-09-29
+Updated: 2026-10-06
 
 This catalog defines what the target stack currently provides, what RealismExtensions plans to own, and what external systems are candidates for functional absorption.
 
@@ -25,8 +25,12 @@ Status vocabulary:
 | 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | keep RMS physical topology/lock owner; exact 4x4 audit confirms only demand/decision semantics are worth redesigning (dt-normalized slip, traction reserve, explainable reasons, richer lock demand), preferably upstream in RMS or via a normalized advisor |
 | PTO modes / live PTO RPM / hand throttle | Dynamic PTO + RC bridges | CANDIDATE_ABSORB | strong candidate for native Extensions module |
 | manual diesel ignition / glow / crank UX | Realistic Diesel Start externally | CANDIDATE_ABSORB | native RE EngineStartControl; mechanical temperature/battery/starter state remains provider-owned by RMS/ADS/fallback |
-| compressed-air supply / low-air / spring-brake state | Realistic Diesel Start externally | CANDIDATE_ABSORB | native RE PneumaticBrakeSystem, physically redesigned; final braking composed with active physics owner; trailer-air deferred pending Realistic Brakes audit |
+| compressed-air supply / low-air / spring-brake state | Realistic Diesel Start externally; Realistic Brakes owns current trailer extension | CANDIDATE_ABSORB | native RE PneumaticBrakeSystem, physically redesigned; exact RB 1.3 audit closes source gap and adds supply/service-line, protection-valve, native attachable AIR and wheel-actuator requirements |
 | PTO-to-MR/RMS composition | RC | EXTERNAL/BRIDGE | retain compatibility boundary even after PTO absorption |
+| parking brake realism | RMS / Enhanced Vehicle / Realistic Brakes overlap | EVALUATE | exact RB 1.3 uses multiple physical hooks and disables EV parking state; choose one final owner before adding RB to target stack |
+| service-brake thermal / fade / lining damage | Realistic Brakes 1.3 if enabled | EVALUATE | unique and potentially valuable future capability; improve toward brake-work/axle thermal model and explicit service ownership before absorption |
+| engine / exhaust / Jake brake | MoreRealistic in target stack; Realistic Brakes overlaps | DO_NOT_DUPLICATE | MR remains physical owner; RB selector/level could only be integrated as demand after a clean disable/API/RC boundary |
+| trailer pneumatic reservoir / hoses / spring brake | Realistic Brakes 1.3 externally; future RE PneumaticBrakeSystem candidate | EVALUATE | exact RB audit provides useful ConnectionHoses and wheel-actuation precedents but current model lacks supply/service separation, finite flow, protection valve, service demand, leakage and MP trailer state |
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
 | harvest process realism | RealisticHarvesting | EXTERNAL | integrate only where a new module consumes its state |
 | player geometric wheel ruts | RE TerrainDeformation; FarmKit capability suppressed | PLANNED | keep RE physical owner; integrate VMT lessons for monotonic rut writes, sink handoff, stable contact anchoring and loaded-wheel recovery guards |
