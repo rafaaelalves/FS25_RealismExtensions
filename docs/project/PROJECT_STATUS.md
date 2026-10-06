@@ -94,3 +94,21 @@ Decision:
 - target wear physics must be redesigned around per-unit rolling/slip work,
   absolute load/contact stress and explicit surface abrasiveness;
 - no dual wear ownership is permitted in normal play.
+
+
+## Realistic Diesel Start 1.4 research
+
+Exact-source audit:
+`docs/audits/realistic-diesel-start/README.md`.
+
+Decision:
+- RDS remains the external owner of diesel ignition/preheat UX and truck
+  compressed-air state;
+- 1.4 natively supersedes much of the historical RDSADS key/HUD integration;
+- RC 1.4 path is reduced to per-vehicle ADS thermal authority,
+  glow/fuel-readiness → ADS hard-start composition and duplicate cold-consequence
+  suppression;
+- Realistic Brakes trailer-air API is good upstream composition and needs no RC
+  bridge;
+- no functional RE implementation was added;
+- static/source/CI work is complete; in-game runtime validation remains.
