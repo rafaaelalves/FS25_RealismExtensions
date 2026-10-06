@@ -39,6 +39,31 @@ Preferred intervention order:
 5. defensive patch;
 6. third-party-specific correction only as a last resort.
 
+### Mandatory solution-quality gate before changing RC/RE
+
+An upstream mod implementing compatibility with another mod is **evidence**, not automatically the design target.
+
+Before changing RC or RE because of an upstream integration, explicitly answer:
+
+1. What physical/state ownership problem is the upstream code trying to solve?
+2. Is its composition mathematically/semantically correct for the owners involved?
+3. Does it solve only the pairwise case, or does it remain correct in our larger stack?
+4. Does it depend on load order, private fields, monkey-patching, polling, duplicated state or temporary mutation?
+5. Is there a cleaner public/provider/capability boundary available?
+6. Would adapting RC/RE to that implementation copy upstream technical debt into our architecture?
+7. Can RC adapt only the unavoidable external boundary while preserving a cleaner internal contract?
+8. Does the upstream change make any existing bridge obsolete, or merely change how that bridge must compose?
+9. If we do change RC/RE, is the change bounded, capability/version gated, identity checked where needed, lifecycle-safe and fail-closed for unknown future versions?
+
+Classify the upstream solution separately from our response:
+- **GOOD_AND_ADOPT_PRINCIPLE** — implementation reveals a principle we should standardize;
+- **FUNCTIONALLY_CORRECT_BUT_NOT_OUR_ARCHITECTURE** — interoperate minimally, do not reproduce it;
+- **PAIRWISE_FIX_ONLY** — works for two mods but needs a broader stack composition layer;
+- **FRAGILE / PATCH_AROUND_ONLY_IF_REQUIRED** — do not normalize it into project architecture;
+- **SUPERSEDES_RC** — remove/reduce an RC bridge only when the upstream owner now covers the same semantic boundary completely.
+
+No RC/RE code change is complete until this gate is documented.
+
 RC should not become a generic third-party bug-fix layer. RE should not become a compatibility layer: it owns realism capabilities we deliberately implement/absorb after external ownership is removed or avoided.
 
 For every useful pattern, record:
