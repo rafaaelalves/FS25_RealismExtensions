@@ -10,6 +10,7 @@ Date: 2026-10-06
 - Lua source: 36 files, 29,412 lines, 1,157,856 bytes
 - multiplayer: true
 - reusable source license: not found in supplied ZIP
+- public distribution currently also states that code reuse outside the system is prohibited; treat source strictly as audit evidence / clean-room functional reference
 
 Compared primarily against:
 - current audited 1.3.4.0 rebuild SHA `268f64f03c14ae003c16a6a66d5841485c1cd5a1f82393350593ea00daca1f1e`;
@@ -56,7 +57,7 @@ The unmodified RC 0.2.0.2 already recognizes 1.3.6 as an eligible 1.3.x runtime-
 4. MRTireWear is hardened against the exact Mud API-v1 late-wrapper ordering case.
 
 Working RC branch:
-- `research/mud-1.3.6-compat`.
+- `research/mud-1.3.6-current-base`.
 
 Full RC compatibility audit:
 - `FS25_RealismCompatibility/docs/audits/2026-10-06-mud-1.3.6-compatibility-audit.md`.
