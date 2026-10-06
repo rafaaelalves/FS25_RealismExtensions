@@ -345,3 +345,29 @@ These could make "keep RB external" substantially cleaner than absorbing it.
 - recommendation: use as source/reference and optional external owner; future RE pneumatic roadmap already captures improvements.
 
 No whole-mod assimilation decision is justified yet.
+
+
+## Exact MR wrapper-order result
+
+Exact MR and RB both wrap `WheelsUtil.updateWheelsPhysics`.
+
+MR's normal path consumes the call and does not invoke the previous function;
+it invokes super primarily for explicit fallback modes.
+
+Therefore RB's wheel-physics parking hook is not safely composable by load
+order alone.
+
+At the same time MR calls the global smoothed-pedal helper, and RB wraps that
+helper too, so part of RB parking can remain active even if its wheel-physics
+hook is skipped.
+
+This creates a dangerous half-composed state.
+
+If RB is tested in the MR stack:
+- log hook identity/order;
+- prove which RB layers actually run;
+- do not "fix" ordering by simply forcing RB last;
+- move toward a single explicit BrakeDemand integration.
+
+The load-order problem is architectural evidence for an adapter/API, not a
+reason to choose a preferred accidental wrapper order.
