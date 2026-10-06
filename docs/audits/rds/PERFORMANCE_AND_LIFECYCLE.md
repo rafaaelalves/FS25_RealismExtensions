@@ -214,3 +214,135 @@ Before tuning:
 
 The target is not "zero hooks"; it is that work frequency matches the physical
 or interaction cadence that actually needs it.
+
+
+## Cross-audit optimization additions
+
+### P7 — eliminate duplicate thermal ownership before optimizing it
+
+Current FS25 already has `spec_motorized.motorTemperature`; RMS/ADS may own a
+richer temperature.
+
+Native RE should resolve/copy a normalized temperature value, not integrate a
+second thermal model merely because RDS did.
+
+This can remove an entire frame-updated subsystem from the replacement.
+
+### P8 — resolve capability owners once per vehicle/revision
+
+Start resolution may involve:
+- thermal;
+- starter/electrical;
+- glow;
+- fuel;
+- interlock;
+- final motor-start owner.
+
+Do not rediscover mods/tables from every HUD/update callback.
+
+Cache a resolved owner/context signature and invalidate on:
+- vehicle load/reinitialize;
+- provider runtime revision;
+- relevant active-mod ownership change;
+- profile change.
+
+Expose cache hit/miss/invalidation telemetry during development.
+
+### P9 — use native AIR infrastructure if it reduces duplicate work
+
+If the native AIR backend proves viable, preserve:
+- fill-unit state;
+- standard save/network path;
+- compressor sound state;
+- native dashboard compatibility.
+
+Replace only the weak physical calculation.
+
+This is potentially cheaper and safer than:
+- an RE reservoir;
+- RE networking;
+- RE sounds;
+- a native-AIR suppression bridge
+
+all executing together.
+
+### P10 — one RPM actuator wrapper
+
+If PTO, cold idle and compressor fast idle all need a minimum RPM, aggregate
+their demands and install one final owner adapter.
+
+This converts wrapper count from approximately "one per feature" to one per
+physical actuator domain.
+
+### P11 — pneumatic physics need not scale with render FPS
+
+For each pneumatic vehicle:
+- retain last service command;
+- integrate at fixed/bounded server cadence;
+- process command delta and leak;
+- update governor/compressor;
+- mark dirty only after meaningful quantized change/discrete transition.
+
+A 100–250 ms physical step is the initial research range, not a final calibrated
+constant.
+
+### P12 — event-driven start state when idle
+
+Most vehicles spend almost all their time in stable OFF or RUNNING states.
+
+Do not continuously execute a large start state machine for every eligible
+vehicle.
+
+Fast work is needed only during:
+- active input;
+- preheat;
+- cranking;
+- transition timeout.
+
+Stable states can rely on owner/provider revisions and low-frequency safety
+checks.
+
+### P13 — separate simulation settings from local UI settings
+
+A synchronized `SimulationConfig` eliminates repeated local-settings ambiguity
+and allows revision-based invalidation.
+
+`LocalPreferences` can remain client-local and should never wake server
+physical simulation.
+
+### P14 — avoid duplicated audio work
+
+If native AIR + soundExpansionMP already drives compressor samples, do not
+maintain an RE loop sample in parallel.
+
+Semantic state is cheaper and more composable than duplicate sample ownership.
+
+### P15 — budget catch-up, do not lose elapsed time
+
+Learn from RMS:
+- timers/physics should use elapsed time;
+- expensive catch-up should have a per-frame budget with residual debt.
+
+For pneumatics/offline leak this is easy because dynamics are slow.
+
+For crank/start hazard, use a bounded fixed cadence plus elapsed-time-correct
+probability rather than executing hundreds of catch-up rolls.
+
+## Suggested performance acceptance metrics
+
+Before enabling replacement by default collect:
+- eligible vehicles;
+- active-start vehicles;
+- start-context reads / cache hits / misses;
+- action adapter calls;
+- pneumatic vehicles;
+- pneumatic steps per second;
+- mean/max pneumatic step cost;
+- native AIR backend hits/fallbacks;
+- dirty pressure updates / discrete state updates;
+- HUD slot geometry invalidations;
+- duplicated owner/sound suppression count;
+- second-save resource/command counts.
+
+Compare with external RDS baseline only after functionally equivalent scenarios
+are established.
