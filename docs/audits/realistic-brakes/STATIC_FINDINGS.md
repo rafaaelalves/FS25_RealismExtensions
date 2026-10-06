@@ -843,3 +843,57 @@ This is the brake-domain analogue of RDS glow-technology profiles and
 TerraFarm-style declarative capability profiles.
 
 Do not infer the final brake family from store category alone.
+
+
+### RB-61 — engine-brake restore can overwrite a later motor owner
+**CONFIRMED_STATIC / CROSS-MOD HIGH**
+
+RB captures:
+- `motor.lowBrakeForceScale`;
+- `motor.lowBrakeForceSpeedLimit`
+
+once as "original" values.
+
+While the player drives, RB mutates those fields. When player ownership ends,
+RB restores the captured snapshot once.
+
+This is much better than writing the snapshot every frame, and the source
+comments correctly explain why that earlier behavior broke AI.
+
+However, it still assumes the captured values remain the legitimate baseline.
+
+If MR or another owner legitimately changes the motor-brake baseline after RB
+captured it, RB's later restore can overwrite that newer state.
+
+General ownership rule:
+- do not restore an old snapshot unless hook/owner identity proves you still
+  own the field;
+- prefer scoped composition/demand where no destructive restoration is needed;
+- if temporary mutation is unavoidable, compare current value/revision/source
+  before restoration.
+
+This is the same restore-ownership class identified in previous drivetrain and
+active-suspension audits.
+
+### RB-62 — trailer spring-brake restore can overwrite a later custom brake-force owner
+**CONFIRMED_STATIC / CROSS-MOD HIGH**
+
+When trailer spring brake first applies, RB snapshots:
+`spec_wheels.customBrakeForce`.
+
+While locked it sets:
+`max(RB spring torque, saved force)`.
+
+When the spring state clears, it restores the old saved value.
+
+If another mod changes `customBrakeForce` while the spring brake is active,
+the later RB restore can erase that newer owner state.
+
+Preferred architecture:
+- one final BrakeActuatorAdapter composes all active demands against the
+  current baseline;
+- no long-lived stale baseline snapshot;
+- if an external owner changes its baseline, revision/invalidation updates the
+  composed result.
+
+This is especially important for a future MR/RMS/RB/RE brake stack.
