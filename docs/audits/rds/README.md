@@ -34,10 +34,17 @@ Do not duplicate specialist mechanical ownership:
 Proposed shape:
 
 ```text
-RE EngineStartControl -> StartMechanicalProvider (RMS / ADS / fallback)
-                     -> shared RE HUD
+RE EngineStartControl
+    -> StartCapabilityResolver
+       -> authoritative channels (thermal/electrical/final motor)
+       -> contributor sets (fuel/interlocks/blocks)
+       -> GIANTS/profile fallback when no external owner
+    -> shared RE HUD
 
-RE PneumaticBrakeSystem -> RC composition only where external physics owners require it
+RE PneumaticBrakeSystem
+    -> PneumaticStorageBackend (native AIR or RE-owned; P0 decides)
+    -> BrakeDemand
+    -> RC/final brake-owner composition where required
 ```
 
 ## What the 1.4 source changed in the recommendation
