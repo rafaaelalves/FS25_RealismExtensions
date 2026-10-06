@@ -19,9 +19,10 @@ features worth keeping, rejected shortcuts and external audits still required.
 8. `DESIGN_LESSONS.md`
 9. `PERFORMANCE_AND_LIFECYCLE.md`
 10. `RUNTIME_TEST_PLAN.md`
-11. `SOURCE_DIFF_1_2_TO_1_4.md`
-12. `STATIC_FINDINGS.md`
-13. ADR `0006-rds-functional-absorption.md`
+11. `REALISTIC_BRAKES_PREAUDIT.md`
+12. `SOURCE_DIFF_1_2_TO_1_4.md`
+13. `STATIC_FINDINGS.md`
+14. ADR `0006-rds-functional-absorption.md`
 
 Do not restart by reading RDS source from zero unless upstream changed.
 
@@ -501,3 +502,148 @@ Research is sufficient when:
 - current upstream dependency versions are rechecked.
 
 Until then, keep this branch documentation-only.
+
+
+## Final pre-implementation gates added by transversal pass
+
+### G0 — capability-versioned state contract
+
+Before adding START to the existing state/provider API:
+- do not make START require WHEEL context;
+- preserve standalone RE behavior without RC;
+- version START/MECHANICAL/PNEUMATIC contexts independently;
+- external specialist contexts are optional enrichment;
+- native GIANTS/profile fallback remains available.
+
+Recommended provider metadata:
+```text
+capabilities.WHEEL.version
+capabilities.START.version
+capabilities.MECHANICAL.version
+capabilities.PNEUMATIC.version
+```
+
+### G1 — ownership primitive selection
+
+For every StartContext field mark it as either:
+- `AUTHORITATIVE_CHANNEL`; or
+- `CONTRIBUTOR_SET`.
+
+Do not implement a generic "one owner per facet" abstraction.
+
+Examples:
+- temperature -> authoritative channel;
+- battery -> authoritative channel;
+- fuel constraints -> contributor set;
+- interlocks -> contributor set.
+
+### G2 — controller-policy matrix
+
+Before finalizing start/brake actuation, define behavior under:
+- PLAYER;
+- GIANTS AI;
+- Courseplay;
+- AutoDrive.
+
+Automated controllers may skip gestures, not low-air/spring physical safety.
+
+Forced spring brake must survive MR's AutoDrive wheel-control fallback.
+
+### G3 — safe load/join ordering
+
+For low-air state:
+- restore storage;
+- derive forced brake;
+- install actuator constraint;
+- only then allow ordinary vehicle wake.
+
+No one-frame free-roll window.
+
+### G4 — pneumatic service ownership
+
+P1 must not invent an independent maintenance/workshop system.
+
+Decide only:
+- baseline leak;
+- external condition input.
+
+Future wear/failure waits for explicit RMS/service ownership decision.
+
+### G5 — storage abstraction before backend decision
+
+Implement/tests should target `PneumaticStorageBackend`, not direct native AIR
+or direct RE fields.
+
+P0 chooses the backend after runtime evidence.
+
+### G6 — Realistic Brakes source audit before trailer phase
+
+Current 1.3 public behavior is documented in
+`REALISTIC_BRAKES_PREAUDIT.md`.
+
+P4 remains blocked until exact-source ownership is understood.
+
+### G7 — legacy RDS migration policy
+
+Before external RDS removal, decide whether to import:
+- legacy air pressure;
+- elapsed leak timestamp.
+
+Do not import RDS engineHeat into specialist thermal state.
+
+## Further feature reservations
+
+These are **reserved design opportunities**, not MVP scope.
+
+### F1 — compressor engine load
+Possible real auxiliary power/torque demand while compressor is loaded.
+
+Must compose with MR/GIANTS engine owner; never fake a load percentage.
+
+### F2 — compressor fast idle
+Possible EngineRpmDemand source if evidence/calibration supports it.
+
+### F3 — axle/circuit brake demand
+Future service/spring demand can target wheel groups rather than one global
+scalar.
+
+### F4 — pneumatic component condition
+Compressor/line/chamber/dryer condition only after maintenance ownership is
+resolved.
+
+### F5 — in-cab/native presentation
+Prefer native dashboard/telltales when available before adding more HUD gauges.
+
+### F6 — trailer paired-resource solver
+Conservation-aware truck/trailer transfer, solved once per connected pair/server
+step, with symmetric detach/delete cleanup.
+
+## Explicit controller principle
+
+Do not follow either shortcut seen in adjacent external mods:
+- "AI gets free pressure";
+- "AI is excluded from brake physics".
+
+The target is:
+```text
+same physical state
++ different interaction policy
+```
+
+If a controller requires a bypass for stability, make it an explicit,
+diagnosed policy exception rather than silently mutating persistent state.
+
+## Final research completion rule
+
+When this project resumes, **do not start with another broad audit**.
+
+First:
+1. check dependency versions;
+2. read this blueprint and the final cross-audit matrix;
+3. close only the currently blocking gate;
+4. implement the smallest agreed milestone.
+
+Re-open broad research only if:
+- an upstream mod materially changed ownership;
+- Realistic Brakes exact source adds/removes a major capability;
+- runtime evidence contradicts the current contracts.
