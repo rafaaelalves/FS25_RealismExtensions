@@ -266,3 +266,48 @@ Do not declare every per-frame call a real bottleneck without profiling.
 
 Static conclusion:
 RB contains both a cautionary performance history and several good corrective patterns. Its best reusable lesson is **bounded work by semantic cadence** rather than permanent physics wake or fleet-wide frame ownership.
+
+
+## Long-gap thermal reconciliation
+
+RB's use of exact exponential cooling is ideal for sparse scheduling, but the
+current clock bridge discards measured gaps >=300 seconds and falls back to one
+ordinary frame dt.
+
+This creates a lifecycle artifact rather than a CPU issue:
+- long inactive vehicles can remain artificially hot;
+- sleep/time acceleration can be under-accounted;
+- save/reload has no thermal timestamp.
+
+Future low-rate thermal scheduler should:
+- carry elapsed simulation time explicitly;
+- cap only for documented gameplay/sanity reasons;
+- evaluate the closed-form exponential directly;
+- persist a timestamp if temperature itself is persisted.
+
+This allows thermal work to run less often **and** become more correct.
+
+## Input registration observability
+
+RB actions currently lack the collision-safe/diagnostic registration pattern
+learned from native PTO and current RDS.
+
+If the mod enters the full stack, add development counters for:
+- action registration attempts/success/failure;
+- event active state;
+- callback counts;
+- last callback time/rejection reason.
+
+This is primarily debugging/lifecycle observability, not a measured
+performance optimization.
+
+## Schema duplication lesson
+
+RB's persistence field declarations are repeated in two registration paths.
+
+A future RE module should keep:
+- one declarative schema field table;
+- one idempotent registrar;
+- multiple lifecycle callers only when necessary.
+
+This reduces maintenance drift and gives tests one canonical schema surface.
