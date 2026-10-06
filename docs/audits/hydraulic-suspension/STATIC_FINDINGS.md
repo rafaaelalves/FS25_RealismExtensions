@@ -210,3 +210,183 @@ Do not generalize this into RE without controlled comparison on:
 Manual height, lock speed and axle type are capability fields rather than one universal behavior.
 
 That distinction is a strong foundation for a cleaner RE profile schema.
+
+
+# Release 1.0.0.0 delta findings
+
+Delta package SHA-256: `b338a28d13cadfe8b00949c7d0461079a04f6ee29a5afdd6fc79c3567038d40e`.
+
+The original HSS-01 through HSS-18 findings remain applicable unless explicitly superseded below. In particular:
+- HSS-01/HSS-02 multiplayer request validation remain unresolved;
+- HSS-03 MoreRealistic spring/damper ownership conflict remains unchanged;
+- HSS-04/HSS-05/HSS-06 lifecycle and actuator-ownership risks remain;
+- HSS-07 destructive settings-version reset remains;
+- HSS-08 through HSS-12 model/controller caveats remain;
+- HSS-13 through HSS-16 remain useful positive patterns.
+
+## HSS-19 Server/client configuration can diverge
+**DESIGN_RISK / RUNTIME_PENDING**
+
+The authoritative suspension controller runs server-side, but clients load their own local `modSettings` and reconstruct profile/UI/visual information from local configuration.
+
+Examples:
+- HUD profile/system/spring/damping presentation is recomputed locally;
+- visual camber configuration is local;
+- fast visual bump sharing uses local visual parameters.
+
+This means a dedicated server with customized settings/profiles can run one physical model while a client presents another interpretation.
+
+Future RE rule:
+- distinguish local presentation preferences from authoritative simulation configuration;
+- synchronize authoritative capability/profile identity and effective parameters needed for truthful UI/visual reconstruction;
+- do not make clients independently infer authoritative physics profiles.
+
+## HSS-20 Cab suspension is camera isolation and reparents the camera hierarchy
+**CONFIRMED_STATIC / MODEL_BOUNDARY / DESIGN_RISK**
+
+The release calls the feature cab suspension, but the implementation is a client-side camera filter:
+- it inserts HSS transform nodes into the interior-camera hierarchy;
+- estimates low-frequency vehicle pitch/roll;
+- applies an opposing fraction to the camera.
+
+That can create a useful isolation sensation, but it does not simulate a cab mass, cab mounts, suspension stroke or force transfer.
+
+There is also no explicit uninstall/restoration path for the original camera parent relationship.
+
+Learning:
+- retain the idea of a cheap presentation-only isolation layer when full cab physics is unnecessary;
+- name/model it honestly as visual/camera isolation;
+- any RE implementation needs lifecycle-safe hierarchy ownership and compatibility with camera mods.
+
+## HSS-21 Loader ride control can report active without a bound arm actuator
+**CONFIRMED_STATIC functional mismatch**
+
+The loader detector can create a valid boom state from the front-loader attachment/joint and set:
+- `boomWant = true`;
+- `boomActive = true`;
+- `boomPhysics = true`;
+
+based on speed and feature state.
+
+Actual arm motion is performed later by `armSim()`, which separately searches the attached tool's movingTools for an axis/axisName containing `ARM`.
+
+If no matching movingTool is found:
+- `armSim()` returns without applying a correction;
+- the HUD can still represent the ride control as active;
+- the suspension fallback is disabled because `boomPhysics` was already considered available.
+
+This is a useful architectural lesson:
+
+> capability detected, actuator bound and controller active are three different states.
+
+Future RE should expose them separately and only claim an actuator after binding succeeds.
+
+This is an external-mod defect to document, not a reason to add an HSS-specific RC repair.
+
+## HSS-22 Loader ride control directly owns movingTool rotation
+**DESIGN_RISK / RUNTIME_PENDING**
+
+The active loader simulation modifies the chosen movingTool's `curRot` and marks it dirty.
+
+The implementation tries to preserve operator/base motion by subtracting its previous offset before adding the new transient offset. That is a thoughtful local invariant, but it is still direct shared-resource ownership.
+
+Risks:
+- another controller can write the same movingTool;
+- operator motion and active correction may be sampled at different moments;
+- attachment implementations may not expose a compatible movingTool;
+- the chosen `ARM` heuristic is naming-dependent.
+
+Future RE should use an actuator adapter with explicit binding/ownership and a defined composition point between:
+- operator/base command;
+- implement animation/controller state;
+- transient ride-control correction.
+
+## HSS-23 Loader arm simulation is called outside the vehicle-physics guard
+**DESIGN_RISK / RUNTIME_PENDING**
+
+The main specialization guards the server suspension controller/actuator path with `isAddedToPhysics`.
+
+The subsequent loader `armSim()` call is outside that guard.
+
+If stale loader state survives a reset, workshop/configuration transition or another temporary physics-removal path, the arm controller can be asked to run while the main suspension controller is intentionally dormant.
+
+Runtime testing must characterize whether this causes a real lifecycle issue.
+
+Future RE rule:
+- physical actuator execution should share an explicit lifecycle gate with the state/controller that owns it;
+- reset transient state on detach/delete/physics removal.
+
+## HSS-24 Loader contains a dormant joint-spring prototype path
+**CODE_QUALITY / LEARNING**
+
+The release contains an alternate joint-translation spring path gated by `loaderJointSpring == true`.
+
+That flag is not present in the normal default/user settings path, while the active public feature uses the movingTool arm simulation.
+
+Some related constants/helpers are therefore effectively experimental/dormant in normal configuration.
+
+This is not inherently harmful, but for our codebase:
+- experimental actuator strategies should be behind explicit named experimental flags with diagnostics, or
+- removed once the design decision is made.
+
+Avoid carrying two half-authoritative physical models in production code.
+
+## HSS-25 Fast client visual reconstruction + slow authoritative synchronization
+**POSITIVE_PATTERN**
+
+The release extends a useful networking pattern:
+- server owns the physical controller;
+- slow/effective suspension state is synchronized;
+- clients reconstruct high-frequency wheel visual response locally.
+
+This avoids streaming visual physics every frame while preserving responsive presentation.
+
+Principle worth retaining:
+> synchronize authoritative low-band state and derive deterministic/non-authoritative high-band presentation locally when divergence cannot affect gameplay.
+
+The exact HSS visual model need not be copied.
+
+## HSS-26 Shared/declarative Settings UI hook
+**POSITIVE_PATTERN / VERSION_FRAGILITY**
+
+The settings helper centralizes a single hook around the native General Settings frame and lets feature modules register declarative controls into it.
+
+Positive:
+- avoids every module installing an independent frame hook;
+- separates option declaration from most UI plumbing;
+- can coexist with multiple modules using the same registry pattern.
+
+Risk:
+- it depends on internal native control/template identifiers and layout structure;
+- a game UI update can invalidate those assumptions.
+
+Lesson for RE:
+- if we build shared settings infrastructure, use one capability-checked adapter around native UI internals;
+- feature modules should remain declarative and unaware of concrete template IDs.
+
+## HSS-27 Release broadens one specialization into multiple ownership domains
+**ARCHITECTURE_LEARNING**
+
+The release now puts under one specialization:
+- front-wheel active suspension;
+- wheel visual reconstruction;
+- camera isolation;
+- front-loader active motion;
+- HUD;
+- settings interaction.
+
+This is convenient for a self-contained external mod but not the architecture we should reproduce in RE.
+
+The capabilities have different:
+- lifecycles;
+- authority domains;
+- compatibility surfaces;
+- failure modes.
+
+If absorbed, split them conceptually:
+- `ActiveSuspension`;
+- `LoaderRideControl`;
+- optional `CabIsolation`;
+- UI/settings adapters.
+
+A vehicle-level orchestrator may coordinate them, but should not collapse them into one ownership object.
