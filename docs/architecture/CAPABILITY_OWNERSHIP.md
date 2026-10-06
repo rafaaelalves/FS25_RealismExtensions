@@ -18,6 +18,8 @@ The decision unit is a **capability**, not a mod.
 | persistent soil compaction | SoilCompaction | no duplicate model |
 | PTO operating mode / effective ratio | Dynamic PTO + RC composition | consume only |
 | mechanical subsystem / PTO stress | RMS where active | no duplicate model |
+| diesel ignition / preheat / start UX | Realistic Diesel Start | consume; RC may compose ADS thermal/readiness semantics, RE does not own |
+| truck air reservoir / spring brakes | Realistic Diesel Start | external owner; read only if a future consumer needs it |
 
 ## Moisture domains
 
