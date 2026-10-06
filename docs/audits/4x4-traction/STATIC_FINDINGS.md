@@ -543,3 +543,26 @@ RMS audit independently establishes RMS as target-stack live drivetrain/topology
 Therefore the 1.7 release does not change our architectural conclusion:
 - do not run two drivetrain solvers as the intended final design;
 - improve/submit the useful AUTO demand semantics to RMS or a normalized advisor boundary instead.
+
+
+## 4WD-41 New pressure HUD can display client-recomputed bar values rather than authoritative bar values
+**DESIGN_RISK / RUNTIME_PENDING**
+
+The server synchronization sends normalized `pressureLevel`, but not the effective front/rear bar targets.
+
+Each peer later computes:
+- `ctisFrontBar`;
+- `ctisRearBar`;
+
+from its locally available Soil Draft/SoilTraction pressure provider or fallback constants.
+
+The new icon HUD displays those bar values directly.
+
+Therefore the release can have:
+- authoritative normalized pressure state from the server;
+- locally recomputed physical units shown to the player.
+
+If provider availability/load interpretation differs between peers, the HUD can be numerically untruthful even while the normalized state is synchronized.
+
+General rule:
+> when UI displays an authoritative physical quantity, synchronize that accepted quantity (or synchronize all authoritative inputs required to derive it deterministically).
