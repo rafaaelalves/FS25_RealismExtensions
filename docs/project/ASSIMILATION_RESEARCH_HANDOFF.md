@@ -35,7 +35,27 @@ Decision:
 - preferred destination is an upstream RMS AUTO improvement or a normalized demand-advisor contract;
 - reject the bundled CTIS/radius/tire-visual ownership because Mud already owns pressure/CTIS in the target stack.
 
-## No implementation started from these two audits
+### Real Tire Wear 1.6.0.0
+Exact audit:
+- `docs/audits/realtirewear/README.md`
+- `STATIC_FINDINGS.md`
+- `ASSIMILATION_OPPORTUNITIES.md`
+- `RUNTIME_TEST_PLAN.md`
+
+Decision:
+- **high-value CANDIDATE_ABSORB / REDESIGN**;
+- do not add Real Tire Wear as another target-stack dependency;
+- do not copy its code/assets/shaders under the current provenance ambiguity;
+- future native capability should be `RunningGearWear`, not a tire-only clone;
+- combine Real Tire Wear's stronger MP/service/failure ideas with Reifen's
+  stronger first-class track identity/structural-radius contract;
+- redesign wear physics around per-unit rolling/slip work, absolute load/contact
+  stress and explicit surface abrasiveness rather than root-distance ×
+  multipliers;
+- Reifen remains the current owner until RE reaches parity, migration and
+  retirement gates.
+
+## No implementation started from these assimilation audits
 
 No Hydraulic Suspension or 4x4 physical code should be added merely because the audits are complete.
 
