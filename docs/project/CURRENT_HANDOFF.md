@@ -1082,3 +1082,34 @@ Next runtime gate:
 - compare stationary/moving/working states using torque, power, load, fuel,
   actual PTO RPM and tire-pressure/drag/slip fields before changing any fuel
   or drivetrain behavior.
+
+
+## PTO causal telemetry runtime PASS — 2026-10-06
+
+RC build `f4a71e75...` produced 235/235 causality samples with zero misses.
+The data closes the fuel-consumption question for now: MR fuel follows engine
+torque/power/RPM rather than requiring any direct PTO or tire-pressure fuel
+modifier.
+
+Key runtime behavior:
+- idle ~900 rpm: ~2.58 L/h;
+- stationary hand throttle ~2300 rpm, PTO off: ~23.35 L/h;
+- PTO consumer active while stationary: MR automatically requests ~2160 rpm
+  and fuel is ~25.34 L/h;
+- same PTO consumer while accelerating: motor load rises and fuel reaches
+  roughly ~45 L/h;
+- high-load road acceleration around ~1892 rpm can consume ~40.5 L/h;
+- hand-throttle-forced ~2300 rpm can consume less (~27.75 L/h) when the
+  drivetrain requires much less torque/power.
+
+Important next feature question:
+MR currently raises `mrMinPtoRpm` / `mrMinPtoIdleRpm` to ~2160 as soon as
+the PTO consumer is active, even with RE hand throttle at ROAD. This means the
+current integration still auto-provides useful PTO speed. The next study is
+to compare MR's PTO requirement path with Dynamic PTO's under-speed behavior
+and decide how to let the operator control engine RPM without synthetic load
+or direct consequence patches.
+
+RC diagnostic follow-up also corrected torque/power units and renamed the
+ratio-derived shaft-speed telemetry from misleading `actualPtoRpm` to
+`kinematicPtoRpm`. These are telemetry-only corrections.
