@@ -733,3 +733,68 @@ The correction is intentionally narrow:
 
 This defect affected persistence only; it does not explain the runtime PTO
 ratio/hand-throttle behavior observed before the save.
+
+
+## Runtime causality result — 2026-10-06
+
+The corrected RC causality probe produced 235 successful samples with zero
+sample misses. This resolves the earlier ambiguity around the observed fuel
+usage.
+
+### Fuel chain
+
+The 6R 155 data supports the intended causal architecture:
+
+`PTO / drivetrain demand -> motor torque and RPM -> MR power/load -> MR fuel`.
+
+Representative observations:
+
+- ~900 rpm idle, no PTO load: ~2.58 L/h;
+- hand throttle ~2300 rpm while stationary and PTO disengaged: ~23.35 L/h;
+- active PTO consumer while stationary: MR raises the engine to ~2160 rpm,
+  with fuel ~25.34 L/h;
+- the same active PTO consumer while accelerating raises motor torque/power
+  and fuel to roughly ~45 L/h;
+- road acceleration around ~1892 rpm can consume ~40.5 L/h because the motor
+  is delivering substantially more torque/power than at 2300 rpm;
+- forcing ~2300 rpm while moving reduced applied torque/power in this
+  drivetrain state and fuel fell to ~27.75 L/h.
+
+Therefore no RE fuel multiplier is justified. The apparent paradox “higher
+RPM but lower fuel” is explained by lower delivered torque/power, which MR
+weights much more heavily than RPM.
+
+### Important PTO-behavior finding
+
+The log also proves the current MR behavior that motivated the original
+Dynamic PTO comparison.
+
+With the PTO consumer activated and RE hand throttle still at ROAD:
+
+- engine RPM rises automatically from idle to about 2160 rpm;
+- MR reports `mrMinPtoRpm ~= 2160` and
+  `mrMinPtoIdleRpm ~= 2160`;
+- the 1000-rpm mode's 2.0 effective ratio then yields roughly 1080 shaft rpm.
+
+So the current native RE+RC integration still lets MR request the engine speed
+needed by the implement automatically. The player is **not yet required** to
+raise engine RPM manually before the implement reaches useful PTO speed.
+
+That differs from the desired Dynamic-PTO-like operating model where an
+under-speed shaft may run slowly or fail to perform until the operator raises
+engine speed.
+
+Next design study should therefore target the upstream MR PTO requirement
+path, not fuel consumption:
+
+1. trace how MR derives `mrLastMinRotForPTO` /
+   `mrLastMinRotForPTOidle` from the active consumer;
+2. compare that path with Dynamic PTO's under-speed implementation;
+3. determine whether RE should expose selected ratio while allowing actual
+   engine RPM to remain operator-controlled;
+4. preserve real PTO torque demand and natural motor/fuel consequences;
+5. avoid synthetic load, direct fuel penalties, and permanent mutation of MR
+   or GIANTS state.
+
+No under-speed behavior should be implemented until that ownership/flow study
+is complete.
