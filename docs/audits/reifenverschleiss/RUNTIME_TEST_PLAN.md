@@ -375,3 +375,102 @@ Record:
 - vehicleSystemEnterHooked;
 - whether save B's VehicleSystem method is wrapped;
 - latency until HUD/lock state refreshes through fallback paths.
+
+
+# 1.2.2.70 additional runtime gates
+
+The existing T1-T32 remain applicable unless a test explicitly targets a
+finding resolved statically by the update.
+
+## T33 — API-v1 purity under full stack
+
+Stack:
+- MR;
+- Mud 1.3.6;
+- Reifen 1.2.2.70;
+- current RC candidate.
+
+Instrument:
+- `getCompatibilityApiVersion()`;
+- direct `getWearAppliedTargetForScale(..., 1.0)`;
+- legacy/final `getWearAppliedTarget()`;
+- final `tireGroundFrictionCoeff`.
+
+Invariant:
+- API-v1 direct result remains Reifen-only;
+- RC does not alter the public API function identity;
+- final physical grip is MR healthy grip × Reifen wear degradation exactly once.
+
+## T34 — both Mud/Reifen installation orders
+
+Force/observe both effective orders if possible:
+1. RC target wrapper established before Mud's late Reifen compatibility;
+2. Mud compatibility already top-level before RC target composition.
+
+Expected:
+- identical final grip;
+- `mudApiV1Rewraps` is at most the one audited setup repair;
+- boundary settles;
+- no continuing hook-order polling after setup;
+- Reifen API v1 remains untouched.
+
+## T35 — structural-radius provenance
+
+Controlled worn tire with Mud pressure/sink.
+
+Capture:
+- Reifen `getWheelWearRadius()`;
+- `__rvDesiredRadius`;
+- `rvRoundPhysicalRadius`;
+- MRMud structural snapshot;
+- ExtensionsStateProvider structural radius/source;
+- final `physics.radius`.
+
+Invariant:
+- API-v1 wearRadius is the preferred structural owner truth;
+- Mud/private channel agrees or is only fallback;
+- pressure/sink never feeds back as Reifen structural wear.
+
+## T36 — canonical mod-name detection
+
+Run using the standardized `FS25_Reifenverschleiss.zip` package.
+
+Confirm RC detects:
+- active TireWear;
+- version `1.2.2.70`;
+- canonical mod environment;
+- SOURCE_COMPATIBLE confidence.
+
+Legacy versioned filename detection remains regression-only.
+
+## T37 — API contract fail-closed diagnostic
+
+Development/harness-only unless a safe malformed fixture exists.
+
+If version reports/claims the audited release but API v1 is incomplete or
+reports a different API version, MRTireWear must refuse source confidence rather
+than silently use legacy assumptions.
+
+## T38 — localization/service regression
+
+With PT-BR/EN (or another available language):
+- open Settings;
+- open custom running-gear workshop;
+- inspect type/size/price/action labels;
+- perform no purchase unless using a disposable save.
+
+Goal:
+confirm R-33/R-34/R-35 are genuinely resolved in normal UI, not only statically.
+
+## Updated promotion gate for 1.2.2.70
+
+Before promoting from SOURCE_COMPATIBLE to runtime-validated:
+1. MRTireWear ACTIVE with 1.2.2.70;
+2. API-v1 purity test passes;
+3. healthy/no-wear MR grip remains unchanged;
+4. controlled wear applies degradation once;
+5. structural radius uses Reifen public API provenance;
+6. Mud pressure/sink remains transient;
+7. no new RC/Reifen/Mud Lua errors;
+8. existing high-value T19/T20 and T21 opportunities remain separate follow-up
+   investigations rather than blockers for the version upgrade.
