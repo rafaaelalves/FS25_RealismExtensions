@@ -612,3 +612,81 @@ Expected:
 - native indicator/gauge can be primary;
 - RE HUD avoids redundant duplicate gauge unless configured;
 - warnings remain available when attention is needed.
+
+
+## Exact Realistic Brakes-derived pneumatic tests
+
+### T46 — supply vs service hose separation
+Air-brake trailer with both hoses.
+
+Cases:
+- both connected;
+- red supply disconnected only;
+- yellow service disconnected only.
+
+Expected target:
+- red supply loss can apply spring brake;
+- yellow service loss does not dump spring-release state while supply remains
+  healthy, but service-brake command becomes unavailable/degraded.
+
+### T47 — tractor protection
+Marginal truck pressure + low/empty trailer.
+
+Expected target:
+- trailer fill cannot drain towing-vehicle reservoir indefinitely;
+- supply closes at configured protection policy;
+- truck retains reserve;
+- trailer spring brake eventually applies if supply cannot support release.
+
+### T48 — finite trailer fill
+Connect empty trailer to charged truck.
+
+Expected:
+- pressure does not jump to final equalization in one server step;
+- transfer conserves amount;
+- flow is bounded;
+- compressor replenishment and trailer fill form a stable curve.
+
+Compare against exact RB 1.3 instant-equalization reference.
+
+### T49 — native attachable airConsumer metadata
+Inventory representative trailers for:
+- airConsumer#usage;
+- hose topology;
+- native brake force;
+- profile resolution.
+
+Expected:
+- metadata provenance is visible;
+- missing metadata falls back explicitly;
+- value is not blindly treated as liters/bar.
+
+### T50 — trailer service demand
+At stable reservoir pressure:
+- one brake application held;
+- repeated press/release.
+
+Expected:
+- initial positive command change consumes chamber/circuit amount;
+- held command mainly exposes leakage;
+- repeated applications consume materially more.
+
+### T51 — detached trailer pneumatic ownership
+Charge trailer then detach.
+
+Expected:
+- stored pressure remains authoritative;
+- supply disconnected semantics are explicit;
+- spring state derives from pressure/valve state;
+- vanilla parking does not silently replace contradictory pneumatic state.
+
+### T52 — RB coexistence comparison
+With external RB 1.3 available, compare:
+- hose state;
+- spring release;
+- wheel drag/skid;
+- trailer charge;
+- controller behavior.
+
+Goal:
+validate deliberate differences, not reproduce RB parity blindly.
