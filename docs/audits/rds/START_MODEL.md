@@ -320,3 +320,103 @@ Expose:
 
 This makes calibration and compatibility failures explainable instead of
 presenting one generic "failed to start" message.
+
+
+## GIANTS fallback state is richer than the RDS fallback
+
+Cross-checking current FS25 `Motorized` shows that the base game already
+maintains several useful fallback facts:
+
+- `spec_motorized.motorTemperature.value`;
+- a native motor-temperature update that uses load, RPM, wind cooling and fan
+  cooling;
+- `getIsMotorInNeutral()`;
+- motor clutch-pedal state exposed through the native motor/dashboard path;
+- `getCanMotorRun()`;
+- authoritative `MotorState` transitions.
+
+Therefore a minimal standalone RE start provider should **prefer native state**
+before inventing duplicate state.
+
+Suggested fallback order:
+
+```text
+thermal:
+  RMS/ADS normalized provider
+  -> GIANTS motorTemperature
+  -> ambient-only conservative fallback
+
+interlock:
+  specialist/drivetrain provider
+  -> GIANTS neutral / real clutch state
+  -> profile fallback
+
+motor outcome:
+  specialist owner
+  -> GIANTS Motorized
+```
+
+This may eliminate the need for an RE-owned standalone engine-temperature
+integrator entirely.
+
+Do not assume GIANTS motor temperature is calibrated enough for mechanical
+damage. It is, however, a stronger fallback input for start/preheat UX than a
+second independent RDS-style `engineHeat` timer.
+
+## Shared EngineRpmDemand
+
+Native PTO already needs a minimum engine-RPM request for hand throttle.
+
+A future cold-idle feature or optional compressor fast-idle would create the
+same output domain.
+
+Do not let each module install a separate MR/control wrapper.
+
+Conceptual aggregate:
+
+```text
+EngineRpmDemand {
+    source
+    minRpm
+    reason
+    active
+    revision
+}
+```
+
+Possible sources:
+- `PTO_HAND_THROTTLE`;
+- `COLD_IDLE`;
+- future `AUX_COMPRESSOR_FAST_IDLE`.
+
+The effective request is composed once, normally from the strongest compatible
+minimum-RPM demand, then adapted once into MR/GIANTS control.
+
+Phase rules:
+- CRANKING is not normal idle-governor operation;
+- demands take effect only when the motor phase supports them;
+- profile-specific behavior may preserve a mechanical hand-throttle setting
+  across OFF/START without applying the running RPM floor during crank.
+
+This should become shared RE/RC infrastructure only when the second real
+consumer exists; do not generalize prematurely in the PTO branch.
+
+## Exact-once adapter rule
+
+For every start adapter document:
+
+```text
+source owner
+input domain
+output domain
+included physical factors
+missing physical factors
+authority
+revision/lifetime
+```
+
+This prevents the same temperature/glow/fuel penalty from being translated more
+than once when multiple specialists are active.
+
+The rule comes directly from previous PTO canonicalization and MR+Soil
+throughput composition work.
