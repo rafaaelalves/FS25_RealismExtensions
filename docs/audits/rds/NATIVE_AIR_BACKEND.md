@@ -303,9 +303,9 @@ presentation.
 
 Trailer air is not MVP.
 
-Before implementation:
-- exact-source audit Realistic Brakes 1.3;
-- determine its reservoir units/authority;
+Before trailer implementation:
+- exact-source Realistic Brakes 1.3 audit is complete;
+- use the exact findings for reservoir/authority/runtime comparison;
 - define connector state separately from air-transfer state;
 - use conservation-aware transfer;
 - support hose connection providers (native/manualAttach/Interactive Control)
