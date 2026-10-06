@@ -262,3 +262,212 @@ When GIANTS does not supply `entry.nodes`, Reifen synthesizes and writes the fie
 EWFS does not explicitly branch on `MotorState.IGNITION`, but GIANTS' normal ignition flow enters IGNITION from OFF while EWFS is already locked, and STARTING then creates the timer. When the ignition key returns from START to IGNITION while the engine runs, GIANTS keeps MotorState ON.
 
 Therefore the omission is only a robustness concern for nonstandard external state manipulation, not a demonstrated vanilla five-second bypass.
+
+
+# Reifenverschleiss 1.2.2.70 delta findings
+
+Exact package SHA-256:
+`938363f661dc8a6943fcddc5fa766d63ff79702962746b513e39cdef3e172d6a`.
+
+R-01 through R-48 remain historical findings. The delta below records fixes,
+new contracts and persistent risks without rewriting the 1.2.2.67 baseline.
+
+## R-49 Compatibility API v1 makes the friction evaluation baseline explicit
+**POSITIVE_PATTERN / CONFIRMED_STATIC**
+
+1.2.2.70 publishes:
+- `getCompatibilityApiVersion() -> 1`;
+- `getWearAppliedTargetForScale(vehicle, wheel, nativeStart)`.
+
+The function evaluates Reifen's own wear curve against the caller-provided
+baseline without temporarily changing `wheel.physics.frictionScale`.
+
+This is a materially better cross-mod contract than the legacy shared-state
+mutation used by older integrations.
+
+Project principle:
+> pass an explicit evaluation baseline into the owner whenever possible.
+
+## R-50 Public wear-radius API cleanly states structural ownership
+**POSITIVE_PATTERN / CONFIRMED_STATIC**
+
+`getWheelWearRadius(vehicle, wheel)` returns:
+- authoritative wear-only radius;
+- original/unworn baseline;
+- Reifen wear 0..1.
+
+The source explicitly states that external systems may temporarily choose a
+smaller effective contact radius but must not feed that temporary result back as
+Reifen's wear baseline.
+
+`getWheelCompatibilityData()` additionally publishes:
+- `apiVersion`;
+- wear percent;
+- wear target;
+- `radiusOwnership = "REIFENVERSCHLEISS_WEAR_BASE"`;
+- `temporaryExternalRadiusAllowed = true`.
+
+This is the strongest Reifen cross-mod state contract audited so far.
+
+## R-51 Native Mud radius handoff is improved but still tightly coupled
+**CONFIRMED_STATIC / DESIGN_RISK**
+
+When Mud exposes a radius combiner with
+`supportsReifenverschleissRadiusChannel == true`, Reifen publishes:
+- `__rvOrigRadius`;
+- `__rvDesiredRadius`;
+- `__rvWear01`;
+
+and no longer masquerades permanent wear as Mud's tire-pressure original radius.
+
+That is semantically better than the 1.2.2.67 `__tpOrigRadius` fallback.
+
+However the coordinated path still depends on:
+- Mud injecting `__MudRadiusCombiner` into Reifen's private environment;
+- private shared `__rv*` fields.
+
+RC/RE should consume the public Reifen API first and keep this channel only as a
+legacy/partner fallback.
+
+## R-52 Absolute final friction ownership remains
+**CONFIRMED_STATIC**
+
+The Loader still appends to `WheelPhysics.updateFriction` and writes:
+
+`physics.tireGroundFrictionCoeff = targetApplied / physics.frictionScale`
+
+Therefore API v1 does **not** make MRTireWear obsolete.
+
+Reifen still owns an absolute final coefficient when running alone, while the
+target stack requires MR to own healthy/base terrain-tire grip and Reifen to
+supply relative degradation only.
+
+## R-53 Public API must not be repurposed as an RC composition hook
+**ARCHITECTURE_LEARNING**
+
+Wrapping `getWearAppliedTargetForScale()` in RC would remove Mud wrapper-order
+sensitivity, but would change the public API's meaning for every other consumer:
+"Reifen wear target for baseline X" would silently become "MR × Reifen target".
+
+Rejected.
+
+Current RC policy:
+- leave API v1 semantically pure;
+- use API version/shape as evidence;
+- consume public structural state;
+- repair only the exact audited Mud 1.3.6 outer legacy-target boundary when
+  necessary.
+
+A convenient hook point is not automatically the correct ownership boundary.
+
+## R-54 Stable non-versioned mod name reduces discovery brittleness
+**POSITIVE_PATTERN**
+
+The package now uses the stable archive/mod identity `FS25_Reifenverschleiss`
+rather than encoding the release version in the mod name.
+
+RC already supports both:
+- canonical `FS25_Reifenverschleiss`;
+- legacy `FS25_Reifenverschleiss_RELEASE_*`.
+
+The canonical path should now become the normal detection path.
+
+## R-55 Workshop/l10n cleanup resolves R-33, R-34 and R-35
+**CONFIRMED_STATIC FIX**
+
+The current package:
+- routes workshop labels/dialog strings through `rvL10n()`;
+- ships DE/EN/ES/FR/RU language packs;
+- lists all active 350/500/750/1000/1500/2000 km choices;
+- no longer carries the stale 10/50/100/200 option set found in the previous audit.
+
+Fallback strings in source remain German in places, but normal localized lookup
+now owns presentation.
+
+## R-56 Clean-install lifetime mismatch remains despite the cleaned UI
+**CONFIRMED_STATIC**
+
+`RPReferenceSettings.DEFAULT_KM = 1500`, but:
+- `selectedIndex = 1`;
+- `load()` resets `selectedIndex = 1`;
+- absent settings file therefore resolves to the first value: 350 km.
+
+The new localized UI makes this mismatch more visible; it does not fix it.
+
+## R-57 FORCE-WEAR still caches GIANTS differential topology
+**CONFIRMED_STATIC**
+
+`rvDifferentialWheelShareCache` remains per-vehicle and is populated from
+`spec_motorized.differentials` without an RMS topology revision/signature.
+
+R-29 therefore remains fully applicable to 1.2.2.70.
+
+No new public driven-wheel provider exists in this release.
+
+## R-58 Mud local wetness still does not drive Reifen wear
+**CONFIRMED_STATIC**
+
+The new Mud API coordination concerns friction/radius interoperability.
+
+DIST/SLIP wear ground-weather inputs still use GIANTS/global wetness semantics;
+they do not consume `FieldLocalWetness`.
+
+R-23 remains an integration opportunity, not a solved problem.
+
+## R-59 API version is explicit, but partner negotiation is incomplete
+**DESIGN_RISK / CROSS-MOD FINDING**
+
+Reifen now publishes `COMPAT_API_VERSION = 1`.
+
+Mud 1.3.6 nevertheless discovers Reifen mainly by expected function/table shape
+and does not negotiate `getCompatibilityApiVersion()` as its primary semantic
+contract.
+
+The pair works, but this is weaker than:
+- provider registration;
+- explicit API-version negotiation;
+- declared capabilities.
+
+RC therefore combines exact-source version evidence with live API-shape checks.
+
+## R-60 Internal provenance labels lag the packaged 1.2.2.70 version
+**CODE_QUALITY / PROVENANCE**
+
+The package declares `1.2.2.70` in modDesc, while several source identifiers
+still carry development labels such as:
+- `DEV_1_2_2_68_COMPAT_API_TEST`;
+- `DEV_1_2_2_67_MUD_VERSION_GUARD`;
+- older visual/WFS experiment labels.
+
+This does not make the runtime version wrong, but it means internal constant
+names are not reliable release identifiers.
+
+Compatibility decisions must use the package modDesc version/hash plus semantic
+API contract, not internal DEV labels.
+
+## R-61 Major EWFS/MP/lifecycle findings remain unresolved
+**CONFIRMED_STATIC UPDATE STATUS**
+
+The 1.2.2.70 release does not materially resolve:
+- broad EWFS mission/fleet polling and duplicated update work;
+- numeric node/shape weak-key cache lifetime;
+- absolute brake/max-speed ownership;
+- one-mission VehicleSystem hook lifetime;
+- purchase request authorization;
+- affordability validation;
+- requester reset synchronization;
+- continuous authoritative wear replication;
+- randomized roller-lifetime network authority.
+
+No RC hotfix is added solely because these owner-mod issues remain.
+
+## R-62 Public track-speed description still disagrees with source
+**CONFIRMED_STATIC**
+
+The current public description says the tracked-vehicle maximum-speed penalty
+applies to rubber and metal tracks.
+
+Source still deliberately gates the roller cruise/max-speed penalty to
+`RUBBER_TRACK` and excludes `STEEL_TRACK`.
+
+R-13 therefore remains open.
