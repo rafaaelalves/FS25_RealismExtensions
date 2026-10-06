@@ -410,3 +410,69 @@ Before calling RB safe for the target stack:
 - no material performance regression in realistic fleet size.
 
 Absorption is **not** required to pass this gate. A clean external integration is a valid outcome.
+
+
+## O. Exact MR wrapper-order / partial-composition tests
+
+### RB-T44 — hook identity and load order
+Capture runtime identity/order for:
+- WheelsUtil.updateWheelsPhysics;
+- WheelsUtil.getSmoothedAcceleratorAndBrakePedals.
+
+Test both practical mod load orders if controllable.
+
+Expected:
+- determine whether RB wheel-physics hook runs on MR normal path;
+- determine whether RB smoothed-pedal hook still feeds MR;
+- no assumption that "loads without error" means full RB behavior is active.
+
+### RB-T45 — MR normal path vs AutoDrive fallback
+Same parking scenario:
+- player/manual MR path;
+- AutoDrive active.
+
+Record:
+- RB callback counters;
+- pedal demand;
+- brake force;
+- actual deceleration/hold.
+
+Goal:
+detect RB behavior disappearing/reappearing when MR chooses super fallback.
+
+## P. Physical-model characterization
+
+### RB-T46 — low-speed thermal floor
+Same vehicle/load/pedal at approximately:
+- 5 km/h;
+- 15 km/h;
+- 30 km/h;
+- 40+ km/h.
+
+Source predicts a flat speedFactor contribution below ~33 km/h.
+
+This characterizes the gameplay proxy before comparing an energy-based model.
+
+### RB-T47 — free-roll suppression of base brake force
+Create a scenario where another owner/base path contributes nonzero brake force
+while RB parking is released or hold-exceeded.
+
+Measure before/after RB's PARK_SLIP_BRAKE_FACTOR path.
+
+Goal:
+prove whether RB reduces another owner's base braking to ~6%, not merely its
+own parking force.
+
+## Q. Developer diagnostics lesson
+
+### RB-T48 — action-registration failure probe
+Use a deliberately colliding key/action with a moving-tool vehicle and compare
+RBDiagBrazo output against actual action-event registration.
+
+Purpose:
+validate the generic diagnostic concept for a future RE dev service, not to
+adopt the RB implementation.
+
+Exit:
+document the minimum stable GIANTS surfaces needed for generic input/action
+diagnostics.
