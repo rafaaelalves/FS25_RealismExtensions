@@ -447,22 +447,26 @@ Expected:
 - UI scale/aspect changes invalidate geometry once;
 - no per-frame layout rebuild.
 
-## Dependency gate — Realistic Brakes
+## Dependency gate — Realistic Brakes — source gate CLOSED
 
-### T60 — exact-source audit required before trailer phase
-Do not execute trailer-air implementation test until current Realistic Brakes
-source is available and audited for:
-- reservoir representation;
-- spring-brake physics;
-- parking brake;
-- engine/Jake brake;
-- thermal fade;
-- hose/connectivity;
-- AI behavior;
-- Enhanced Vehicle ownership;
-- RDS pressure API use.
+### T60 — exact-source findings must remain satisfied before trailer phase
+Exact Realistic Brakes 1.3 source is now audited.
 
-Public behavior alone is not sufficient to choose final ownership.
+Before trailer-air implementation, confirm the selected design still covers:
+- separate supply vs service hose semantics;
+- finite reservoir transfer and conservation;
+- tractor-protection reserve;
+- trailer service-air demand;
+- leakage and spring/service availability;
+- authoritative trailer MP state;
+- wheel-group spring/service actuator topology;
+- detached-trailer state;
+- PLAYER / GIANTS AI / Courseplay / AutoDrive behavior;
+- parking ownership with RMS/Enhanced Vehicle;
+- no RB/MR duplicate engine-brake owner.
+
+Source availability is no longer the blocker; backend/ownership/runtime evidence
+is.
 
 
 ## Final transversal gates
