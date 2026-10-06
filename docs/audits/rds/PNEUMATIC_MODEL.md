@@ -5,6 +5,24 @@ Updated: 2026-10-05
 Exact current source checked: RDS 1.4.0.0, SHA-256
 `a2a983c7754bc4fb3dffc04839fb16cf844c72d7664ae78cfcd70fcf3c15721c`.
 
+
+## Native AIR backend decision is intentionally open
+
+A later cross-audit found that FS25 already has a native AIR consumer/fill-unit
+path and the exact `soundExpansionMP 1.2.0.0` stack depends on its
+`consumer.doRefill` state for multiplayer compressor sounds.
+
+Therefore this document defines the **physical model**, not yet the storage
+backend.
+
+Before implementation compare:
+- native-AIR-backed storage with RE physical policy;
+- fully RE-owned reservoir with deliberate native presentation bridge.
+
+Do not keep two independent authoritative air states.
+
+See `NATIVE_AIR_BACKEND.md`.
+
 ## RDS 1.2 -> 1.4 source model
 
 RDS uses one equivalent reservoir:
@@ -248,3 +266,132 @@ obey a simple conservation rule.
 A pressure-only `setPressure` contract cannot tell whether a 5 bar 20 L
 reservoir or a 5 bar 100 L reservoir supplied the trailer. Capacity/amount is
 therefore needed before trailer equalization becomes physically meaningful.
+
+
+## Conserved air quantity refinement
+
+The earlier pressure-state proposal is now refined to a simple fixed-volume,
+isothermal equivalent.
+
+For each reservoir:
+
+```text
+Q = P_abs * V
+```
+
+where:
+- `Q` is equivalent stored air in bar·L;
+- `P_abs` is absolute pressure;
+- `V` is reservoir volume.
+
+Gauge pressure remains:
+
+```text
+P_gauge = P_abs - P_atmosphere
+```
+
+This is deliberately not a full thermodynamic model.
+
+It is sufficient to make:
+- reservoir size meaningful;
+- compressor flow capacity-aware;
+- trailer equalization conservative;
+- transfer APIs physically interpretable.
+
+### Compressor
+
+Prefer adding equivalent amount:
+
+```text
+dQ/dt = ratedFlowBarLitersPerSecond * rpmFactor * efficiency
+```
+
+rather than incrementing pressure by one universal bar/sec.
+
+### Trailer equalization
+
+For idealized complete equalization:
+
+```text
+Q_total = Q_truck + Q_trailer
+P_final_abs = Q_total / (V_truck + V_trailer)
+```
+
+Line losses/restrictions can be introduced later without changing the conserved
+state representation.
+
+This is a substantial improvement over external
+`setPressure(targetPressure)` semantics.
+
+## Brake-demand / actuator separation
+
+The pneumatic state owner should output demand, not seize wheel physics.
+
+Conceptual result:
+
+```text
+BrakeDemand {
+    service01
+    springForced01
+    parkingRequested01
+    releaseAllowed
+    reasonMask
+}
+```
+
+A final adapter composes this with the active brake owner.
+
+Important RMS interaction:
+- RMS may auto-release its ordinary parking brake for throttle/AI;
+- low-air spring-brake demand is a forced safety state and must remain effective
+  until pressure permits release;
+- do not encode forced pneumatic braking as an ordinary RMS parking request.
+
+Important MR/Mud/Reifen interaction:
+- RE does not increase tire friction or zero vehicle velocity;
+- final brake torque acts through the existing drivetrain/wheel/ground stack;
+- whether wheels slide or the engine drags the brakes is a physical consequence.
+
+## Auxiliary compressor engine load — future feature
+
+An engine-driven compressor consumes power when loaded.
+
+This is not required for the first pneumatic MVP, but the architecture should
+leave room for:
+
+```text
+Pneumatic compressor loaded
+    -> AuxiliaryEngineLoad demand
+    -> one RC/MR owner adapter
+    -> real engine load/fuel response
+```
+
+Do not add an artificial generic "load percentage" directly.
+
+If implemented:
+- calibrate compressor power/flow profiles;
+- compose with MR/RMS once;
+- keep compressor load separate from optional fast-idle RPM demand.
+
+## Profile architecture
+
+Reuse the TerraFarm/RE profile lesson:
+
+```text
+native capability inference
+ -> pneumatic family defaults
+ -> declarative vehicle override
+ -> runtime sanity validation
+```
+
+Candidate `PneumaticProfile` fields:
+- storage backend preference;
+- reservoir volume;
+- nominal/max/cut-in/cut-out/low-air pressures;
+- spring apply/release thresholds;
+- compressor flow/reference RPM;
+- service chamber equivalent volume;
+- optional circuit family;
+- trailer supply capability.
+
+Category/name heuristics are not acceptable as final physical truth.
