@@ -798,3 +798,76 @@ path, not fuel consumption:
 
 No under-speed behavior should be implemented until that ownership/flow study
 is complete.
+
+
+## Under-speed runtime evidence and MR source follow-up — 2026-10-07
+
+Runtime with RC build `03e6e23b...` validated the corrected SI telemetry:
+`kinematicPtoRpm`, explicit kN*m/N*m torque fields and corrected kW all
+matched the observed drivetrain state.
+
+The session adds an important nuance to the previous conclusion that MR
+"forces PTO RPM automatically".
+
+### Runtime observation
+
+With the 6R 155 in 1000 mode and the PTO consumer engaged while travelling
+near 53 km/h:
+
+- RE hand throttle remained ROAD / 0;
+- MR requested `mrMinPtoRpm=2160` and `mrMinPtoIdleRpm=2160`;
+- actual engine speed remained around 1725–1730 rpm for several seconds;
+- ratio-derived shaft speed remained only ~862–866 rpm;
+- the implement still consumed substantial PTO torque (~0.82 kN*m);
+- RE correctly reported `engaged=true` and transport warning.
+
+Therefore `mrMinPtoRpm` is a requested control target, not an absolute clamp.
+Gear/drivetrain state can leave the PTO genuinely under-speed even while MR
+requests nominal working RPM.
+
+Later, around 31–35 km/h, the drivetrain did reach ~2160–2180 engine rpm and
+~1080–1090 PTO rpm.
+
+### MR source ownership
+
+Current MR source confirms this behavior is native and already partly models
+under-speed:
+
+- `MR_WheelsUtil.lua` obtains the consumer's required motor RPM and stores it
+  in `mrLastMinRotForPTO`; the idle control floor is normally based on
+  `mrMinEcoRot + 10`, unless `mrForcePtoRpm` is set;
+- `MR_PowerConsumer.lua` continuously computes
+  `mrPtoCurrentRpmRatio = actualPtoRpm / requestedPtoRpm`;
+- consumed PTO torque uses the current ratio, clamped to a minimum 0.85 ratio,
+  so mechanical shaft power naturally falls when the shaft is sufficiently
+  under-speed rather than inventing a separate fuel penalty;
+- power-harrow and spader draft calculations already increase resistance when
+  PTO RPM is low;
+- `MR_WoodCrusher.lua` explicitly disables the feeding mechanism below
+  `mrPtoCurrentRpmRatio < 0.78`.
+
+MR previously contained a generic "turn implement off when engine RPM is too
+low" hook, but that feature is commented out in the current source because it
+caused problems for manual-clutch users.
+
+### Design implication
+
+Do **not** implement a generic synthetic under-speed penalty yet. MR already
+owns useful pieces of the physical degradation model.
+
+The remaining design problem is narrower:
+- when stopped / normal field operation, MR often raises engine RPM toward the
+  consumer requirement automatically;
+- we want the RE hand throttle to be meaningful and operator-driven without
+  breaking MR's real PTO torque/current-ratio model;
+- category-specific consequences should continue to come from the specialist
+  simulation when they already exist.
+
+Next study should identify the smallest scoped intervention around MR's
+minimum-RPM request/control path that removes unwanted automatic governing
+while preserving:
+1. `mrPtoCurrentRpmRatio`;
+2. consumed PTO torque;
+3. category-specific low-RPM consequences;
+4. AI / unattended PTO behavior;
+5. no permanent mutation of MR/GIANTS state.
