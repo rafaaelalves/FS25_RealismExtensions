@@ -8,7 +8,11 @@ Physics.stats = Physics.stats or {
     ratioCalls = 0,
     ratioOverrides = 0,
     rpmRangeCalls = 0,
-    rpmRangeOverrides = 0
+    rpmRangeOverrides = 0,
+    manualRangeOverrides = 0,
+    motorUpdateScopes = 0,
+    maxPtoRpmSuppressions = 0,
+    aiBypasses = 0
 }
 
 local EXTERNAL_MOTOR_OWNERS = {
@@ -49,6 +53,39 @@ local function validPositive(value)
         and value == value
         and value > 0
         and value ~= math.huge
+end
+
+local function isAiActive(vehicle)
+    if vehicle == nil or type(vehicle.getIsAIActive) ~= "function" then
+        return false
+    end
+    local ok, active = pcall(vehicle.getIsAIActive, vehicle)
+    return ok and active == true
+end
+
+local function manualGovernorOwns(vehicle, state)
+    if vehicle == nil or type(state) ~= "table"
+        or state.enabled ~= true
+        or state.hasPtoOutput ~= true
+        or state.hasPtoConsumer ~= true
+        or state.requirementConflict == true then
+        return false
+    end
+    if isAiActive(vehicle) then
+        count("aiBypasses")
+        return false
+    end
+    return true
+end
+
+local function sameRootVehicle(subject, vehicle)
+    if subject == nil or vehicle == nil then return false end
+    local root = subject
+    if type(subject.getRootVehicle) == "function" then
+        local ok, value = pcall(subject.getRootVehicle, subject)
+        if ok and value ~= nil then root = value end
+    end
+    return root == vehicle or subject == vehicle
 end
 
 local function installRatioHook()
@@ -95,15 +132,23 @@ local function installRequiredRangeHook()
     local wrapped = function(motor, ...)
         count("rpmRangeCalls")
         local state = stateForMotor(motor)
+        local vehicle = motor ~= nil and motor.vehicle or nil
         local ratio = state ~= nil
             and tonumber(state.effectiveMotorRatio) or nil
 
-        -- GIANTS' base implementation reads the raw ptoMotorRpmRatio field
-        -- internally rather than calling the getter. Scope the selected PTO
-        -- gearbox ratio only around that native calculation and restore it
-        -- immediately afterwards.
         local minRpm, maxRpm
-        if validPositive(ratio) then
+        if manualGovernorOwns(vehicle, state) then
+            -- Manual PTO baseline: an attached/active-capable PTO consumer may
+            -- load the drivetrain, but it must not command engine RPM. Engine
+            -- speed belongs to the operator/hand throttle. AI is deliberately
+            -- excluded above and keeps GIANTS automatic PTO management.
+            minRpm = tonumber(motor.minRpm) or 0
+            maxRpm = tonumber(motor.maxRpm) or minRpm
+            count("manualRangeOverrides")
+        elseif validPositive(ratio) then
+            -- AI/native automatic management still needs to see the selected
+            -- physical PTO ratio. Scope the raw field because GIANTS' native
+            -- implementation reads it directly rather than the getter.
             local original = motor.ptoMotorRpmRatio
             motor.ptoMotorRpmRatio = ratio
             local ok, a, b = pcall(previous, motor, ...)
@@ -117,7 +162,7 @@ local function installRequiredRangeHook()
 
         local handThrottle = state ~= nil
             and tonumber(state.handThrottleRpm) or nil
-        if validPositive(handThrottle) then
+        if validPositive(handThrottle) and not isAiActive(vehicle) then
             minRpm = math.max(tonumber(minRpm) or 0, handThrottle)
             maxRpm = math.max(
                 tonumber(maxRpm) or minRpm,
@@ -130,6 +175,54 @@ local function installRequiredRangeHook()
 
     VehicleMotor.getRequiredMotorRpmRange = wrapped
     Physics._wrappedRange = wrapped
+    return true
+end
+
+local function installMotorUpdateHook()
+    if VehicleMotor == nil or type(VehicleMotor.update) ~= "function" then
+        return false, "VehicleMotor.update"
+    end
+    if PowerConsumer == nil
+        or type(PowerConsumer.getMaxPtoRpm) ~= "function" then
+        return false, "PowerConsumer.getMaxPtoRpm"
+    end
+
+    if Physics._wrappedMotorUpdate ~= nil
+        and VehicleMotor.update == Physics._wrappedMotorUpdate then
+        return true
+    end
+
+    local previous = VehicleMotor.update
+    local wrapped = function(motor, ...)
+        local state = stateForMotor(motor)
+        local vehicle = motor ~= nil and motor.vehicle or nil
+        if not manualGovernorOwns(vehicle, state) then
+            return previous(motor, ...)
+        end
+
+        -- GIANTS VehicleMotor.update separately clamps displayed/equalized RPM
+        -- to PowerConsumer.getMaxPtoRpm(). Suppress only that auto-rev request
+        -- for this one root vehicle while the native update executes. PTO
+        -- torque/work consumers remain untouched outside this synchronous
+        -- scope.
+        local original = PowerConsumer.getMaxPtoRpm
+        PowerConsumer.getMaxPtoRpm = function(subject, ...)
+            if sameRootVehicle(subject, vehicle) then
+                count("maxPtoRpmSuppressions")
+                return 0
+            end
+            return original(subject, ...)
+        end
+
+        count("motorUpdateScopes")
+        local ok, a, b, c, d, e = pcall(previous, motor, ...)
+        PowerConsumer.getMaxPtoRpm = original
+        if not ok then error(a) end
+        return a, b, c, d, e
+    end
+
+    VehicleMotor.update = wrapped
+    Physics._wrappedMotorUpdate = wrapped
     return true
 end
 
@@ -148,6 +241,12 @@ function Physics.install()
     end
 
     ok, reason = installRequiredRangeHook()
+    if not ok then
+        Physics.reason = reason
+        return false, reason
+    end
+
+    ok, reason = installMotorUpdateHook()
     if not ok then
         Physics.reason = reason
         return false, reason
