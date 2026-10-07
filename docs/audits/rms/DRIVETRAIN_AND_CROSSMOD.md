@@ -227,3 +227,62 @@ Before closing runtime validation:
 9. Enhanced Vehicle coexistence and second-save reload;
 10. Reifen FORCE-WEAR before/after RMS topology switch;
 11. MR driven wheel metadata after each topology switch.
+
+
+# RMS 0.11 drivetrain / cross-mod delta
+
+## Drivetrain topology contract
+
+The RC-relevant topology functions are text-identical to 0.10:
+- `buildLayout`;
+- `initSpec`;
+- `applyState`;
+- `setDrivetrainState`.
+
+Therefore MRRMS can remain on the same ownership model.
+
+The configurable differential-lock release speed became a fixed local constant
+(`10 km/h`), but the retained-request bug remains: speed release still passes
+`diffLockRequested=false` into `setDrivetrainState`.
+
+## MoreRealistic
+
+RMS still has limited direct MR awareness in dynamic motor-load estimation.
+
+It still does not solve:
+- MR driven-wheel metadata after RMS graph rebuilds;
+- RMS transmission failure semantics bypassed by MR replacement shift paths.
+
+MRRMS remains required.
+
+## Reifen 1.2.2.70
+
+No drivetrain revision/effective-wheel/share provider was added.
+
+The exact current mismatch therefore remains:
+
+```
+RMS rebuilds differential graph
+        ↓
+Reifen FORCE-WEAR cached GIANTS shares can become stale
+```
+
+Keep the existing runtime magnitude gate before implementing a narrow provider
+or invalidation bridge.
+
+## Dynamic PTO
+
+The native-capacity helper used by RMSDynamicPTO remains unchanged.
+
+0.11 also reuses that helper to size PTO engagement shock. The existing effective
+ratio composition should therefore apply naturally to both:
+- continuous utilization;
+- high-RPM engagement damage.
+
+This must be validated at runtime with at least two PTO modes/ratios.
+
+## Mud
+
+The clogging consequences still read global GIANTS ground wetness.
+
+MudRMS remains the appropriate boundary for field-local physical wetness.
