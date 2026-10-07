@@ -871,3 +871,68 @@ while preserving:
 3. category-specific low-RPM consequences;
 4. AI / unattended PTO behavior;
 5. no permanent mutation of MR/GIANTS state.
+
+
+## Final manual-governor implementation candidate — 2026-10-07
+
+The source study is now implemented on the isolated finalization branches:
+
+- RE: `feat/pto-manual-governor-final`;
+- RC: `feat/pto-manual-governor-final`.
+
+The branches intentionally do not absorb the parallel Mud 1.3.6, Reifen
+1.2.2.70 or RMS 0.11 research lines. This keeps the PTO change reviewable and
+allows the parallel compatibility work to finish independently before a final
+integration/squash merge.
+
+### Standalone RE
+
+When MR is absent, `PTOPhysics` now:
+- keeps the selected effective PTO ratio scoped into native motor reads;
+- removes the implement PTO RPM request from the player's required motor-RPM
+  range;
+- suppresses GIANTS' separate `PowerConsumer.getMaxPtoRpm` auto-rev read
+  only while `VehicleMotor.update` executes for that same root vehicle;
+- preserves normal automatic PTO RPM management for AI;
+- preserves the selected ratio for AI/native automatic calculations;
+- restores every global/raw field immediately.
+
+### RC + MR
+
+MRPTO now separates physical load from automatic engine management.
+
+For player/non-AI native PTO ownership:
+- real `neededPtoTorque` remains untouched;
+- MR `getRequiredMotorRpmRange` sees no PTO-specific RPM request;
+- hydrostatic PTO-mode RPM targets are scoped back to normal road-mode targets;
+- MR's PTO-only eco-idle floor and its explicit unattended ~1200-rpm floor are
+  removed when recognizable;
+- accelerator input is preserved;
+- the RE hand throttle is applied only after those automatic PTO floors are
+  removed;
+- selected PTO ratio remains visible to MR power/torque calculations.
+
+For AI, all automatic MR PTO RPM management remains native.
+
+For unattended non-AI equipment, ROAD releases PTO-specific RPM management;
+a persisted hand-throttle target remains the operator-owned minimum.
+
+### Harness status
+
+Both final branches pass their complete CI/harness suites.
+
+The remaining gate is runtime only. No further source-level behavior patch is
+planned before that test.
+
+Runtime acceptance should prove:
+1. PTO engaged + ROAD does not auto-jump to nominal implement engine RPM;
+2. shaft RPM follows actual engine RPM and selected ratio;
+3. consumed PTO torque remains present;
+4. hand throttle raises the engine in 100-rpm steps;
+5. MR under-speed consequences remain functional;
+6. AI still self-governs PTO RPM;
+7. unattended hand throttle persists;
+8. save/load remains schema-clean.
+
+Once those pass, PTO causality telemetry can return from DETAILED to SUMMARY
+and the functional development can be closed.
