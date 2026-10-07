@@ -11,6 +11,7 @@ Physics.stats = Physics.stats or {
     rpmRangeOverrides = 0,
     manualRangeOverrides = 0,
     motorUpdateScopes = 0,
+    motorUpdateRatioScopes = 0,
     maxPtoRpmSuppressions = 0,
     aiBypasses = 0
 }
@@ -196,27 +197,48 @@ local function installMotorUpdateHook()
     local wrapped = function(motor, ...)
         local state = stateForMotor(motor)
         local vehicle = motor ~= nil and motor.vehicle or nil
-        if not manualGovernorOwns(vehicle, state) then
+        local ratio = state ~= nil
+            and tonumber(state.effectiveMotorRatio) or nil
+        local manualOwned = manualGovernorOwns(vehicle, state)
+
+        if not manualOwned and not validPositive(ratio) then
             return previous(motor, ...)
         end
 
-        -- GIANTS VehicleMotor.update separately clamps displayed/equalized RPM
-        -- to PowerConsumer.getMaxPtoRpm(). Suppress only that auto-rev request
-        -- for this one root vehicle while the native update executes. PTO
-        -- torque/work consumers remain untouched outside this synchronous
-        -- scope.
-        local original = PowerConsumer.getMaxPtoRpm
-        PowerConsumer.getMaxPtoRpm = function(subject, ...)
-            if sameRootVehicle(subject, vehicle) then
-                count("maxPtoRpmSuppressions")
-                return 0
+        -- GIANTS VehicleMotor.update reads the raw ptoMotorRpmRatio field.
+        -- Scope the selected physical ratio for AI/native automatic management
+        -- as well as for any other update-time PTO calculations.
+        local originalRatio = motor.ptoMotorRpmRatio
+        if validPositive(ratio) then
+            motor.ptoMotorRpmRatio = ratio
+            count("motorUpdateRatioScopes")
+        end
+
+        local originalMaxPto = nil
+        if manualOwned then
+            -- GIANTS VehicleMotor.update separately clamps
+            -- displayed/equalized RPM to PowerConsumer.getMaxPtoRpm().
+            -- Suppress only that auto-rev request for this root vehicle while
+            -- the native update executes. PTO torque/work consumers remain
+            -- untouched outside this synchronous scope.
+            originalMaxPto = PowerConsumer.getMaxPtoRpm
+            PowerConsumer.getMaxPtoRpm = function(subject, ...)
+                if sameRootVehicle(subject, vehicle) then
+                    count("maxPtoRpmSuppressions")
+                    return 0
+                end
+                return originalMaxPto(subject, ...)
             end
-            return original(subject, ...)
         end
 
         count("motorUpdateScopes")
         local ok, a, b, c, d, e = pcall(previous, motor, ...)
-        PowerConsumer.getMaxPtoRpm = original
+
+        if originalMaxPto ~= nil then
+            PowerConsumer.getMaxPtoRpm = originalMaxPto
+        end
+        motor.ptoMotorRpmRatio = originalRatio
+
         if not ok then error(a) end
         return a, b, c, d, e
     end
