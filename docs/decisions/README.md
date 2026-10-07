@@ -11,3 +11,4 @@ Each ADR should contain:
 - what would justify revisiting it.
 
 Do not use ADRs for routine implementation notes.
+- [0006 — PTO manual engine governor with causal load](0006-pto-manual-engine-governor.md)
