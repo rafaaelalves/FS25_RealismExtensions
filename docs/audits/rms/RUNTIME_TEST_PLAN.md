@@ -263,3 +263,140 @@ RMS runtime phase can be considered closed when:
 - dedicated-server authority/lifecycle tests pass;
 - no cadence/performance blocker appears under a large realistic fleet;
 - the active stack has a smoke test for AI/controllers, service and electrical/drivetrain state.
+
+
+# RMS 0.11 upgrade runtime matrix
+
+The original tests remain useful where their finding still exists. Add the
+following version-specific gates before promoting 0.11 to VERIFIED.
+
+## T33 — RC bootstrap/version confidence
+With RMS 0.11 and current RC candidate:
+- MRRMS = ACTIVE / SOURCE_COMPATIBLE;
+- MudRMS = ACTIVE / SOURCE_COMPATIBLE;
+- RMSDynamicPTO = ACTIVE / SOURCE_COMPATIBLE;
+- no reference to missing `RMS_Consumptables`;
+- no RC-attributable Lua errors.
+
+## T34 — MRRMS drivetrain metadata
+Cycle:
+- 2WD;
+- 4WD;
+- AUTO engage/disengage;
+- differential lock where supported.
+
+Verify MR driven-wheel metadata matches RMS effective topology after every RMS
+graph application.
+
+## T35 — MRRMS transmission effects
+Exercise/force:
+- powershift engagement lag;
+- gear shift failure;
+- transmission slip/CVT effects where applicable.
+
+Confirm MR replacement paths do not bypass RMS effects.
+
+## T36 — MudRMS with 0.11 clogging model
+Dry and locally wet field cells.
+
+Record:
+- GIANTS global wetness;
+- Mud local wetness;
+- RMS radiator debug wetness/factor;
+- RMS air-filter debug wetness/factor;
+- RC substitution counters.
+
+Expected:
+- RMS consequence uses local wetness during the scoped call;
+- the weather method is restored afterward;
+- the new 0.11 clogging rate remains owned by RMS.
+
+## T37 — Dynamic PTO continuous utilization
+For at least two physical PTO modes with different effective ratios:
+- same implement torque;
+- compare RMS `ptoMotorSideTorque`, native capacity and utilization.
+
+Expected:
+RMS sees the effective Dynamic PTO ratio exactly once.
+
+## T38 — Dynamic PTO engagement shock
+Using a disposable/test vehicle, engage the same PTO implement:
+- near idle;
+- at high engine RPM;
+- under two effective PTO ratios if supported.
+
+Capture:
+- RMS engagement torque;
+- effective ratio;
+- computed size/utilization;
+- `ptoEngagementDamage`.
+
+Goal:
+verify the existing RMSDynamicPTO capacity scope correctly extends to the new
+0.11 engagement-shock model and does not double-count Dynamic PTO feedback load.
+
+## T39 — diff-lock request regression
+Repeat the old lock test on 0.11:
+- request below 10 km/h;
+- exceed 10 km/h;
+- slow below 10 without pressing the input again.
+
+Static prediction:
+request is cleared and lock does not re-engage.
+
+This is owner-mod evidence, not an RC promotion blocker unless it breaks current
+gameplay expectations.
+
+## T40 — RMS/Reifen FORCE-WEAR topology
+Use exact RMS 0.11 + Reifen 1.2.2.70.
+
+Compare Reifen cached driven shares before/after:
+- 2WD -> 4WD;
+- 4WD -> 2WD;
+- AUTO transition.
+
+Measure actual wear divergence.
+
+This remains the gate for a future narrow topology provider/invalidation bridge.
+
+## T41 — 0.10 save upgrade / migration
+On a backup:
+- load an RMS 0.10 save in 0.11;
+- inspect maintenance schedules;
+- fluid levels/capacities;
+- workshop prices/value;
+- overhaul state;
+- old RMS physical fluid containers;
+- removed settings.
+
+Separate expected 0.11 migration changes from RC defects.
+
+## T42 — battery charger authority/reference
+Optional architecture-reference test:
+- charge owned vehicle;
+- attempt other-farm access on dedicated server;
+- move player out of range;
+- delete/store charger while connected;
+- start-assist during cranking.
+
+This is not an RC compatibility gate; it validates the positive upstream pattern.
+
+## T43 — Mobile Workshop
+Only if the target stack uses `FS25_mobileWorkshop`.
+
+Verify upstream RMS inspection/service integration directly.
+
+RC should remain uninvolved.
+
+## 0.11 promotion gate
+
+Promote RMS 0.11 from SOURCE_COMPATIBLE only after:
+1. T33 passes;
+2. MRRMS topology/transmission smoke passes;
+3. MudRMS local-wetness smoke passes;
+4. Dynamic PTO continuous + engagement-shock smoke passes;
+5. save upgrade shows no unexpected state corruption;
+6. no new RC-attributable errors.
+
+RMS/Reifen T40 remains a separate bridge decision and is not required merely to
+adopt RMS 0.11.
