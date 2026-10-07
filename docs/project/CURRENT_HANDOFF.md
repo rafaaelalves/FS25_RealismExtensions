@@ -1137,3 +1137,31 @@ semantics.
 
 RC telemetry build `03e6e23b...` is runtime validated; no new runtime build
 is required from this documentation checkpoint.
+
+
+## PTO final implementation candidate — 2026-10-07
+
+The manual-PTO ownership study is implemented and CI-clean on isolated
+finalization branches.
+
+Functional boundary:
+- RE owns selected PTO ratio and operator hand throttle;
+- MR keeps real PTO torque, drivetrain, engine load, fuel and under-speed
+  physics;
+- RC removes only MR's automatic PTO engine-RPM management for non-AI manual
+  operation;
+- AI retains MR automatic PTO RPM management;
+- unattended non-AI work uses the persisted RE hand throttle, while ROAD
+  releases the PTO-specific RPM request;
+- RMS remains owner of PTO condition/wear/damage.
+
+Standalone RE also suppresses GIANTS' automatic PTO RPM request while retaining
+selected-ratio semantics.
+
+Parallel Mud/Reifen/RMS update branches were not modified. After their
+runtime/version work is complete, this PTO branch should be merged/squashed
+into the common integration line and native RMSPTO must inherit the audited RMS
+0.11 compatibility metadata already established by the RMS audit.
+
+All source/harness gates are green. One final runtime test remains before
+reducing MRPTO telemetry to SUMMARY and declaring the feature complete.
