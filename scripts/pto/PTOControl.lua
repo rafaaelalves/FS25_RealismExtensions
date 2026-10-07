@@ -183,7 +183,12 @@ local function refreshPublicState(vehicle, spec)
     state.requirementKnown = requirements.requiredRpm ~= nil
     state.requirementConflict = requirements.conflict == true
     state.hasPtoConsumer = requirements.hasPtoConsumer == true
+    state.knownRequirementCount = requirements.knownCount or 0
     state.unknownRequirementCount = requirements.unknownCount or 0
+    state.requirementSource = requirements.primary ~= nil
+        and requirements.primary.source or nil
+    state.requirementProfileId = requirements.primary ~= nil
+        and requirements.primary.profileId or nil
     state.mismatch = requirements.requiredRpm ~= nil
         and requirements.requiredRpm ~= modeDef.shaftRpm
     state.capabilitySource = spec.capability ~= nil
@@ -197,6 +202,22 @@ local function refreshRequirements(vehicle, spec)
     if spec == nil or spec.enabled ~= true then return end
     spec.requirements = Resolver.collectRequirements(vehicle)
     refreshPublicState(vehicle, spec)
+
+    if RealismExtensionsDiagnostics ~= nil then
+        local req = spec.requirements or {}
+        local primary = req.primary
+        RealismExtensionsDiagnostics.verbose(string.format(
+            "PTO requirements | vehicle=%s consumers=%d known=%d unknown=%d required=%s conflict=%s source=%s profile=%s",
+            vehicleLabel(vehicle),
+            #(req.items or {}),
+            tonumber(req.knownCount) or 0,
+            tonumber(req.unknownCount) or 0,
+            tostring(req.requiredRpm or "-"),
+            tostring(req.conflict == true),
+            tostring(primary ~= nil and primary.source or "-"),
+            tostring(primary ~= nil and primary.profileId or "-")
+        ))
+    end
 end
 
 function Control.prerequisitesPresent(specializations)
