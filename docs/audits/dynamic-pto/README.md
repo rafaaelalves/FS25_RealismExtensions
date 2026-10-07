@@ -117,3 +117,25 @@ Proceed to design, but do **not** remove Dynamic PTO from the gameplay stack yet
 - attached implement detection is at least as reliable;
 - save/MP semantics are understood;
 - UX solves the current status contradiction.
+
+
+## RMS 0.11.0.0 cross-audit follow-up
+
+RMS 0.11 keeps `RMS_Utils.getPtoNativeCapacityData(vehicle,totalTorque)`
+text-identical to 0.10, so the existing RMSDynamicPTO ratio scope remains
+source-compatible.
+
+0.11 adds a new consumer of the same helper:
+`RMS_Utils.getPtoEngagementDamage()` uses the returned utilization/size to
+scale high-RPM PTO engagement shock.
+
+This expands the effect of the existing bridge in a physically coherent way:
+the selected Dynamic PTO gearing should affect both continuous reflected PTO
+load and engagement-shock sizing.
+
+No new bridge is required.
+
+Runtime follow-up:
+- compare low/high engine-RPM engagement;
+- test at least two effective PTO ratios;
+- verify Dynamic PTO `gruntLoadExtra` remains excluded from RMS stress.
