@@ -332,3 +332,20 @@ RC compatibility: **SOURCE_COMPATIBLE / CI GREEN**.
 In-game/runtime: **pending**.
 
 Do not promote RMS 0.11 to VERIFIED until the targeted runtime matrix passes.
+
+
+## Native RE PTO distinction
+
+The current RC `RMSDynamicPTO` integration detects the legacy external mod
+`FS25_DynamicPTO_FFM`. It is **not** the compatibility path for the PTO already
+absorbed into RealismExtensions.
+
+For the native RE PTO:
+- disable/remove `FS25_DynamicPTO_FFM`;
+- RE PTO wraps `VehicleMotor.getPtoMotorRpmRatio()` and scopes the raw
+  `ptoMotorRpmRatio` during native motor update;
+- RMS 0.11 reads that same VehicleMotor contract, so it should observe the
+  effective RE ratio directly;
+- `RMSDynamicPTO` being INACTIVE is therefore expected, not a failure.
+
+Runtime validation must keep these two paths separate.
