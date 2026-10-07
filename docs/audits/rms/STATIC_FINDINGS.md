@@ -311,3 +311,239 @@ RMS's AI worker controller builds a stress signal from dynamic load plus engine/
 It also has emergency temperature reduction and Precision Farming soil-sampling exceptions.
 
 Cross-mod behavior with Courseplay/AutoDrive still needs runtime smoke, but the control model itself is substantially more deliberate than a fixed arbitrary speed cap.
+
+
+# RMS 0.11.0.0 delta findings
+
+Exact package:
+- version `0.11.0.0`;
+- SHA-256 `75f092abcec813cc8d56af6b7e84a21ca204d39e6825d34054ba4e376d6932cd`.
+
+RMS-01 through RMS-32 remain the historical 0.10 baseline. The following
+findings record the 0.11 delta without rewriting that baseline.
+
+## RMS-33 RC-critical drivetrain/effect contracts are source-stable
+**POSITIVE_PATTERN / CONFIRMED_STATIC**
+
+The MRRMS-relevant drivetrain functions are text-identical between 0.10 and
+0.11:
+- `buildLayout`;
+- `initSpec`;
+- `applyState`;
+- `setDrivetrainState`.
+
+The six MRRMS effect-applicator blocks consumed by RC are also text-identical.
+
+This justifies integration-specific SOURCE_COMPATIBLE evidence for MRRMS 0.11,
+not global verification of the entire RMS release.
+
+## RMS-34 Private module rename breaks name-based integrations
+**CONFIRMED_STATIC / RC FIX**
+
+0.11 renames:
+- `RMS_Consumptables` -> `RMS_Consumables`.
+
+MudRMS previously required the old private table name as a runtime gate even
+though the bridge actually hooks the registered vehicle functions.
+
+That would reject 0.11.
+
+RC now validates the real semantic boundary:
+- RMS specialization present;
+- registered `updateRadiatorClogging`;
+- registered `updateAirFilterClogging`.
+
+Lesson:
+> bind to the smallest semantic contract actually consumed, not an upstream
+> source-file/table name merely because it was convenient to probe.
+
+## RMS-35 MudRMS remains semantically necessary
+**CONFIRMED_STATIC**
+
+0.11's radiator and air-filter models still call global:
+
+`weather:getGroundWetness()`.
+
+They do not consume Mud `FieldLocalWetness`.
+
+Therefore RC still has a genuine cross-owner role:
+- Mud owns local physical wetness;
+- RMS owns clogging consequence;
+- RC scopes the local wetness into the exact RMS calculation.
+
+## RMS-36 Clogging calibration is decoupled from maintenance wear
+**POSITIVE_PATTERN**
+
+0.10 tied clogging rate partly to `BASE_SERVICE_WEAR` and a dedicated RMS
+clogging-speed setting.
+
+0.11 uses the game's washable interval multiplier plus explicit physical
+operating-hour calibration.
+
+This is cleaner domain separation:
+> maintenance/service cadence should not secretly set the accumulation rate of
+> a different physical phenomenon.
+
+## RMS-37 PTO capacity contract expands into engagement-shock sizing
+**CONFIRMED_STATIC / CROSS-MOD IMPACT**
+
+`RMS_Utils.getPtoNativeCapacityData(vehicle,totalTorque)` remains text-identical.
+
+0.11 newly reuses it inside `getPtoEngagementDamage()` to scale high-RPM PTO
+engagement shock by implement size.
+
+RMSDynamicPTO already scopes this helper through the selected/effective PTO
+ratio.
+
+Therefore the existing bridge now correctly influences:
+- continuous PTO capacity/utilization;
+- engagement-shock size.
+
+No new bridge is needed, but runtime validation must cover the new call site.
+
+## RMS-38 PTO event damage and continuous wear are separated
+**POSITIVE_PATTERN**
+
+0.11 distinguishes:
+- engagement clutch loss;
+- high-RPM engagement shock;
+- continuous overload;
+- raised-implement operation;
+- expired-service contribution.
+
+Engagement shock samples engine RPM before the game's PTO-induced rev-up.
+
+This is a strong modeling principle:
+> transient event damage and continuous operating wear should remain separate
+> channels.
+
+## RMS-39 Battery charger feeds the authoritative electrical solver
+**POSITIVE_PATTERN**
+
+The new charger contributes charging/start-assist current through the existing
+RMS battery integration.
+
+It does not own a parallel battery SOC/temperature/health model.
+
+The electrical owner still determines:
+- acceptance;
+- loads;
+- net current;
+- SOC;
+- voltage.
+
+This is a strong provider/consumer pattern for future RC/RE accessories.
+
+## RMS-40 Battery charger request boundary is well defended
+**POSITIVE_PATTERN**
+
+Server request handling checks:
+- requester context;
+- farm ownership;
+- spectator state;
+- player proximity;
+- player not inside a vehicle;
+- charger/target/mode validity.
+
+The charger also tears down through its authoritative stop path on delete.
+
+This is stronger than several older RMS event surfaces.
+
+## RMS-41 Mobile Workshop compatibility belongs upstream
+**POSITIVE_PATTERN / NO_RC_ACTION**
+
+0.11 contains explicit `FS25_mobileWorkshop` behavior and workshop-type
+restrictions.
+
+There is no reason for RC to add a second mobile-workshop integration.
+
+This is a clean case of upstream owning its own service-domain compatibility.
+
+## RMS-42 Settings simplification reduces accidental physics policy surface
+**ARCHITECTURE_LEARNING**
+
+0.11 removes many user-facing physical constants and multiplier knobs and
+replaces them with internally coherent defaults/models.
+
+The exact UX policy is subjective, but the architectural lesson is useful:
+> expose meaningful policy/experience choices; keep calibration constants out
+> of user settings unless they genuinely define user policy.
+
+Development diagnostics/calibration controls should remain available separately.
+
+## RMS-43 Existing diff-lock re-engage defect remains
+**CONFIRMED_STATIC / CARRY-FORWARD RMS-18**
+
+0.11 replaces the configurable release threshold with fixed
+`DIFF_LOCK_RELEASE_KMH = 10`, but the release path still calls
+`setDrivetrainState(..., false, ...)`.
+
+That clears `diffLockRequested`.
+
+Therefore the original requested-lock intent still cannot naturally re-engage
+after speed drops.
+
+No RC hotfix is added.
+
+## RMS-44 No drivetrain topology revision/provider was added
+**CONFIRMED_STATIC / CROSS-MOD**
+
+0.11 still exposes no stable:
+- topology revision;
+- effective driven-wheel set;
+- current torque-share provider.
+
+Reifen 1.2.2.70 FORCE-WEAR still caches GIANTS differential shares.
+
+The RMS↔Reifen mismatch remains open behind the existing runtime magnitude gate.
+
+## RMS-45 New upstream direct integrations do not supersede RC bridges
+**CONFIRMED_STATIC**
+
+0.11 adds/improves direct compatibility in areas such as:
+- Mobile Workshop;
+- GIANTS ignition-key behavior;
+- MoreRealistic-aware motor-load handling.
+
+None covers the semantic boundaries of:
+- MRRMS;
+- MudRMS;
+- RMSDynamicPTO.
+
+Therefore no current RC bridge should be retired from source evidence alone.
+
+## RMS-46 Several old authority/lifecycle defects remain byte-for-byte
+**CONFIRMED_STATIC**
+
+The source remains unchanged or materially equivalent for:
+- fleet reinitialize authorization;
+- start-button target/controller authorization;
+- client-originating start-effect sync;
+- SpeedMeter temporary method replacement without exception-safe restoration;
+- mission-load leasing wrapper installation;
+- vehicle onDelete external-power peer cleanup.
+
+The 0.11 feature work does not make those findings obsolete.
+
+## RMS-47 Release ZIP still omits repository license files
+**CONFIRMED_STATIC / CARRY-FORWARD RMS-14**
+
+The official repository is GPL-3.0-or-later, but the supplied official release
+ZIP still contains no LICENSE/NOTICE file.
+
+This is packaging provenance, not an RC compatibility blocker.
+
+## RMS-48 0.11 upgrade intentionally changes persistent/economic semantics
+**UPGRADE_RISK / DOCUMENTED_UPSTREAM**
+
+The release changes:
+- fluid container implementation;
+- fluid capacities;
+- maintenance intervals/schedules;
+- overhaul outcomes;
+- vehicle value/depreciation calculations;
+- available settings.
+
+Some old fillType-based RMS containers can disappear after upgrade.
+
+Use a save backup and distinguish expected migration changes from RC regressions.
