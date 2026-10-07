@@ -80,11 +80,50 @@ local mower={
     getIsTurnedOn=function() return mowerActive end,
     getAttachedImplements=function() return {} end
 }
+local hydraulicPlowActive=true
+local hydraulicPlow={
+    configFileName="/mods/hydraulicPlow.xml",
+    -- Generic power consumer + hoses/cables, but deliberately no input PTO
+    -- and no ptoRpm. This must never become a PTO consumer.
+    spec_powerConsumer={neededPower=85},
+    spec_connectionHoses={hoses={{type="hydraulic"},{type="electric"}}},
+    spec_plow={},
+    getInputPowerTakeOffs=function() return {} end,
+    getIsTurnedOn=function() return hydraulicPlowActive end,
+    getAttachedImplements=function() return {} end
+}
+
+local unknownInputPto={
+    configFileName="/mods/unknownPtoImplement.xml",
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getAttachedImplements=function() return {} end
+}
+
+fiat.getAttachedImplements=function()
+    return {{object=hydraulicPlow}}
+end
+local req=R.collectRequirements(fiat)
+assert(req.hasPtoConsumer==false)
+assert(req.requiredRpm==nil)
+assert(req.knownCount==0)
+assert(req.unknownCount==0)
+
+-- A real input PTO without an RPM remains a PTO consumer, but requirement
+-- family is intentionally unknown rather than guessed.
+fiat.getAttachedImplements=function()
+    return {{object=unknownInputPto}}
+end
+req=R.collectRequirements(fiat)
+assert(req.hasPtoConsumer==true)
+assert(req.requiredRpm==nil)
+assert(req.knownCount==0)
+assert(req.unknownCount==1)
+assert(req.items[1].source=="INPUT_PTO")
 
 fiat.getAttachedImplements=function()
     return {{object=chipper}}
 end
-local req=R.collectRequirements(fiat)
+req=R.collectRequirements(fiat)
 assert(req.hasPtoConsumer==true)
 assert(req.requiredRpm==1000)
 assert(req.conflict==false)
@@ -97,13 +136,22 @@ req=R.collectRequirements(fiat)
 assert(req.conflict==true)
 assert(req.requiredRpm==nil)
 
+-- Turned-on hydraulic/electrical tools with a generic PowerConsumer must not
+-- be mistaken for PTO engagement.
+fiat.getAttachedImplements=function()
+    return {{object=hydraulicPlow}}
+end
+fiat.getIsPowerTakeOffActive=function() return false end
+local engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
+
 -- Tractor PowerTakeOffs itself reports false; active state lives on the
 -- attached PTO-consuming implement specialization.
-fiat.getIsPowerTakeOffActive=function() return false end
 fiat.getAttachedImplements=function()
     return {{object=chipper}}
 end
-local engaged,source=R.isPtoEngaged(fiat)
+engaged,source=R.isPtoEngaged(fiat)
 assert(engaged==false)
 assert(source=="NO_ACTIVE_CONSUMER")
 
