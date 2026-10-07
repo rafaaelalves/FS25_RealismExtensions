@@ -1113,3 +1113,27 @@ or direct consequence patches.
 RC diagnostic follow-up also corrected torque/power units and renamed the
 ratio-derived shaft-speed telemetry from misleading `actualPtoRpm` to
 `kinematicPtoRpm`. These are telemetry-only corrections.
+
+
+## PTO under-speed checkpoint — 2026-10-07
+
+Latest SI-corrected runtime changes the interpretation of the MR PTO governor.
+
+MR requests 2160 rpm for the active 1000-rpm consumer, but this is not an
+absolute engine clamp. At ~53 km/h the tested 6R stayed near 1725 rpm with
+the shaft near 862 rpm while the implement remained engaged and consumed PTO
+torque. Later, at lower road speed, the engine reached ~2160 rpm and the shaft
+~1080 rpm.
+
+Source review confirms MR already owns significant under-speed behavior:
+`mrPtoCurrentRpmRatio`, ratio-aware PTO torque, extra draft for some
+PTO-driven soil tools, and a wood-crusher feed cutoff below 0.78 of nominal
+PTO speed.
+
+Therefore the next implementation should not add a generic "slow PTO" or fuel
+penalty. The target is only the unwanted automatic engine-RPM request/control
+path, while preserving MR's existing physical consequences and unattended/AI
+semantics.
+
+RC telemetry build `03e6e23b...` is runtime validated; no new runtime build
+is required from this documentation checkpoint.
