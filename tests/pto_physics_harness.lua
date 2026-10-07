@@ -48,8 +48,10 @@ function VehicleMotor.getRequiredMotorRpmRange(self)
     return self.minRpm,self.maxRpm
 end
 local updateObservedPto=nil
+local updateObservedRatio=nil
 function VehicleMotor.update(self,dt)
     updateObservedPto=PowerConsumer.getMaxPtoRpm(self.vehicle)
+    updateObservedRatio=self.ptoMotorRpmRatio
     self.lastPtoRpm=updateObservedPto*self.ptoMotorRpmRatio
     return updateObservedPto
 end
@@ -86,6 +88,7 @@ local before=maxPtoCalls
 local observed=VehicleMotor.update(motor,16)
 assert(observed==0)
 assert(updateObservedPto==0)
+assert(math.abs(updateObservedRatio-2.2)<0.000001)
 assert(maxPtoCalls==before)
 assert(PowerConsumer.getMaxPtoRpm(vehicle)==540)
 assert(maxPtoCalls==before+1)
@@ -100,6 +103,8 @@ assert(math.abs(minRpm-(540*2.2))<0.000001)
 assert(maxRpm==2200)
 observed=VehicleMotor.update(motor,16)
 assert(observed==540)
+assert(math.abs(updateObservedRatio-2.2)<0.000001)
+assert(math.abs(motor.ptoMotorRpmRatio-4.0)<0.000001)
 
 -- Without a native RE PTO state every path is base-game behavior.
 aiActive=false
@@ -115,6 +120,7 @@ assert(P.stats.ratioOverrides>=1)
 assert(P.stats.rpmRangeOverrides>=1) -- AI selected-ratio automatic path.
 assert(P.stats.manualRangeOverrides>=2)
 assert(P.stats.motorUpdateScopes>=1)
+assert(P.stats.motorUpdateRatioScopes>=1)
 assert(P.stats.maxPtoRpmSuppressions>=1)
 assert(P.stats.aiBypasses>=1)
 
