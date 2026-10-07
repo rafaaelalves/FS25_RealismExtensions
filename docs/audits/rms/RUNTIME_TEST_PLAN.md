@@ -274,7 +274,8 @@ following version-specific gates before promoting 0.11 to VERIFIED.
 With RMS 0.11 and current RC candidate:
 - MRRMS = ACTIVE / SOURCE_COMPATIBLE;
 - MudRMS = ACTIVE / SOURCE_COMPATIBLE;
-- RMSDynamicPTO = ACTIVE / SOURCE_COMPATIBLE;
+- if legacy external `FS25_DynamicPTO_FFM` is installed, RMSDynamicPTO = ACTIVE / SOURCE_COMPATIBLE;
+- if native RE PTO is used instead, `RMSDynamicPTO` is expected to be INACTIVE because that RC bridge targets only the legacy external owner;
 - no reference to missing `RMS_Consumptables`;
 - no RC-attributable Lua errors.
 
@@ -311,15 +312,23 @@ Expected:
 - the weather method is restored afterward;
 - the new 0.11 clogging rate remains owned by RMS.
 
-## T37 — Dynamic PTO continuous utilization
+## T37 — PTO continuous utilization
+
+### Native RE PTO path
+Use the current native RE PTO build with `FS25_DynamicPTO_FFM` disabled.
 For at least two physical PTO modes with different effective ratios:
 - same implement torque;
 - compare RMS `ptoMotorSideTorque`, native capacity and utilization.
 
 Expected:
-RMS sees the effective Dynamic PTO ratio exactly once.
+RMS sees the effective RE PTO ratio exactly once through the VehicleMotor ratio contract.
+The RC `RMSDynamicPTO` bridge remains INACTIVE in this path.
 
-## T38 — Dynamic PTO engagement shock
+### Legacy external Dynamic PTO regression
+Only if `FS25_DynamicPTO_FFM` is tested separately, expect RC `RMSDynamicPTO`
+to become ACTIVE and preserve the older compatibility path.
+
+## T38 — PTO engagement shock
 Using a disposable/test vehicle, engage the same PTO implement:
 - near idle;
 - at high engine RPM;
@@ -394,7 +403,7 @@ Promote RMS 0.11 from SOURCE_COMPATIBLE only after:
 1. T33 passes;
 2. MRRMS topology/transmission smoke passes;
 3. MudRMS local-wetness smoke passes;
-4. Dynamic PTO continuous + engagement-shock smoke passes;
+4. native RE PTO continuous + engagement-shock smoke passes; legacy external Dynamic PTO is optional regression coverage;
 5. save upgrade shows no unexpected state corruption;
 6. no new RC-attributable errors.
 
