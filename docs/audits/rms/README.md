@@ -1,6 +1,6 @@
 # Realistic Mechanical Systems deep architecture/compatibility audit
 
-Updated: 2026-10-03
+Updated: 2026-10-07
 
 Exact package audited:
 - mod: `FS25_RealisticMechanicalSystems`
@@ -16,11 +16,32 @@ Official source line:
 - license: GNU GPL v3.0
 - provenance: independent fork of Advanced Damage System, maintained separately since 2026-06-30
 
+## 0.11.0.0 update
+
+Latest exact package:
+- version: `0.11.0.0`;
+- SHA-256: `75f092abcec813cc8d56af6b7e84a21ca204d39e6825d34054ba4e376d6932cd`;
+- official tag: `v0.11.0.0`;
+- official release asset digest matches the supplied ZIP exactly;
+- detailed delta: [UPDATE_0_11_0.md](./UPDATE_0_11_0.md).
+
+The recommendation remains **KEEP + INTEGRATE**.
+
+RMS 0.11 is source-compatible with the current MRRMS, MudRMS and RMSDynamicPTO
+ownership model, but MudRMS required one RC hardening because upstream renamed
+the private module table from `RMS_Consumptables` to `RMS_Consumables`.
+
+The hardened bridge now validates the registered vehicle-function contract
+instead of either private module name.
+
+RMS 0.10 remains the runtime-VERIFIED release until the 0.11 in-game matrix is
+completed.
+
 Purpose: complement, not repeat, the RealismCompatibility RMS work. RC already owns concrete overlap/composition problems such as `MRRMS` and `RMSDynamicPTO`. This RE audit studies RMS as a complete simulation product: its internal state model, scheduling, lifecycle, persistence/network architecture, design patterns, defects, upstream-patch candidates, provider opportunities and ideas worth learning from.
 
 ## Audit status
 
-Static/source phase: **CLOSED for 0.10.0.0**.
+Static/source phase: **CLOSED for 0.10.0.0 and updated through exact 0.11.0.0 source**.
 
 The audit was completed in focused passes over:
 1. architecture / scheduling / networking / persistence / authority;
