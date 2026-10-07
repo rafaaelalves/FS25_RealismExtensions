@@ -171,3 +171,27 @@ A final runtime PASS requires:
    - mode and hand throttle persist without XML-schema errors.
 
 After runtime PASS, detailed PTO causality logging returns to SUMMARY level.
+
+
+## Attachment classification refinement
+
+A generic `spec_powerConsumer` is not evidence that an implement is connected
+to the tractor through a mechanical PTO shaft.
+
+Non-PTO tools can expose generic power-consumer state for draft, hydraulic,
+electrical or other simulation purposes and can also have connection hoses or
+electrical cables. Those connections must remain independent of PTO
+classification.
+
+Native PTO implement detection therefore fails closed and accepts only:
+- an evidence-backed implement PTO profile;
+- a real input PowerTakeOff exposed by GIANTS;
+- an explicit positive `powerConsumer.ptoRpm`.
+
+An input PTO with no known RPM is retained as a real but unknown PTO
+requirement. A generic PowerConsumer, hoses/cables, TurnOnVehicle state, plow
+specialization, etc. are not sufficient by themselves.
+
+This is intentionally stricter than broad heuristic detection. A real mod PTO
+implement that exposes none of the contracts above should receive a profile
+rather than causing every generic powered implement to be guessed as PTO.
