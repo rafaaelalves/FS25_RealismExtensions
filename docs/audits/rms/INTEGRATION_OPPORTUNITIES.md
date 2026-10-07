@@ -220,3 +220,60 @@ Especially valuable is a monotonically changing `topologyRevision` (or stable to
 - explicit legacy-save migration.
 
 These patterns are reusable architecture ideas. RMS mechanical simulation itself remains external ownership.
+
+
+# RMS 0.11 integration delta
+
+## Existing RC bridges
+
+### MRRMS — keep
+0.11 preserves the exact drivetrain/effect contracts MRRMS consumes.
+
+### MudRMS — keep, with better contract probing
+Do not probe `RMS_Consumptables` or `RMS_Consumables` by name.
+
+Bind to the registered semantic functions:
+- `updateRadiatorClogging`;
+- `updateAirFilterClogging`.
+
+The 0.11 rename is direct evidence that private source-table names are the wrong
+compatibility boundary.
+
+### RMSDynamicPTO — keep
+No new module is needed for the revised PTO engagement model. The existing
+effective-ratio capacity scope is reused by RMS itself for engagement-shock
+sizing.
+
+Add runtime coverage rather than another bridge.
+
+## Native Mobile Workshop support — no RC action
+
+RMS now owns its compatibility with `FS25_mobileWorkshop`.
+
+Do not mirror that integration in RC.
+
+## Battery charger as architecture precedent
+
+The new charger demonstrates a strong owner/input pattern:
+
+```
+charger current contribution
+        ↓
+RMS electrical owner
+        ↓
+single battery integration
+```
+
+RE/RC should prefer this pattern for future accessories/auxiliary systems.
+
+## Provider opportunity remains deferred
+
+0.11 still does not publish a stable normalized mechanical/drivetrain provider.
+
+Do not build a broad RC RMS provider pre-emptively.
+
+Add only concrete fields required by a real consumer.
+
+The strongest near-term concrete provider candidate remains drivetrain topology
+revision/effective driven-wheel state **if** Reifen runtime tests prove the
+FORCE-WEAR mismatch materially affects gameplay.
