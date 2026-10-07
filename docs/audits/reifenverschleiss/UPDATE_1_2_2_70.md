@@ -262,3 +262,20 @@ as ambiguous and fails closed.
 This is a reusable lesson:
 > when an upstream project changes technical identity, compatibility discovery
 > must detect migration duplicates, not merely learn the new name.
+
+
+## Cross-audit follow-up: RMS 0.11.0.0
+
+The exact RMS 0.11 audit confirms that the current Reifen FORCE-WEAR concern is
+still present with the newest audited RMS/Reifen pair.
+
+RMS 0.11 preserves the same dynamic differential-graph ownership and still
+publishes no topology revision/effective-driven-wheel/share provider.
+
+Reifen 1.2.2.70 still caches GIANTS differential shares for FORCE-WEAR.
+
+Therefore:
+- the mismatch is still source-confirmed;
+- no new evidence justifies a speculative RC bridge;
+- the existing T19/T20 runtime magnitude test remains the gate for a narrow
+  invalidation/provider contract.
