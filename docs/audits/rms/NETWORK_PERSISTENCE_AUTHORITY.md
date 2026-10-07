@@ -179,3 +179,46 @@ The audited game ZIP contains source headers stating GPL v3-or-later and `See LI
 The official repository does contain both files and documents fork provenance.
 
 Classification: packaging/provenance cleanup candidate, not a simulation defect.
+
+# RMS 0.11 authority delta
+
+## New battery charger is server-authoritative by design
+
+The charger request path derives requester identity from the network connection
+and validates:
+- requester farm;
+- charger ownership;
+- spectator state;
+- player proximity;
+- player vehicle state;
+- target/mode validity.
+
+Live charger measurements are published from the server after the one
+authoritative battery integration.
+
+This is a positive contrast with older RMS request surfaces that still trust
+client-selected vehicle targets more than they should.
+
+## Vehicle exclusion improves authorization semantics
+
+The exclusion event now routes client requests through
+`getCanSetUserExclusion(..., connection)` before server mutation.
+
+This is a positive owner-side hardening and requires no RC patch.
+
+## Settings remain authoritative
+
+The current settings sync path still validates master-user authority before
+applying client-proposed server settings.
+
+The 0.11 settings reduction does not weaken that ownership boundary.
+
+## Old authority findings not superseded
+
+The improved new events do not automatically close:
+- RMS-01 fleet reinitialize;
+- RMS-02 start button;
+- RMS-03 start-effect sync.
+
+Those older event implementations remain materially unchanged and must be
+evaluated independently.
