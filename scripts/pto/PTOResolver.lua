@@ -147,12 +147,25 @@ end
 local function detectImplement(object)
     if object == nil then return nil end
 
+    local profile = Profiles.findImplement(object)
     local hasInput = hasInputPowerTakeOff(object)
     local rpm = readPtoRpm(object)
-    local usesPto = hasInput or rpm ~= nil or object.spec_powerConsumer ~= nil
+
+    -- A generic PowerConsumer is NOT evidence of a mechanical PTO.
+    -- Draft/traction/hydraulic/electrical implements can legitimately expose
+    -- spec_powerConsumer while having no PTO shaft at all. Connection hoses or
+    -- electrical cables are likewise independent of PTO. Keep classification
+    -- conservative and require one of:
+    --   1. evidence-backed implement profile;
+    --   2. an actual input PowerTakeOff;
+    --   3. an explicit powerConsumer.ptoRpm.
+    --
+    -- This deliberately fails closed for unusual mod implements. If a real PTO
+    -- machine exposes none of those contracts it belongs in Profiles rather
+    -- than being guessed from generic power consumption.
+    local usesPto = profile ~= nil or hasInput or rpm ~= nil
     if not usesPto then return nil end
 
-    local profile = Profiles.findImplement(object)
     if profile ~= nil then
         return {
             object = object,
@@ -169,17 +182,19 @@ local function detectImplement(object)
             object = object,
             usesPto = true,
             shaftRpm = rpm >= 750 and 1000 or 540,
-            source = "POWER_CONSUMER",
+            source = "POWER_CONSUMER_PTO_RPM",
             confidence = rpm >= 750 and "NATIVE_EXPLICIT" or "NATIVE_AMBIGUOUS"
         }
     end
 
+    -- An input PTO with no explicit RPM is still a real PTO connection, but
+    -- its family is unknown until evidence is available.
     return {
         object = object,
         usesPto = true,
         shaftRpm = nil,
-        source = "UNKNOWN",
-        confidence = "UNKNOWN"
+        source = "INPUT_PTO",
+        confidence = "NATIVE_CONNECTION"
     }
 end
 
@@ -261,9 +276,9 @@ local function getObjectPtoActivity(object)
     -- Defensive fallback for mod implements that consume PTO but implement only
     -- TurnOnVehicle semantics and do not participate correctly in the
     -- getIsPowerTakeOffActive overwrite chain.
-    local usesPto = hasInputPowerTakeOff(object)
+    local usesPto = Profiles.findImplement(object) ~= nil
+        or hasInputPowerTakeOff(object)
         or readPtoRpm(object) ~= nil
-        or object.spec_powerConsumer ~= nil
     if usesPto and type(object.getIsTurnedOn) == "function" then
         local ok, active = pcall(object.getIsTurnedOn, object)
         if ok and active == true then
