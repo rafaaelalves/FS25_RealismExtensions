@@ -341,4 +341,83 @@ assert(math.abs(shaftRatioFor("Valtra S Series")-(1882/1000))<0.000001)
 assert(P.findTractor({getName=function() return "Ford 976 Versatile" end}).id=="ford_976_versatile")
 assert(P.findTractor({getName=function() return "Steiger 785 Quadtrac Black Edition" end}).id=="case_ih_steiger_715_785_black")
 
+-- Small shop: 25 identities and 27 profiles (three per-model RPM variants).
+assert(#P.SMALL_CATALOG==25)
+assert(P.PENDING_SMALL.new_holland_tk4_80_methane~=nil)
+local smallCases={
+    {"antonio_carraro_mach_4r","Mach 4R",{"540","540E"}},
+    {"antonio_carraro_tony_10900_ttr","Tony 10900 TTR",{"540","540E"}},
+    {"case_ih_farmall_c","Farmall C Series",{"540","1000"}},
+    {"case_ih_vestrum","Vestrum 130",{"540","540E","1000"}},
+    {"claas_arion_470","ARION 470",{"540","540E","1000"}},
+    {"claas_arion_400","ARION 410",{"540","540E","1000"}},
+    {"claas_arion_570_530","ARION 570",{"540","540E","1000","1000E"}},
+    {"deutz_fahr_6c_rvshift","6C RVShift",{"540","540E","1000"}},
+    {"fendt_200_v_vario","Fendt 200 V Vario",{"540","540E","1000"}},
+    {"fendt_300_vario","Fendt 300 Vario",{"540","540E","1000"}},
+    {"fendt_500_vario","Fendt 500 Vario",{"540","540E","1000"}},
+    {"iseki_tjw","ISEKI TJW1233",{"540","540E","1000"}},
+    {"jcb_fastrac_2000_4ws","JCB Fastrac 2000 4WS Series",{"540","1000"}},
+    {"john_deere_3650","John Deere 3650",{"540","1000"}},
+    {"john_deere_6m_105","John Deere 6M 105",{"540","1000"}},
+    {"john_deere_6m","John Deere 6M 125",{"540","1000"}},
+    {"landini_rex4_gt","Landini REX 4 GT",{"540","540E"}},
+    {"lindner_lintrac_130","Lindner Lintrac 130",{"540","1000"}},
+    {"massey_ferguson_5700_s","Massey Ferguson MF 5700 S",{"540","540E"}},
+    {"mercedes_mb_trac_700","Mercedes MB-trac 700",{"540","1000"}},
+    {"mercedes_mb_trac_700_900","Mercedes MB-trac 900",{"540","1000"}},
+    {"mercedes_mb_trac_1000_1100","Mercedes MB-trac 1000",{"540","1000"}},
+    {"rigitrac_skh60","Rigitrac SKH 60",{"540","1000"}},
+    {"same_virtus_135_rvshift","SAME Virtus 135 RVShift",{"540","540E","1000"}},
+    {"zetor_crystal_16045","Zetor Crystal 16045",{"540","1000"}},
+    {"zetor_forterra_hsx","Zetor Forterra HSX",{"540","540E","1000","1000E"}},
+    {"zetor_proxima_hs","Zetor Proxima HS",{"540"}},
+}
+local matched={}
+for _,c in ipairs(smallCases) do
+    local id,label,wanted=table.unpack(c)
+    local obj={configFileName="/vehicles/test.xml",getName=function()return label end,
+        getMotor=function()return motor end,
+        getOutputPowerTakeOffs=function()return {rear={}} end}
+    local p=P.findTractor(obj)
+    assert(p~=nil and p.id==id,"small token: "..label.." -> "..tostring(p and p.id))
+    local cap=R.resolveCapability(obj)
+    assert(cap.source=="PROFILE",label.." capability source")
+    local count=0
+    for mode in pairs(cap.modes) do count=count+1 end
+    assert(count==#wanted,label.." unsourced speeds (expected "..#wanted..", got "..count..")")
+    for _,mode in ipairs(wanted) do
+        assert(cap.modes[M.normalizeMode(mode)]~=nil,label.." missing "..mode)
+    end
+    matched[id]=true
+end
+local representative={
+  claas_arion_400="claas_arion_400",
+  john_deere_6m="john_deere_6m",
+  mercedes_mb_trac_700_900="mercedes_mb_trac_700_900"
+}
+for _,id in ipairs(P.SMALL_CATALOG) do
+    assert(matched[id] or P.PENDING_SMALL[id],
+        "Small category unaccounted: "..id)
+end
+local function measured(label,mode)
+    local cap=R.resolveCapability({configFileName="/test.xml",
+        getName=function()return label end,getMotor=function()return motor end})
+    local m=cap.modes[M.normalizeMode(mode)]
+    assert(m~=nil,label.." no "..mode)
+    return m.effectiveMotorRatio*m.shaftRpm
+end
+assert(math.abs(measured("John Deere 3650","540")-2178)<0.001)
+assert(math.abs(measured("John Deere 3650","1000")-2172)<0.001)
+assert(math.abs(measured("Zetor Crystal 16045","540")-1900)<0.001)
+assert(math.abs(measured("Zetor Crystal 16045","1000")-2200)<0.001)
+assert(math.abs(measured("ARION 470","540E")-1560)<0.001)
+assert(math.abs(measured("ARION 470","1000")-1964)<0.001)
+assert(math.abs(measured("John Deere 6M 105","540")-1977)<0.001)
+assert(math.abs(measured("Mercedes MB-trac 700","1000")-2196)<0.001)
+assert(P.findTractor({getName=function() return "TK4.80 Methane Power" end})==nil)
+assert(P.findTractor({getName=function() return "Fendt 728 Vario" end}).id=="fendt_700_gen7")
+assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
+assert(P.findTractor({getName=function() return "8RX 340" end}).id=="john_deere_8rx_340")
+
 print("pto_resolver_harness: OK")
