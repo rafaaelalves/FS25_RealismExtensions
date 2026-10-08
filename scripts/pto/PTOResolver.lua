@@ -56,7 +56,6 @@ function Resolver.vehicleHasOutputPto(vehicle)
         return spec ~= nil and (
             tableHasEntries(spec.outputPowerTakeOffs)
             or tableHasEntries(spec.outputs)
-            or tableHasEntries(spec.powerTakeOffs)
         ) or false
     end
 

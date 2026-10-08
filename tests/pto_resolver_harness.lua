@@ -306,6 +306,18 @@ for _,case in ipairs(largeCases) do
     assert(R.vehicleHasOutputPto(vehicle)==false)
     assert(none.source=="PROFILE_OUTPUT_UNVERIFIED")
     assert(next(none.modes)==nil)
+
+    -- A generic PTO specialization/connector is NOT an installed rear
+    -- output. Do not confuse it with actual outputPowerTakeOffs.
+    vehicle.spec_powerTakeOffs={ powerTakeOffs={{}} }
+    assert(R.vehicleHasOutputPto(vehicle)==false)
+    assert(next(R.resolveCapability(vehicle).modes)==nil)
+
+    -- The GIANTS specialization exposes an actual populated output list.
+    vehicle.spec_powerTakeOffs={ outputPowerTakeOffs={{}} }
+    assert(R.vehicleHasOutputPto(vehicle)==true)
+    assert(R.resolveCapability(vehicle).modes[M.MODE.RPM_1000]~=nil
+        or R.resolveCapability(vehicle).modes[M.MODE.RPM_540_ECO]~=nil)
 end
 for _,id in ipairs(P.LARGE_CATALOG) do
     assert(tested[id]==true or P.PENDING_LARGE[id]~=nil,
