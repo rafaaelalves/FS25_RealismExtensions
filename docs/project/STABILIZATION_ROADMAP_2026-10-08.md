@@ -27,6 +27,10 @@
 | recursos de recuperação / cabos / guinchos | GIANTS Winch + mods externos | auditoria; considerar interface de serviços e clean-room em fase futura | controlar inércia/forças direto por dois mods |
 | comportamento de IA/Courseplay | GIANTS/CP/AD | detector estreito de estado; RC só normalização externa necessária | suprimir todos os sulcos de IA, reduzir genericamente a dificuldade para ajudantes |
 
+## 2026-10-08 — Auditoria FarmKit revisitada (verificada)
+
+[Auditoria suplementar no RC](https://github.com/rafaaelalves/FS25_RealismCompatibility/blob/main/docs/audits/farmkit/12-second-pass-2026-10-08.md): corrige o antigo ownership que favorecia ruts FarmKit; RE agora é único autor de geometria persistente nesta stack. Achados importantes para este roteiro: contador de ruts por roda/episódio sem confirmação física; collider estreitado pelo Realistic Plowing não deve virar largura nominal de pneu no `ContactFootprint`; Straw Refeed tem buffer em memória sem persistência; RC conservador suprime também a grama fora do campo; FarmKit 1.0.0.3 removeu Tow Chain. Auditoria do Recovery Winch segue na branch RC `research/recovery-winch-v1002-audit`, decisão externa e runtime pendente. **Nenhuma alteração de física ou calibração foi autorizada por essa revisão.**
+
 ## 2. Sequência de execução e gates
 
 ### P0 — Higiene e segurança da stack (curta, anterior às melhorias)
