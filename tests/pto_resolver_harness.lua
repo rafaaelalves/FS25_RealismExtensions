@@ -426,4 +426,86 @@ assert(P.findTractor({getName=function() return "Fendt 728 Vario" end}).id=="fen
 assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
 assert(P.findTractor({getName=function() return "8RX 340" end}).id=="john_deere_8rx_340")
 
+
+-- Official other-category carriers: evidence does not automatically grant a
+-- mechanical PTO gearbox if no GIANTS output shaft is instantiated.
+assert(#P.OTHER_PTO_CARRIERS_CATALOG==2)
+local otherCases={
+    {
+        id="pfanzelt_pm_trac_iii",
+        name="Pfanzelt Pm Trac III",
+        path="data/vehicles/pfanzelt/pmTracIII/pmTracIII.xml",
+        modes={"540E","1000"},
+        forbidden={"540","1000E"},
+        category="FORESTRY_TRACTOR"
+    },
+    {
+        id="merlo_multifarmer_mf44_9",
+        name="Merlo MF44.9CS-170-CVTRONIC",
+        path="data/vehicles/merlo/mf44_9CS/mf44_9CS.xml",
+        modes={"540","1000"},
+        forbidden={"540E","1000E"},
+        category="TELEHANDLER"
+    }
+}
+for _,case in ipairs(otherCases) do
+    for _,identityMethod in ipairs({"name","file"}) do
+        local vehicle={
+            configFileName=identityMethod=="file" and case.path or "/vehicles/other.xml",
+            getName=function()
+                if identityMethod=="file" then return "Non-matching display label"
+                else return case.name end
+            end,
+            getMotor=function() return motor end,
+            getOutputPowerTakeOffs=function() return {{attacherJointIndices={[1]=true}}} end,
+        }
+        local found=P.findTractor(vehicle)
+        assert(found and found.id==case.id,case.name.." profile identity mismatch "..identityMethod)
+        assert(found.catalogGroup==case.category)
+        assert(found.requiresOutputPto==true)
+        assert(type(found.evidenceUrl)=="string" and
+            found.evidenceUrl:find("https://",1,true)==1)
+        assert(R.vehicleHasOutputPto(vehicle)==true)
+        local capability=R.resolveCapability(vehicle)
+        assert(capability.profileId==case.id)
+        local count=0
+        for _ in pairs(capability.modes) do count=count+1 end
+        assert(count==#case.modes,case.name.." unexpected installed modes")
+        for _,mode in ipairs(case.modes) do
+            assert(capability.modes[M.normalizeMode(mode)]~=nil,
+                case.name.." missing supported mode "..mode)
+        end
+        for _,mode in ipairs(case.forbidden) do
+            assert(capability.modes[M.normalizeMode(mode)]==nil,
+                case.name.." advertised forbidden mode "..mode)
+        end
+        -- Missing physical output is a negative fact: zero modes, not 540
+        -- fallback, even if engine/three-point/hydraulics remain present.
+        vehicle.getOutputPowerTakeOffs=function() return {} end
+        assert(R.vehicleHasOutputPto(vehicle)==false)
+        local missing=R.resolveCapability(vehicle)
+        assert(missing.source=="PROFILE_OUTPUT_UNVERIFIED")
+        assert(next(missing.modes)==nil)
+        -- The generic specialization is not physical PTO shaft evidence.
+        vehicle.spec_powerTakeOffs={powerTakeOffs={{}}}
+        assert(R.vehicleHasOutputPto(vehicle)==false)
+        assert(next(R.resolveCapability(vehicle).modes)==nil)
+        vehicle.spec_powerTakeOffs={outputPowerTakeOffs={{}}}
+        assert(R.vehicleHasOutputPto(vehicle)==true)
+        assert(#M.sortedModes(R.resolveCapability(vehicle).modes)==#case.modes)
+    end
+end
+-- Reviewed special vehicles cannot be accidentally claimed by either profile.
+for _,name in ipairs({
+    "NEXAT Carrier Vehicle", "Prinoth Leitwolf Agripower",
+    "ROPA NawaRo-Maus", "JCB World's Fastest Tractor",
+    "Heizomat Heizotruck V2", "Sennebogen 340G",
+    "Merlo EW 25.5-90", "JENZ HEM 922 DQ"
+}) do
+    assert(P.findTractor({getName=function()return name end})==nil,
+        name.." must not borrow tractor PTO gearbox profile")
+end
+assert(P.findTractor({getName=function()return "Fendt 728 Vario" end}).id
+    =="fendt_700_gen7")
+
 print("pto_resolver_harness: OK")

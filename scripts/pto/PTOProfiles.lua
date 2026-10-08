@@ -41,6 +41,23 @@ Profiles.PENDING_SMALL = {
         "TK4.80 diesel documents 540/540E and optional 540/1000; methane-powered FS25 machine's exact PTO gearbox needs confirmation"
 }
 
+-- Two official base-game mechanical PTO carriers are classified outside
+-- the small/medium/large tractor store shelves.
+Profiles.OTHER_PTO_CARRIERS_CATALOG = {
+    "pfanzelt_pm_trac_iii",          -- Forestry / Forestry Tractor
+    "merlo_multifarmer_mf44_9"     -- Loaders / Telehandlers
+}
+-- Catalogued separately as reviewed but NOT approved for the rear 540/1000
+-- selector. They are not evidence of a conventional tractor PTO gearbox.
+Profiles.OTHER_DRIVABLES_REVIEWED = {
+    "nexat_carrier", "prinoth_leitwolf_agripower",
+    "ropa_nawaro_maus", "jcb_worlds_fastest_tractor",
+    "heizomat_heizotruck_v2", "self_propelled_harvesters",
+    "self_propelled_mixers_and_chippers", "wheel_and_skid_loaders",
+    "telehandlers_except_merlo_multifarmer", "road_and_agro_trucks",
+    "forestry_forwarders_harvesters_and_log_loaders"
+}
+
 -- Medium tractor store category inventory as of FS25 1.24 (base + DLC).
 -- The set is separate from installed capabilities: catalog coverage does NOT
 -- enable a feature. Some vehicles are still source- or package-ambiguous.
@@ -102,13 +119,18 @@ local function tractor(id, tokens, spec, source, note)
     }
 end
 
-local function largeTractor(id, tokens, spec, source, note)
+local function verifiedOutputCarrier(id, tokens, spec, source, note, category)
     local entry = tractor(id, tokens, spec, source, note)
-    -- Crucial for high-horsepower tractors: a documented optional factory PTO
-    -- is NOT necessarily fitted to the individual FS25 vehicle.
-    -- Require native, instantiated PTO output before exposing the gearbox.
+    -- A manufacturer PTO specification does not demonstrate that its output
+    -- is fitted to the exact in-game vehicle configuration. This guard also
+    -- applies to telehandlers and forestry tractors, not only large tractors.
     entry.requiresOutputPto = true
+    entry.catalogGroup = category
     return entry
+end
+
+local function largeTractor(id, tokens, spec, source, note)
+    return verifiedOutputCarrier(id, tokens, spec, source, note, "LARGE_TRACTOR")
 end
 
 Profiles.TRACTORS = {
@@ -368,6 +390,24 @@ Profiles.TRACTORS = {
         {{"540"},{"540E"},{"1000"},{"1000E"}},
         "https://www.zetor.com/zetor-crystal-technical-parameters",
         "Crystal HD170 standard four-speed PTO."),
+    -- Native PTO drives outside tractor store categories.
+    -- Both need a populated GIANTS output, otherwise zero selectable modes.
+    -- Source evidence describes the REAL rear gearbox, not its actual FS25 fit.
+    verifiedOutputCarrier("pfanzelt_pm_trac_iii",
+        {"pm trac iii", "pm-trac iii", "pm trac 3", "pmtraciii",
+         "pmtrac iii", "pm trac iii 4f", "pmtrac iii 4f"},
+        {{"540E"}, {"1000"}},
+        "https://www.pfanzelt.com/en/forestry-tractors/pmtrac/",
+        "Current Pm Trac III rear gearbox 540E/750/1000; an alternative package is documented as 1000E/1000/1450. Older Pm Trac brochure lists 540/540E/1000/1000E. Common safely representable rear speeds are 540E and 1000; 750/1450 are NOT economy modes. The in-game rear PTO must be physically installed.",
+        "FORESTRY_TRACTOR"),
+    verifiedOutputCarrier("merlo_multifarmer_mf44_9",
+        {"mf44.9cs-170", "mf44.9cs", "mf44_9cs", "mf44.9 cs",
+         "mf 44.9 cs", "multifarmer 44.9", "mf44.9cs-170-cvtronic"},
+        {{"540"}, {"1000"}},
+        "https://www.merlo.de/teleskoplader/multifarmer/mf-44-9/",
+        "Merlo MF44.9CS-170-CVTRONIC telescopic tractor has a mechanical rear two-speed 540/1000 with electrohydraulic clutch; rear three-point hitch alone does NOT establish an FS25 output PTO. Actual GIANTS output is required.",
+        "TELEHANDLER"),
+
     -- Large shop: source-backed mechanical rear gears, never a union of all
     -- mutually exclusive factory PTO packages.
     -- EVERY large entry requires a real GIANTS rear output (see PTOResolver).
