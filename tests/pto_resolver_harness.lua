@@ -315,6 +315,17 @@ assert(P.findTractor({getName=function() return 'Versatile 1080 "Big Roy"' end})
 assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
 assert(P.findTractor({getName=function() return "John Deere 9RX 830" end}).id=="john_deere_9rx_710_830")
 assert(P.findTractor({getName=function() return "John Deere 8RX 410" end}).id=="john_deere_8rx")
+assert(P.findTractor({getName=function() return "8RX 340" end}).id=="john_deere_8rx_340")
+assert(P.findTractor({getName=function() return "8R 250" end}).id=="john_deere_8r_250")
+assert(P.findTractor({getName=function() return "8RT 340" end}).id=="john_deere_8rt")
+local function shaftRatioFor(label)
+    local v={getName=function() return label end,getMotor=function() return motor end,getOutputPowerTakeOffs=function() return {rear={}} end}
+    return R.resolveCapability(v).modes[M.MODE.RPM_1000].effectiveMotorRatio
+end
+assert(math.abs(shaftRatioFor("8RX 340")-(1995/1000))<0.000001)
+assert(math.abs(shaftRatioFor("8R 250")-(1995/1000))<0.000001)
+assert(math.abs(shaftRatioFor("XERION 12.650")-(1500/1000))<0.000001)
+assert(math.abs(shaftRatioFor("Valtra S Series")-(1882/1000))<0.000001)
 assert(P.findTractor({getName=function() return "Ford 976 Versatile" end}).id=="ford_976_versatile")
 assert(P.findTractor({getName=function() return "Steiger 785 Quadtrac Black Edition" end}).id=="case_ih_steiger_715_785_black")
 

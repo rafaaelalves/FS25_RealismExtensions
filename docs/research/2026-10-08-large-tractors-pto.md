@@ -19,15 +19,15 @@ Of 26 entries, **25 have evidence-backed family mode definitions; 1 stays pendin
 | Massey Ferguson MF 9S | 540E/1000 | [Technical reference](https://www.masseyferguson.com/en_gb/product/tractors/mf-9s.html) | 1000/1000E alternative factory pack |
 | Versatile MFWD | 1000 | [Technical reference](https://www.versatile-ag.com/na/pages/product_mfwd.php) | 540/1000 optionally on smaller engine versions |
 | New Holland T8 GENESIS | 1000 | [Technical reference](https://assets.cnhindustrial.com/nhag/nar/en-us/assets/pdf/agricultural-tractors/t8-plm-spec-sheet-us-en.pdf) | other shaft options vary by model |
-| John Deere 7R | 1000@1950 | [Technical reference](https://www.deere.com/assets/pdfs/region-1/products/tractors/7R_Brochure.pdf) | manual 540/1000 and 540E/1000/1000E options not silently added |
-| John Deere 8R | 1000@1995 | [Technical reference](https://www.deere.com/en-us/products-and-solutions/tractors/row-crop-4wd-tractors/8r-250-tractor-odexmvjx) | 540/1000 or 1000/1000E options |
+| John Deere 7R | 1000 | [Technical reference](https://www.deere.com/assets/pdfs/region-1/products/tractors/7R_Brochure.pdf) | manual 540/1000 and 540E/1000/1000E options not silently added |
+| John Deere 8R | 1000 (8R 250 verified @1995) | [Technical reference](https://www.deere.com/en-us/products-and-solutions/tractors/row-crop-4wd-tractors/8r-250-tractor-odexmvjx) | 540/1000 or 1000/1000E options |
 | Fendt 900 Vario | 540E/1000 | [Technical reference](https://www.fendt.com/nl/geneva-assets/article/126276/700249-fendt900vario-2101-td-en.pdf) | 1000/1000E alternative |
 | Case IH Magnum AFS Connect | 1000@1803 | [Technical reference](https://www.caseih.com/en-gb/europe/products/tractors/magnum-afs-connect/magnum) | 540/1000 optional |
 | Fendt 1000 Vario | 1000/1000E | [Technical reference](https://api.fendt.com/techdata/BR/pt/1161054/Fendt%201000%20Vario%20Gen3) | PTO itself optional; real 1300 outside current model |
-| John Deere 8RT | 1000 | [Technical reference](https://www.deere.com/assets/pdfs/region-4/industries/government-and-military-sales/contracts/price-pages/agricultural/A2_6000-8000_20210203.pdf) | family 1995 engine target should be calibrated |
+| John Deere 8RT | 1000 (engine RPM not cross-inferred) | [Technical reference](https://www.deere.com/assets/pdfs/region-4/industries/government-and-military-sales/contracts/price-pages/agricultural/A2_6000-8000_20210203.pdf) | family 1995 engine target should be calibrated |
 | Fendt 1100 Vario MT | 1000/1000E | [Technical reference](https://api.fendt.com/techdata/GB/en/1152877/Fendt-1100-Vario-MT) | PTO optional; 1300 option depends trim |
 | John Deere 9R (440–640) | 1000 | [Technical reference](https://www.deere.ca/en/tractors/4wd-track-tractors/9r-590/) | optional PTO fit |
-| John Deere 8RX | 1000@1995 | [Technical reference](https://www.deere.com/en/tractors/row-crop-tractors/row-crop-8-family/8rx-340-tractor/) | 540/1000 or 1000/1000E optional |
+| John Deere 8RX | 1000 (8RX 340 verified @1995) | [Technical reference](https://www.deere.com/en/tractors/row-crop-tractors/row-crop-8-family/8rx-340-tractor/) | 540/1000 or 1000/1000E optional |
 | Versatile DeltaTrack | 1000 | [Technical reference](https://www.versatile-ag.com/NA/pages/product_dt.php) | optional output; do not infer from category |
 | John Deere 9RX (490–640) | 1000 | [Technical reference](https://www.deere.ca/en/tractors/4wd-track-tractors/9rx-590/) | independent rear shaft |
 | CLAAS XERION 12 | 1000@1500 | [Technical reference](https://www.claas.com/caas/v1/media/1328946/data/738cb304d52f63b9be6f3d4eb853b7c9) | rear output hardware verified in game |
@@ -63,3 +63,9 @@ Next physical integration samples should prioritize:
 - Case Magnum 1000, PTO under AI and manual operation.
 - Confirm there are **no frame-hot re-detections**; bridge caches per vehicle+revision.
 - 1300 RPM model migration is explicitly deferred.
+
+### Evidence-scope correction
+
+- John Deere 7R's `1950` target is published in an older 7R brochure but not specific to every 2020 FS25 7R. Generic 7R retains 1000 gear without this exact nominal engine ratio.
+- John Deere 8RT engine RPM must not borrow 8R data without a tracked-tractor drivetrain spec.
+- John Deere 8R 250 and 8RX 340 use their own manufacturer-verified 1000@1995 values; other models in these families only claim the standard 1000 PTO gear. The tests distinguish the submodels.
