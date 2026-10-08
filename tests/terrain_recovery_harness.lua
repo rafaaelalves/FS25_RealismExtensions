@@ -173,6 +173,7 @@ SpecializationUtil={
     registerOverwrittenFunction=function() end
 }
 dofile("scripts/terrain/TillageRecoveryProfiles.lua")
+dofile("scripts/terrain/TerrainPassTracker.lua")
 dofile("scripts/terrain/TerrainWorkContext.lua")
 dofile("scripts/terrain/TerrainRecovery.lua")
 
@@ -235,6 +236,8 @@ assert(d.targetPatchRecoveredDepthM>=0.139)
 assert(d.targetPatchSampleFailures==0)
 assert(d.toolProfiles.CULTIVATOR~=nil)
 assert(d.toolProfiles.CULTIVATOR.targetApplied==targetCalls)
+assert(d.passStarted>=1 and d.passActive>=1)
+assert(RealismExtensionsTerrainPassTracker.getActivePassId(vehicle,"CULTIVATOR")~=nil)
 
 -- 2. An initial positive mound with stale rut history is not touched. Positive
 -- correction is only allowed after a target sequence started from a causal rut.
@@ -329,6 +332,8 @@ Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
+assert(Recovery.getDiagnostics().passActive==0)
+assert(Recovery.getDiagnostics().passCompleted>=1)
 assert(perfBegins==perfFinishes)
 
 print("terrain_recovery_r7_tillage_profiles_harness: OK")
