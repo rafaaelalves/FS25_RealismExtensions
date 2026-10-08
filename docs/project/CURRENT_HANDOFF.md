@@ -1,5 +1,7 @@
 # Current development handoff
 
+**Stabilization overview — 2026-10-08:** [Integrated RC/RE roadmap](STABILIZATION_ROADMAP_2026-10-08.md). This is an additive planning note; detailed R5–R9 runtime history below is preserved. PTO is tracked in another development conversation and excluded from this work.
+
 Updated: 2026-10-02
 
 ## Read this first

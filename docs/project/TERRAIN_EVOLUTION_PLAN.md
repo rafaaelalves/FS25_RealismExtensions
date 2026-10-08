@@ -2,7 +2,9 @@
 
 Updated: 2026-10-02
 
-Status: canonical plan for the next TerrainDeformation / TerrainRecovery development phase.
+Status: canonical terrain-algorithm plan for the next TerrainDeformation / TerrainRecovery development phase.
+
+**Integrated stabilization plan (2026-10-08):** [STABILIZATION_ROADMAP_2026-10-08.md](STABILIZATION_ROADMAP_2026-10-08.md). This also tracks wide/narrow/dual/triple/track contact coverage, difficulty-balance hypotheses and recovery-winch audit gates. No new difficulty coefficient has been approved.
 
 This document starts from the first runtime-validated TerrainRecovery baseline. The goal is no longer to prove that recovery can work; the goal is to evolve it into a coherent soil-interaction system without losing monotonic convergence, ownership boundaries or observability.
 
