@@ -112,3 +112,16 @@ Decision:
   bridge;
 - no functional RE implementation was added;
 - static/source/CI work is complete; in-game runtime validation remains.
+
+
+## Deferred focused experiments
+
+The accepted Mud 1.3.6 + Reifen 1.2.2.70 + RMS 0.11 version line still has
+non-blocking focused experiments preserved in:
+`docs/project/DEFERRED_EXPERIMENTS.md`.
+
+Highest-priority deferred question:
+RMS dynamic drivetrain topology vs Reifen FORCE-WEAR cached driven shares.
+
+These experiments do not reopen the already-passed full-stack smoke or migrated
+save reload.
