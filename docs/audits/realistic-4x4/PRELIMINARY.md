@@ -61,3 +61,8 @@ Primary likely outcome:
 - extract useful behavior/UX ideas;
 - improve RMS integration or propose improvements to RMS;
 - only consider functional replacement if source evidence shows RMS cannot represent the desired real differential behavior.
+
+
+## Update — 2026-10-08
+
+**This file is preserved only as the 2026-09-29 preliminary record.** Subsequently the user supplied exact ZIP versions and audits examined 4x4 v1.4, v1.6 and v1.7, together with Hydraulic Suspension v1.0. Current policy and forward tests are documented in [ADR 0005 — selective 4WD and hydraulic suspension](../../decisions/0005-four-wheel-drive-hydraulic-suspension-selective-reimplementation.md). Do not treat the preliminary lack-of-ZIP note above as the current audit status. **No RE functionality was absorbed.**

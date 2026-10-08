@@ -21,7 +21,8 @@ Status vocabulary:
 | tire/track wear state | Reifenverschleiss | CANDIDATE_ABSORB | audit logic, persistence, visuals and workshop separately |
 | visual tire/track wear | Reifenverschleiss custom shader/material path | EVALUATE | asset/shader strategy required before replacement |
 | mechanical system degradation | RMS | EXTERNAL | keep specialist; Extensions may surface normalized state |
-| 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | keep RMS physical owner; study richer AUTO/lock decision provider from audited 4x4 ideas |
+| 2WD/4WD/differential behavior | RMS | EXTERNAL + IMPROVE | after 4x4 1.7 source audit: keep RMS differential topology/actuation; improve AUTO/SMART policy upstream or via stable RMS demand API; [ADR 0005](../decisions/0005-four-wheel-drive-hydraulic-suspension-selective-reimplementation.md) |
+| Active hydraulic front suspension / self-leveling / loader ride control | unowned or fragmented; external Hydraulic Suspension System candidate | CANDIDATE_ABSORB | selective clean-room RE research after proving an actual actuator, exclusive MR suspension composition and bounded controller; [ADR 0005](../decisions/0005-four-wheel-drive-hydraulic-suspension-selective-reimplementation.md) |
 | PTO modes / live PTO RPM / hand throttle | Dynamic PTO + RC bridges | CANDIDATE_ABSORB | strong candidate for native Extensions module |
 | PTO-to-MR/RMS composition | RC | EXTERNAL/BRIDGE | retain compatibility boundary even after PTO absorption |
 | persistent agronomic compaction | SoilCompaction | EXTERNAL | keep specialist |
