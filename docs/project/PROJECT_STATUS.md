@@ -125,3 +125,27 @@ RMS dynamic drivetrain topology vs Reifen FORCE-WEAR cached driven shares.
 
 These experiments do not reopen the already-passed full-stack smoke or migrated
 save reload.
+
+
+## Realistic Harvesting 1.6.2 audit
+
+Exact package SHA:
+`34419a1d37436b10cf4e45318bfaf697c13627ed15d2e65fb74f49f227de66dd`.
+
+Static/source audit is complete.
+
+Decision:
+- **KEEP + INTEGRATE**;
+- current single-player/trusted stack may update from 1.6.0.0 to 1.6.2.0 with
+  save backup + normal harvest/save/reload smoke;
+- no RC/RE functional patch is required before update;
+- RHM remains harvest-process owner, MR/RMS remain drivetrain/mechanical owners;
+- public `RHM_Api` is the preferred future integration boundary;
+- FarmKit Straw Refeed remains deliberately unbridged;
+- dedicated-server validation remains separate because upstream issue #67 is
+  currently open;
+- new Harvest History has source-confirmed analytics/accounting issues that do
+  not change physical tank loss.
+
+Audit:
+`docs/audits/realistic-harvesting/`.
