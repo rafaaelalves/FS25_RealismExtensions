@@ -220,4 +220,36 @@ assert(spec.mode==M.MODE.RPM_540)
 assert(math.abs(spec.handThrottlePercent-0.25)<0.000001)
 assert(#readKeys==2)
 
+-- Event-based late native PTO output discovery. The forestry/telehandler
+-- specialization can load its output after Control:onLoad, but before the
+-- final onPostLoad. This must work without a per-frame polling controller.
+local lateOutputs={}
+local delayed={
+    configFileName="data/vehicles/merlo/mf44_9CS/mf44_9CS.xml",
+    getName=function()return "Merlo MF44.9CS-170-CVTRONIC" end,
+    getMotor=function()return motor end,
+    getOutputPowerTakeOffs=function()return lateOutputs end,
+    getAttachedImplements=function()return {} end,
+    getNextDirtyFlag=function()return 16 end
+}
+C.onLoad(delayed,nil)
+local dl=delayed[C.SPEC_TABLE]
+assert(dl~=nil and dl.hasPtoOutput==false)
+assert(C.getPublicState(delayed)==nil)
+assert(next(dl.capability.modes)==nil)
+lateOutputs={{attacherJointIndices={[1]=true}}}
+C.onPostLoad(delayed,nil)
+assert(dl.hasPtoOutput==true)
+assert(dl.capability.profileId=="merlo_multifarmer_mf44_9")
+assert(dl.availableModes[M.MODE.RPM_540]~=nil)
+assert(dl.availableModes[M.MODE.RPM_1000]~=nil)
+assert(dl.availableModes[M.MODE.RPM_540_ECO]==nil)
+assert(C.getPublicState(delayed).hasPtoOutput==true)
+-- A previously loaded instance with physical output removed is fail-closed.
+lateOutputs={}
+C.onPostLoad(delayed,nil)
+assert(dl.hasPtoOutput==false)
+assert(next(dl.availableModes)==nil)
+assert(C.getPublicState(delayed)==nil)
+
 print("pto_control_harness: OK")

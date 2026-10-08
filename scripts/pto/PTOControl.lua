@@ -321,6 +321,17 @@ function Control:onPostLoad(savegame)
     local spec = getSpec(self)
     if spec == nil or spec.enabled ~= true then return end
 
+    -- Some vehicle types finish loading their native outputPowerTakeOffs
+    -- after another specialization's onLoad. Re-resolve exactly once at
+    -- onPostLoad: never add frame polling and never grant an uninstalled PTO.
+    -- Factory / future installed hardware remains the authority.
+    spec.hasPtoOutput = Resolver.vehicleHasOutputPto(self)
+    spec.capability = Resolver.resolveCapability(self)
+    spec.availableModes = spec.capability.modes
+    if not isAvailable(spec, spec.mode) then
+        spec.mode = firstAvailableMode(spec.capability)
+    end
+
     if savegame ~= nil and savegame.xmlFile ~= nil then
         local modName = tostring(g_currentModName or "FS25_RealismExtensions")
         local key = savegame.key .. "." .. modName .. "." .. Control.SPEC_NAME

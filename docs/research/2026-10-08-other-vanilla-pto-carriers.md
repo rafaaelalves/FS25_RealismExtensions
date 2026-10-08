@@ -51,3 +51,7 @@ The Pm Trac is not guaranteed to have rear PTO just because the real manufacture
 ### Pfanzelt installed-package uncertainty
 
 The proposed 540E/1000 RE profile is a **projection of the current documented standard Pm Trac III package into our supported 4-mode engine**, not an assertion that every factory version has both gears. The optional Pfanzelt rear gearbox changes the economy gear family (1000E, 1000, 1450). If the FS25 unit uses the optional package, 540E must be withheld and the installed `ptoPackageId` must distinguish it. A populated GIANTS output proves **a shaft is present**, but not the shaft's gear package. This limitation remains documented for later XML validation / factory-package architecture; do not advertise full physical accuracy yet.
+
+### Event-based late initialization hardening
+
+`PTOControl.onPostLoad` now performs one last `vehicleHasOutputPto` + `resolveCapability` lookup after all `onLoad` specializations have populated their `outputPowerTakeOffs` arrays; selected mode is revalidated before applying saved operator state. This avoids false inactive results for Merlo/Pfanzelt and also applies to the optional Large-tractor output profiles. It is **one extra lookup per vehicle load, not a per-frame poll**. The control harness now exercises output missing on onLoad, appearing by onPostLoad, then absent again (fail-closed).
