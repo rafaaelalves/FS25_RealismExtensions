@@ -41,3 +41,7 @@ Do not duplicate current status into audit/research notes. Link back to `CURRENT
 - `audits/reifenverschleiss/README.md` — Reifenverschleiss deep architecture audit and 1.2.2.70 interoperability update.
 
 - `audits/realistic-diesel-start/README.md` — RDS 1.4 update audit; native ADS/Fuel/RealisticBrakes integration partially retires the legacy RDSADS bridge.
+
+
+## Deferred experiments
+- `project/DEFERRED_EXPERIMENTS.md` — focused post-promotion experiments for RMS/Reifen topology, structural radius, puncture/pressure, local wetness, Mud generation atomicity and native RE PTO/RMS causality.
