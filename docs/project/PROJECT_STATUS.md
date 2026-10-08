@@ -1,6 +1,15 @@
 # Project status
 
-Updated: 2026-09-30
+Updated: 2026-10-08
+
+## Native PTO consolidation checkpoint (2026-10-08)
+
+- Draft PR #33 selectively ports the native PTO feature onto main without importing experimental terrain or recovery code.
+- Main-based companion bridge is RC draft PR #16; both consolidated branches passed Lua/XML/harness/ZIP CI gates.
+- PTOController/HUD/manual governor are included; PTOControl is enabled on this candidate branch only.
+- Release blocker: final combined in-game smoke must verify PTO vs non-PTO classification, MR and RMS native PTO bridges and existing Mud/Reifen/RMS interoperability.
+- Canonical experimental terrain branch remains `feat/terrain-recovery` and is not merged as part of PTO.
+- Sections below retain earlier terrain-baseline history.
 
 ## Current release line
 

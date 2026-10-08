@@ -1,7 +1,7 @@
 # ADR 0006 — PTO manual engine governor with causal load
 
 Date: 2026-10-07
-Status: proposed for runtime validation
+Status: runtime-validated on experimental PTO line; selective main-based RE/RC build smoke pending
 
 ## Context
 
@@ -195,3 +195,7 @@ specialization, etc. are not sufficient by themselves.
 This is intentionally stricter than broad heuristic detection. A real mod PTO
 implement that exposes none of the contracts above should receive a profile
 rather than causing every generic powered implement to be guessed as PTO.
+
+## Consolidation checkpoint — 2026-10-08
+
+The previous experimental PTO line completed targeted in-game tests for non-PTO cultivator classification and actual 540-RPM PTO consumption, while harnesses covered player/AI/unattended control and mechanical bridges. The selective main-based branches (RE PR #33 and RC PR #16) now pass their CI harness/build gates. The last outstanding acceptance gate is a short **combined in-game smoke on the two clean artifacts**; this ADR is not final-release accepted until that passes. Never merge the experimental terrain history as part of PTO integration.

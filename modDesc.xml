@@ -7,8 +7,8 @@
         <br>Extensões de Realismo</br>
     </title>
     <description>
-        <en><![CDATA[Modular realism extensions that add missing physical and environmental consequences while preserving specialist-mod ownership. Version 0.0.1.0 is an infrastructure-only foundation with no gameplay effects.]]></en>
-        <br><![CDATA[Extensões modulares de realismo que adicionam consequências físicas e ambientais ausentes, preservando a responsabilidade dos mods especialistas. A versão 0.0.1.0 é apenas a fundação de infraestrutura, sem efeitos de gameplay.]]></br>
+        <en><![CDATA[Modular realism extensions that add missing physical and environmental consequences while preserving specialist-mod ownership. This version adds native manual PTO control alongside the existing modular terrain foundation; drivetrain physics and wear remain owned by specialist mods.]]></en>
+        <br><![CDATA[Extensões modulares de realismo que adicionam consequências físicas e ambientais ausentes, preservando a responsabilidade dos mods especialistas. Esta versão adiciona controle manual nativo da TDP à fundação modular de terreno, preservando a física da transmissão e o desgaste nos mods especialistas.]]></br>
     </description>
     <iconFilename>icon.dds</iconFilename>
     <multiplayer supported="true"/>
