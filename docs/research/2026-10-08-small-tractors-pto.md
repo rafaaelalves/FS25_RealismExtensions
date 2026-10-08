@@ -4,7 +4,7 @@ Inventory scope: [official FS25 small tractor shop](https://farmingsimulator.wik
 
 - **24 shop families** with source-backed rear PTO mode candidates.
 - **1 pending**: New Holland TK4.80 **Methane Power**. The manufacturer publishes [TK4.80 diesel PTO 540/540E and optional 540/1000](https://assets.cnhindustrial.com/nhag/apac/en/assets/pdf/agriculture-tractors/tk4-brochure-apac-en.pdf), but identical mechanical rear PTO configuration has not been verified for the *methane-powered FS25 variant*. No speculative profile is installed.
-- **27 concrete profile records**: 24 shop families split into independent entries when exact engine data exist for ARION 470, 6M 105 and MB-trac 700. A source URL and gearbox note live alongside each runtime profile; only speed mode keys and optional model-specific engine RPM affect gameplay.
+- **28 concrete profile records**: 24 shop families split into independent entries when exact engine data exist for ARION 470, 6M 105 and MB-trac 700. A source URL and gearbox note live alongside each runtime profile; only speed mode keys and optional model-specific engine RPM affect gameplay.
 
 ## Equipment manufacturer / technical references
 
@@ -54,4 +54,8 @@ Inventory scope: [official FS25 small tractor shop](https://farmingsimulator.wik
 - **Unverified exact RPM:** standard `PTOModel.resolveMotorRatio` fallback remains an approximation when only available modes are verified. No other model gets the tested 6M 105, Arion 470 or MB-trac 700 ratios.
 - **Future per-tractor upgrades (no gameplay in scope):** keep family/base PTO spec immutable; future package stored as installed hardware per vehicle and revised on workshop transactions. RE owns package/selection and RC reads only current selected effective ratio. No shop, save schema, price, PTO retrofits or 750/1400 network changes now.
 - **Performance:** profile table consulted only on resolver/load events, no new per-frame queries.
-- **Validation:** the `pto_resolver_harness` asserts 25/25 shop IDs, 27 source-backed model profiles, exact target ratios for five models, the absent methane profile, and no cross-category collisions with Fendt 700, JD 7R/8RX.
+- **Validation:** the `pto_resolver_harness` asserts 25/25 shop IDs, 28 source-backed model profiles, exact target ratios for five models, the absent methane profile, and no cross-category collisions with Fendt 700, JD 7R/8RX.
+
+### Claas ARION 570 vs 530–560
+
+[CLAAS manufacturer release](https://www.claas.com/en-tw/press/press-releases/2025-02-11-arion-570) proves all 540/540E/1000/1000E gears on the 570 CMATIC, but not the same factory gearbox on lesser ARION 530–560. [Historical ARION 530 specification](https://www.tractordata.com/farm-tractors/006/5/8/6583-claas-arion-530.html) distinguishes 540/1000 base and optional four-speed. Only 570 now defaults to four speeds; other variants conservatively keep 540/1000 until the actual FS25-installed package is known.
