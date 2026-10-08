@@ -12,7 +12,7 @@ FS25 1.24 medium tractors (vanilla + official DLC) follow the 24-family list on 
 |---|---|---|
 | AGCO White 8010 | 1000; 8510 gets 540/1000 | [TractorData 8510](https://www.tractordata.com/farm-tractors/002/3/8/2384-agco-white-8510.html), [8610](https://www.tractordata.com/farm-tractors/002/3/8/2385-agco-white-8610.html), [8710](https://www.tractordata.com/farm-tractors/002/3/8/2386-agco-white-8710.html); series variants differ |
 | Case IH Puma AFS Connect | 1000 | [Case IH AFS Puma specification](https://assets.cnhindustrial.com/caseih/NAFTA/NAFTAASSETS/Products/Tractors/AFS-Connect-Puma/AFS_Puma_Spec_Sheet_CIH23020701_pages%20%281%29.pdf); incompatible optional 540/1000, 540E/1000 and 1000/1000E packages |
-| Challenger MT600 | 540/1000 | [MT635 technical](https://www.tractordata.com/farm-tractors/003/8/2/3827-challenger-mt635.html); tested engine ratios apply only to MT635 |
+| Challenger MT600 | 540/1000 | [MT635 technical](https://www.tractordata.com/farm-tractors/003/8/2/3827-challenger-mt635.html); separate MT635 exact ratio from generic MT600 capability |
 | DEUTZ-FAHR AgroStar 8.31 | 1000 | [TractorData](https://www.tractordata.com/farm-tractors/002/1/2/2122-deutz-fahr-831.html) |
 | DEUTZ-FAHR 6230 TTV | 540E/1000/1000E | [DEUTZ official Series 6](https://www.deutz-fahr.com/en-ea/tractors/series-6) |
 | DEUTZ-FAHR Series 7 TTV HD | 540E/1000/1000E | [DEUTZ official 7250 TTV](https://www.deutz-fahr.com/en-eu/tractors/7250-ttv-warrior) |
@@ -20,7 +20,7 @@ FS25 1.24 medium tractors (vanilla + official DLC) follow the 24-family list on 
 | Fendt 700 Gen7 | 540/540E/1000/1000E | [Original Gen7 Fendt data](https://www.fendt.com/int/geneva-assets/article/150214/905890-fendt700variogen7-2201-td-en-web-v2.pdf): rear engine RPM 1618/1283/1649/1308; this is **Gen7**, not Gen7.1 |
 | Fiat 160-90 DT | 540/1000 | [DLG independent test](https://pruefberichte.dlg.org/filestorage/FIAT_160-90_Nr976_1985-englisch.pdf): 1950/2074 engine RPM |
 | JCB Fastrac 4000 iCON | 540/540E/1000/1000E | [JCB technical specification](https://www.jcb.com/globalassets/digizuite/53520-29846-fastrac-4000-8000-series-e-spec-fr-fr-issue-1-lr/) |
-| John Deere 6R 145–185 | 540/540E/1000 | [John Deere 6R 145](https://www.deere.ca/en/tractors/row-crop-tractors/row-crop-6-family/6145r-tractor/); exact RPM family may differ by model; 6R 155 retains its own verified values |
+| John Deere 6R 145–185 | 540/540E/1000 | [John Deere 6R 145](https://www.deere.ca/en/tractors/row-crop-tractors/row-crop-6-family/6145r-tractor/); exact engine RPM restricted to the 145 and existing 155 entry, other variants omit ratios |
 | John Deere 6R 230–250 | 540E/1000/1000E | [John Deere 6R 250](https://www.deere.ca/en/tractors/utility-tractors/6-family-utility-tractors/6250r/); 540/540E/1000 alternative factory pack, not mixed |
 | Kubota M8 | 540/540E/1000/1000E | [Kubota official catalog](https://www.kubotausa.com/docs/default-source/brochure-sheets/2024-full-product-line-brochure.pdf) |
 | Massey Ferguson 7S | 540/1000 | [MF 7S options](https://www.masseyferguson.com/en/product/tractors/mf-7s.html) and [brochure with distinct Dyna-6/Dyna-VT gearing](https://www.masseyferguson.com/content/dam/public/masseyfergusonglobal/markets/en_au/assets/product-brochures/tractors/mf-7s/240622_MF_7S_Brochure.pdf) |
@@ -66,3 +66,10 @@ Implementation seam to preserve today: public API `RealismExtensionsPTO.getVehic
 - One capability resolution on load or a real attachment/hardware change; no frame-by-frame catalog scanning.
 - Keep existing PR smoke requirements. Profile expansion changes power-to-shaft ratio and available PTO positions, so *unit tests alone are not a guarantee of correct in-game gearing for every model*. Future runtime spot checks should include 540-only, 1000-only, 3-speed, 4-speed and optioned tractor with PTO load.
 - Never merge unrelated terrain or RC physics changes as part of a PTO catalog addition.
+
+## Evidence handling correction
+
+- Fiat 180-90 uses its own [Fiat model source](https://www.tractordata.com/farm-tractors/002/0/2/2021-fiat-180-90.html), not a borrowed 160-90 source.
+- Challenger MT635 engine RPM 1991/2091 is specific to that variant; MT645–MT665 have modes but no borrowed numerical targets.
+- John Deere 6R 145 engine RPM values are specific to that model; 165/175/185 modes do not borrow the 145 nominal ratio. The 155 retains its existing profile.
+- Manufacturer manuals for the Unimog [U2400](https://www.camion4x4.com/fiche_tech/u2400) and [modern Unimog](https://special.mercedes-benz-trucks.com/en/the-unimog-implement-carrier/general/start.html) confirm optional mechanical PTO installations, but not which rear PTO configuration is fitted in the FS25 DLC. Therefore both remain unresolved rather than falsely unlocked.

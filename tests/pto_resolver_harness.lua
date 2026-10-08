@@ -184,7 +184,7 @@ end
 local coverage={
     agco_white_8010={"AGCO White 8010", "agco_white_8010"},
     case_ih_puma_afs={"Puma 260", "case_ih_puma_afs"},
-    challenger_mt600={"Challenger MT635", "challenger_mt600"},
+    challenger_mt600={"Challenger MT645", "challenger_mt600"},
     deutz_agrostar_831={"AgroStar 8.31", "deutz_agrostar_831"},
     deutz_6230_ttv={"6230 TTV", "deutz_6230_ttv"},
     deutz_7_ttv_hd={"7250 TTV", "deutz_7_ttv_hd"},
@@ -192,7 +192,7 @@ local coverage={
     fendt_700_gen7={"Fendt 728 Vario", "fendt_700_gen7"},
     fiat_160_90={"Fiat 160-90 DT", "fiat_160_90"},
     jcb_fastrac_4000_icon={"Fastrac 4220", "jcb_fastrac_4000_icon"},
-    john_deere_6r_145_185={"6R 145", "john_deere_6r_145_185"},
+    john_deere_6r_145_185={"6R 165", "john_deere_6r_145_185"},
     john_deere_6r_230_250={"6R 230", "john_deere_6r_230_250"},
     kubota_m8={"Kubota M8-181", "kubota_m8"},
     massey_ferguson_7s={"MF 7S.190", "massey_ferguson_7s"},
@@ -230,7 +230,12 @@ claim("AgroStar 8.31",{"1000"},{"540"})
 claim("Versatile Nemesis 255",{"540E","1000","1000E"},{"540"})
 claim("MF 7S.155",{"540","1000"},{"540E","1000E"})
 claim("Valtra T Series",{"540","1000"},{"540E","1000E"})
+claim("Challenger MT635",{"540","1000"},{"540E"})
+claim("Challenger MT645",{"540","1000"},{"540E"})
+claim("6R 165",{"540","540E","1000"},{"1000E"})
 claim("Fiat 160-90 DT",{"540","1000"},{"540E","1000E"})
+assert(P.findTractor({getName=function() return "6R 145" end}).id=="john_deere_6r_145")
+assert(P.findTractor({getName=function() return "MT635" end}).id=="challenger_mt635")
 assert(P.findTractor({getName=function() return "6R 155" end}).id=="john_deere_6r_155")
 assert(P.findTractor({getName=function() return "Fiat 180-90 DT" end}).id=="fiat_180_90")
 assert(P.findTractor({getName=function() return "Unimog U 535" end})==nil)
