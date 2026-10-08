@@ -219,6 +219,7 @@ Recovery.resetRuntimeState()
 targetFraction=0.90
 forceTargetNoop=false
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(RealismExtensionsTerrainPassTracker.getActivePassId(vehicle,"CULTIVATOR")~=nil)
 pump()
 local d=Recovery.getDiagnostics()
 assert(targetCalls>=2)
@@ -236,8 +237,9 @@ assert(d.targetPatchRecoveredDepthM>=0.139)
 assert(d.targetPatchSampleFailures==0)
 assert(d.toolProfiles.CULTIVATOR~=nil)
 assert(d.toolProfiles.CULTIVATOR.targetApplied==targetCalls)
-assert(d.passStarted>=1 and d.passActive>=1)
-assert(RealismExtensionsTerrainPassTracker.getActivePassId(vehicle,"CULTIVATOR")~=nil)
+-- The controller can legitimately keep pumping TARGET after the physical
+-- tool pass has timed out. The pass is not a deferred-job lifecycle.
+assert(d.passStarted>=1)
 
 -- 2. An initial positive mound with stale rut history is not touched. Positive
 -- correction is only allowed after a target sequence started from a causal rut.
