@@ -244,6 +244,9 @@ function Recovery.resetRuntimeState()
     Recovery.activeCombinationUntil = setmetatable({}, { __mode = "k" })
     Recovery._lastStampCleanupMs = 0
     Recovery.stats = newStats()
+    if RealismExtensionsTerrainPassTracker ~= nil then
+        RealismExtensionsTerrainPassTracker.reset()
+    end
 end
 
 if Recovery.stats == nil then
@@ -1502,9 +1505,17 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
 end
 
 function Recovery.update(dt)
-    if not enabled() or (Recovery.deferredCount or 0) <= 0 then
-        return
+    if not enabled() then return end
+
+    -- Passive pass lifecycle must advance even with an empty recovery queue.
+    -- Otherwise lifting/deleting an implement after finishing its rut would
+    -- leave the pass open until a later work-area callback.
+    if RealismExtensionsTerrainPassTracker ~= nil then
+        RealismExtensionsTerrainPassTracker.expire(
+            g_currentMission ~= nil and g_currentMission.time or 0
+        )
     end
+    if (Recovery.deferredCount or 0) <= 0 then return end
 
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil or runtime.history == nil or runtime.writer == nil then
@@ -1672,7 +1683,8 @@ local function recoverWorkedArea(
     vehicle,
     workArea,
     processedArea,
-    toolProfile
+    toolProfile,
+    operationKind
 )
     if not enabled() or (tonumber(processedArea) or 0) <= 0 then return end
 
@@ -1741,6 +1753,13 @@ local function recoverWorkedArea(
 
     for _, point in ipairs(points) do
         local key = stampKey(point.x, point.z)
+        -- Only count causal cells seen in the current physical pass.
+        -- Never use this metric to gate TARGET or replace the R6 cooldown.
+        if RealismExtensionsTerrainPassTracker ~= nil then
+            RealismExtensionsTerrainPassTracker.observeCausalCell(
+                vehicle, operationKind, key
+            )
+        end
         if not stampAvailable(key, nowMs) then
             Recovery.stats.stampSkips =
                 Recovery.stats.stampSkips + 1
@@ -1827,6 +1846,18 @@ local function processTillageArea(
         end
     end
 
+    -- Observation-only: no change to recovery scheduling or native terrain.
+    if enabled() and RealismExtensionsTerrainPassTracker ~= nil then
+        RealismExtensionsTerrainPassTracker.observe(
+            operation or {
+                vehicle = vehicle,
+                operationKind = operationKind,
+                nowMs = nowMs,
+                physicallyWorking = false
+            }
+        )
+    end
+
     local physicallyWorking = operation ~= nil
         and operation.physicallyWorking == true
 
@@ -1872,7 +1903,8 @@ local function processTillageArea(
                 workArea,
                 operation.processedArea,
                 operation.toolProfile
-                    or resolveToolProfile(vehicle, operationKind)
+                    or resolveToolProfile(vehicle, operationKind),
+                operationKind
             )
 
             if RealismExtensionsTerrainPerformance ~= nil then
@@ -1914,6 +1946,13 @@ function Recovery.getDiagnostics()
     out.structuralInFlight = Recovery.structuralInFlightKey ~= nil
         and 1 or 0
     out.structuralInFlightMode = Recovery.structuralInFlightMode
+    if RealismExtensionsTerrainPassTracker ~= nil then
+        local pass = RealismExtensionsTerrainPassTracker.getDiagnostics()
+        out.passStarted = pass.passStarted
+        out.passCompleted = pass.passCompleted
+        out.passActive = pass.passActive
+        out.passLast = pass.passLast
+    end
     return out
 end
 
