@@ -67,3 +67,12 @@ A capability may move from external ownership to `CANDIDATE_ABSORB` only when at
 - removes an otherwise unavoidable dependency on a monolithic feature bundle.
 
 Mod-count reduction alone is not sufficient.
+
+
+## Harvest-process capability
+
+| Capability | Current owner | RE decision | Notes |
+| --- | --- | --- | --- |
+| combine harvest-process capacity / calibration / crop loss | Realistic Harvesting | KEEP_EXTERNAL | RHM 1.6.2 has maintained crop/process model and public API; do not duplicate in RE |
+| harvesting context API | Realistic Harvesting `RHM_Api` | CONSUME_IF_NEEDED | preserve “process utilization” semantics; do not reinterpret as canonical drivetrain load |
+| external material refeed into harvest process | none/stable contract missing | DEFER | FarmKit Straw Refeed remains unbridged until an explicit flow/provider boundary exists |
