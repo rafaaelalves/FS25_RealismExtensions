@@ -13,7 +13,7 @@ This is a targeted follow-up after cataloguing 75 shop entries in Small, Medium 
 
 | In-game category / vehicle | Real external PTO | Runtime default | Source | Critical limitation |
 |---|---|---|---|---|
-| Forestry > Pfanzelt Pm Trac III | Current rear 540E/750/1000, alternative 1000E/1000/1450; front PTO is a separate optional 1000 drive | **540E, 1000** only if GIANTS output exists | [Pfanzelt official Pm Trac III](https://www.pfanzelt.com/en/forestry-tractors/pmtrac/) | 750/1450 are *distinct shaft speeds* outside the current four-mode system; an [older model brochure](https://grapak.com/en/product/multipurpose-tractor-pfanzelt-pm-trac) lists 540/540E/1000/1000E, but we must not mix factory generations/packages |
+| Forestry > Pfanzelt Pm Trac III | Current *standard* rear 540E/750/1000; *alternative* rear 1000E/1000/1450; front PTO a separate optional 1000 drive | **540E, 1000** only if GIANTS output exists | [Pfanzelt official Pm Trac III](https://www.pfanzelt.com/en/forestry-tractors/pmtrac/) | 750/1450 are *distinct shaft speeds* outside the current four-mode system; an [older model brochure](https://grapak.com/en/product/multipurpose-tractor-pfanzelt-pm-trac) lists 540/540E/1000/1000E, but we must not mix factory generations/packages |
 | Telehandlers > Merlo MF44.9CS-170-CVTRONIC | Rear mechanical, electrohydraulic clutch, selectable **540/1000** | **540, 1000** only if GIANTS output exists | [Merlo archive/technical specifications](https://www.merlo.de/teleskoplader/multifarmer/mf-44-9/) and [Merlo original brochure](https://storage.googleapis.com/merlo-storage/38af6c2f-6fdd-479f-a37b-a99a115cc5af) | Rear 3-point hitch alone is insufficient; actual FS25 output PTO may differ from real equipment |
 
 Runtime profiles use `verifiedOutputCarrier` and are discoverable by model-specific display/name/path tokens only. They each expose immutable `catalogGroup` provenance and `requiresOutputPto=true`, sharing the already-tested capability resolver used on Large Tractors. No new per-frame resolver or periodic polling. No RC bridge changes.
@@ -47,3 +47,7 @@ The Pm Trac is not guaranteed to have rear PTO just because the real manufacture
 ## Automated regression acceptance
 
 `tests/pto_resolver_harness.lua`: two models × (name matching, exact file tokens) × both physical output states and generic specialization-only case; checks mode count, mode forbiddance and category provenance. Also verifies names of NEXAT, Prinoth, Ropa, other loaders and already-covered Fendt 728 do not spuriously resolve to these PTO profiles.
+
+### Pfanzelt installed-package uncertainty
+
+The proposed 540E/1000 RE profile is a **projection of the current documented standard Pm Trac III package into our supported 4-mode engine**, not an assertion that every factory version has both gears. The optional Pfanzelt rear gearbox changes the economy gear family (1000E, 1000, 1450). If the FS25 unit uses the optional package, 540E must be withheld and the installed `ptoPackageId` must distinguish it. A populated GIANTS output proves **a shaft is present**, but not the shaft's gear package. This limitation remains documented for later XML validation / factory-package architecture; do not advertise full physical accuracy yet.

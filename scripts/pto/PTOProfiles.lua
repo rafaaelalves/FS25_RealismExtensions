@@ -398,7 +398,7 @@ Profiles.TRACTORS = {
          "pmtrac iii", "pm trac iii 4f", "pmtrac iii 4f"},
         {{"540E"}, {"1000"}},
         "https://www.pfanzelt.com/en/forestry-tractors/pmtrac/",
-        "Current Pm Trac III rear gearbox 540E/750/1000; an alternative package is documented as 1000E/1000/1450. Older Pm Trac brochure lists 540/540E/1000/1000E. Common safely representable rear speeds are 540E and 1000; 750/1450 are NOT economy modes. The in-game rear PTO must be physically installed.",
+        "Current Pm Trac III rear gearbox 540E/750/1000; an alternative package is documented as 1000E/1000/1450. Older Pm Trac brochure lists 540/540E/1000/1000E. The *current standard* factory candidate is 540E/750/1000 (represented today as 540E/1000); an alternative 1000E/1000/1450 package exists, and the in-game factory package is NOT independently identified. 750/1450 are distinct shaft speeds, not economy modes. The in-game output shaft must be physically instantiated.",
         "FORESTRY_TRACTOR"),
     verifiedOutputCarrier("merlo_multifarmer_mf44_9",
         {"mf44.9cs-170", "mf44.9cs", "mf44_9cs", "mf44.9 cs",
