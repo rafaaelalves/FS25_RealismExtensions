@@ -25,6 +25,27 @@ Profiles.MEDIUM_CATALOG = {
 -- In the unresolved series below, no mode is unlocked from mere identity.
 -- DLC agricultural PTO installation depends on options and cannot be
 -- established from an in-game label alone.
+
+-- FS25 v1.24 official shop: 26 Large Tractors entries, including tracked,
+-- articulated and the unique Black Edition variant. The roster is not a
+-- statement that a PTO gearbox is fitted to any particular configuration.
+Profiles.LARGE_CATALOG = {
+    "new_holland_t8000", "versatile_976", "ford_976_versatile",
+    "versatile_1156", "ford_1156_versatile", "versatile_big_roy",
+    "jcb_fastrac_8000_icon", "valtra_s", "massey_ferguson_9s",
+    "versatile_mfwd", "new_holland_t8_genesis", "john_deere_7r",
+    "john_deere_8r", "fendt_900_vario", "case_ih_magnum_afs",
+    "fendt_1000_vario", "john_deere_8rt", "fendt_1100_vario_mt",
+    "john_deere_9r_440_640", "john_deere_8rx",
+    "versatile_deltatrack", "john_deere_9rx_490_640",
+    "claas_xerion_12", "case_ih_steiger_715_785_black",
+    "case_ih_steiger_715_785", "john_deere_9rx_710_830"
+}
+Profiles.PENDING_LARGE = {
+    versatile_big_roy =
+        "1977 prototype: no verified mechanical PTO shaft, ratio or FS25 installed output; no mode inferred"
+}
+
 Profiles.PENDING_MEDIUM = {
     mercedes_unimog_1800_2400 = "PTO option/package and exact FS25 configuration not verified",
     mercedes_unimog_527_535 = "PTO option/package and exact FS25 configuration not verified"
@@ -44,6 +65,15 @@ local function tractor(id, tokens, spec, source, note)
         id = id, tokens = tokens, modes = modes(spec),
         evidenceUrl = source, evidenceNote = note
     }
+end
+
+local function largeTractor(id, tokens, spec, source, note)
+    local entry = tractor(id, tokens, spec, source, note)
+    -- Crucial for high-horsepower tractors: a documented optional factory PTO
+    -- is NOT necessarily fitted to the individual FS25 vehicle.
+    -- Require native, instantiated PTO output before exposing the gearbox.
+    entry.requiresOutputPto = true
+    return entry
 end
 
 Profiles.TRACTORS = {
@@ -187,7 +217,135 @@ Profiles.TRACTORS = {
         {"crystal hd","crystal_hd","crystalhd170"},
         {{"540"},{"540E"},{"1000"},{"1000E"}},
         "https://www.zetor.com/zetor-crystal-technical-parameters",
-        "Crystal HD170 standard four-speed PTO.")
+        "Crystal HD170 standard four-speed PTO."),
+    -- Large shop: source-backed mechanical rear gears, never a union of all
+    -- mutually exclusive factory PTO packages.
+    -- EVERY large entry requires a real GIANTS rear output (see PTOResolver).
+    largeTractor("new_holland_t8000",
+        {"t8000 series","t8000series","t8030","t8040","t8050","t8060","t8070"},
+        {{"1000"}},
+        "https://www.tractordata.com/farm-tractors/006/3/2/6323-new-holland-t8050.html",
+        "T8050 standard rear 1000; optional 540/1000 shaft is not assumed."),
+    largeTractor("ford_976_versatile",
+        {"ford 976 versatile","ford versatile 976","ford 976"},
+        {{"1000"}},
+        "https://www.tractordata.com/farm-tractors/010/1/4/10148-ford-976.html",
+        "Rear 1000 PTO only with PowerShift transmission; physical output mandatory."),
+    largeTractor("versatile_976",
+        {"versatile 976","versatile976"},
+        {{"1000"}},
+        "https://www.tractordata.com/farm-tractors/001/3/6/1361-versatile-976.html",
+        "Rear 1000 only on PowerShift transmission; physical output mandatory."),
+    largeTractor("ford_1156_versatile",
+        {"ford 1156 versatile","ford versatile 1156","ford 1156"},
+        {{"1000"}},
+        "https://www.tractordata.com/farm-tractors/001/3/6/1363-versatile-1156.html",
+        "Ford-badged Versatile 1156 historical 1000 output; in-game installation unverified."),
+    largeTractor("versatile_1156",
+        {"versatile 1156","versatile1156"},
+        {{"1000"}},
+        "https://www.tractordata.com/farm-tractors/001/3/6/1363-versatile-1156.html",
+        "Versatile 1156 rear PTO listed 1000."),
+    largeTractor("jcb_fastrac_8000_icon",
+        {"fastrac 8290","fastrac 8330","fastrac 8000","8000 icon"},
+        {{"540E"},{"1000"}},
+        "https://www.jcb.com/globalassets/digizuite/53520-29846-fastrac-4000-8000-series-e-spec-fr-fr-issue-1-lr/",
+        "Fastrac 8000 rear has 540E/1000; do not copy 4000's four speeds."),
+    largeTractor("valtra_s",
+        {"valtra s series","valtra s-series","s286","s316","s346","s376","s396","s416"},
+        {{"540E",1577},{"1000",1882}},
+        "https://www.valtra.com/content/dam/Brands/Valtra/en/Products/Brochures/2023/Valtra-S6-brochure-en-2023-screen.pdf",
+        "S6 factory 540E/1000; alternative 1000E/1000 exists but is mutually exclusive."),
+    largeTractor("massey_ferguson_9s",
+        {"massey ferguson 9s","mf 9s","mf9s","9s.285","9s.310","9s.340","9s.370","9s.400","9s.425"},
+        {{"540E"},{"1000"}},
+        "https://www.masseyferguson.com/en_gb/product/tractors/mf-9s.html",
+        "Factory 540E/1000; alternative 1000/1000E PTO set, not additional."),
+    largeTractor("versatile_mfwd",
+        {"versatile mfwd","versatilemfwd","versatile 275","versatile 295","versatile 315","versatile 335","versatile 365"},
+        {{"1000"}},
+        "https://www.versatile-ag.com/na/pages/product_mfwd.php",
+        "1000 standard across 275-365; optional 540/1000 on 275-315."),
+    largeTractor("new_holland_t8_genesis",
+        {"t8 genesis","t8genesis","t8.350","t8.380","t8.410","t8.435","t8 350","t8 380","t8 410","t8 435"},
+        {{"1000"}},
+        "https://assets.cnhindustrial.com/nhag/nar/en-us/assets/pdf/agricultural-tractors/t8-plm-spec-sheet-us-en.pdf",
+        "T8 PLM/Genesis rear PTO; 1000 conservative across sizes/options."),
+    largeTractor("john_deere_7r",
+        {"7r series","series7r","7r 210","7r 230","7r 250","7r 270","7r 290","7r 310","7r 330","7r 350"},
+        {{"1000",1950}},
+        "https://www.deere.com/assets/pdfs/region-1/products/tractors/7R_Brochure.pdf",
+        "1000 is common standard; 540/1000 and 540E/1000/1000E are factory alternatives."),
+    largeTractor("john_deere_8rt",
+        {"8rt series","series8rt","8rt 310","8rt 340","8rt 370","8rt 410"},
+        {{"1000",1995}},
+        "https://www.deere.com/assets/pdfs/region-4/industries/government-and-military-sales/contracts/price-pages/agricultural/A2_6000-8000_20210203.pdf",
+        "8RT rear 1000 native; 1995 engine rpm from 8R family drivetrain, calibration conditional."),
+    largeTractor("john_deere_8rx",
+        {"8rx series","series8rx","8rx 310","8rx 340","8rx 370","8rx 410"},
+        {{"1000",1995}},
+        "https://www.deere.com/en/tractors/row-crop-tractors/row-crop-8-family/8rx-340-tractor/",
+        "8RX native 1000@1995; optional 540/1000 or 1000/1000E packages not presumed."),
+    largeTractor("john_deere_8r",
+        {"8r series","series8r","8r 280","8r 310","8r 340","8r 370","8r 410","8r 230","8r 250"},
+        {{"1000",1995}},
+        "https://www.deere.com/en-us/products-and-solutions/tractors/row-crop-4wd-tractors/8r-250-tractor-odexmvjx",
+        "Factory rear 1000@1995, optional 540/1000 or 1000/1000E (not unlocked)."),
+    largeTractor("fendt_900_vario",
+        {"fendt 900 vario","900 vario","900vario","930 vario","933 vario","936 vario","939 vario","942 vario","series900"},
+        {{"540E"},{"1000"}},
+        "https://www.fendt.com/nl/geneva-assets/article/126276/700249-fendt900vario-2101-td-en.pdf",
+        "Gen6 standard 540E/1000. 1000/1000E optional package, not combined."),
+    largeTractor("case_ih_magnum_afs",
+        {"magnum afs","afs connect magnum","magnum 310","magnum 340","magnum 380","magnum 400","magnum 250","magnum 280"},
+        {{"1000",1803}},
+        "https://www.caseih.com/en-gb/europe/products/tractors/magnum-afs-connect/magnum",
+        "Heavy-duty rear 1000@1803; alternative dual 540/1000 requires its own PTO set."),
+    largeTractor("fendt_1000_vario",
+        {"1000 vario","1000vario","1038 vario","1042 vario","1046 vario","1050 vario"},
+        {{"1000"},{"1000E"}},
+        "https://api.fendt.com/techdata/BR/pt/1161054/Fendt%201000%20Vario%20Gen3",
+        "FS25-era Gen3 optionally fitted 1000/1000E/1300; 1300 unsupported by four-mode controller."),
+    largeTractor("fendt_1100_vario_mt",
+        {"1100 vario mt","1100variomt","1151 vario mt","1156 vario mt","1162 vario mt","1167 vario mt"},
+        {{"1000"},{"1000E"}},
+        "https://api.fendt.com/techdata/GB/en/1152877/Fendt-1100-Vario-MT",
+        "Optional 1000/1000E rear. Do not advertise PTO unless shaft truly fitted."),
+    largeTractor("john_deere_9r_440_640",
+        {"9r 440","9r 490","9r 540","9r 590","9r 640","9r series","series9r"},
+        {{"1000"}},
+        "https://www.deere.ca/en/tractors/4wd-track-tractors/9r-590/",
+        "9R 440-640 1000 rear; actual installed output required (optional installations)."),
+    largeTractor("versatile_deltatrack",
+        {"deltatrack","delta track","versatile 530dt","versatile 570dt","versatile 620dt"},
+        {{"1000"}},
+        "https://www.versatile-ag.com/NA/pages/product_dt.php",
+        "Rear PTO is a factory OPTION, not inherent to DeltaTrack; verify actual output."),
+    largeTractor("john_deere_9rx_710_830",
+        {"9rx 710","9rx 770","9rx 830","9rx710","9rx770","9rx830"},
+        {{"1000"}},
+        "https://www.deere.com/en-us/products-and-solutions/tractors/row-crop-4wd-tractors/9rx-830-tractor-otkymfjx",
+        "High-horsepower 9RX 710-830 1000 rpm; 540 and economy not presumed."),
+    largeTractor("john_deere_9rx_490_640",
+        {"9rx 490","9rx 540","9rx 590","9rx 640","9rx series","series9rx"},
+        {{"1000"}},
+        "https://www.deere.ca/en/tractors/4wd-track-tractors/9rx-590/",
+        "9RX 490-640 native independent 1000 rpm; no economy gearbox declared."),
+    largeTractor("claas_xerion_12",
+        {"xerion 12","xerion12","12.590","12.650"},
+        {{"1000",1500}},
+        "https://www.claas.com/caas/v1/media/1328946/data/738cb304d52f63b9be6f3d4eb853b7c9",
+        "XERION 12 1000 PTO at 1500 engine RPM; actual native output required."),
+    largeTractor("case_ih_steiger_715_785_black",
+        {"steiger 715-785 quadtrac black","steiger 715 black","steiger 785 black","quadtrac black edition","steiger black edition"},
+        {{"1000"}},
+        "https://online.flippingbook.com/view/341953633",
+        "Special Black Edition uses Steiger 715/785 PTO family; hardware fit is optional."),
+    largeTractor("case_ih_steiger_715_785",
+        {"steiger 715","steiger 785","steiger series","steiger715","steiger785","quadtrac 715","quadtrac 785"},
+        {{"1000"}},
+        "https://online.flippingbook.com/view/341953633",
+        "Steiger/Quadtrac PTO listed at 1000; package fit verified at runtime.")
 }
 
 -- Only requirements that FS25 data cannot represent reliably belong here.

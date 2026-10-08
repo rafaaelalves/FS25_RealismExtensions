@@ -240,4 +240,82 @@ assert(P.findTractor({getName=function() return "6R 155" end}).id=="john_deere_6
 assert(P.findTractor({getName=function() return "Fiat 180-90 DT" end}).id=="fiat_180_90")
 assert(P.findTractor({getName=function() return "Unimog U 535" end})==nil)
 
+
+-- FS25 official Large Tractors shop includes 26 category entries as of 1.24,
+-- counting the additional Steiger Black Edition separately.
+assert(#P.LARGE_CATALOG==26)
+assert(P.PENDING_LARGE.versatile_big_roy~=nil)
+
+local largeCases={
+    {"T8050","new_holland_t8000",{"1000"},{"540"}},
+    {"Versatile 976","versatile_976",{"1000"},{"540"}},
+    {"Ford 976 Versatile","ford_976_versatile",{"1000"},{"540"}},
+    {"Versatile 1156","versatile_1156",{"1000"},{"540"}},
+    {"Ford 1156 Versatile","ford_1156_versatile",{"1000"},{"540"}},
+    {"Fastrac 8330","jcb_fastrac_8000_icon",{"540E","1000"},{"540","1000E"}},
+    {"Valtra S Series","valtra_s",{"540E","1000"},{"540","1000E"}},
+    {"MF 9S.425","massey_ferguson_9s",{"540E","1000"},{"540","1000E"}},
+    {"Versatile MFWD","versatile_mfwd",{"1000"},{"540"}},
+    {"T8.410","new_holland_t8_genesis",{"1000"},{"540"}},
+    {"7R 310","john_deere_7r",{"1000"},{"540"}},
+    {"8R 410","john_deere_8r",{"1000"},{"540"}},
+    {"Fendt 942 Vario","fendt_900_vario",{"540E","1000"},{"540","1000E"}},
+    {"Magnum 380","case_ih_magnum_afs",{"1000"},{"540"}},
+    {"Fendt 1050 Vario","fendt_1000_vario",{"1000","1000E"},{"540"}},
+    {"8RT 410","john_deere_8rt",{"1000"},{"540"}},
+    {"1156 Vario MT","fendt_1100_vario_mt",{"1000","1000E"},{"540"}},
+    {"9R 590","john_deere_9r_440_640",{"1000"},{"540"}},
+    {"8RX 410","john_deere_8rx",{"1000"},{"540"}},
+    {"Versatile DeltaTrack","versatile_deltatrack",{"1000"},{"540"}},
+    {"9RX 590","john_deere_9rx_490_640",{"1000"},{"540"}},
+    {"XERION 12.650","claas_xerion_12",{"1000"},{"540"}},
+    {"Steiger 785 Quadtrac Black Edition","case_ih_steiger_715_785_black",{"1000"},{"540"}},
+    {"Steiger 715 Quadtrac","case_ih_steiger_715_785",{"1000"},{"540"}},
+    {"9RX 830","john_deere_9rx_710_830",{"1000"},{"540"}}
+}
+assert(#largeCases==25)
+local tested={}
+for _,case in ipairs(largeCases) do
+    local label,id,want,deny=table.unpack(case)
+    local vehicle={
+        configFileName="/vehicles/test.xml",
+        getName=function() return label end,
+        getMotor=function() return motor end,
+        getOutputPowerTakeOffs=function() return { rear={} } end
+    }
+    local profile=P.findTractor(vehicle)
+    assert(profile~=nil and profile.id==id,
+        "large identity: "..label.." -> "..tostring(profile and profile.id))
+    assert(profile.requiresOutputPto==true)
+    assert(type(profile.evidenceUrl)=="string")
+    local cap=R.resolveCapability(vehicle)
+    assert(cap.profileId==id and cap.source=="PROFILE")
+    for _,mode in ipairs(want) do
+        assert(cap.modes[M.normalizeMode(mode)]~=nil,label.." missing "..mode)
+    end
+    for _,mode in ipairs(deny) do
+        assert(cap.modes[M.normalizeMode(mode)]==nil,label.." unsourced "..mode)
+    end
+    assert(R.vehicleHasOutputPto(vehicle)==true)
+    tested[id]=true
+
+    -- Same real tractor with NO native physical shaft: profile must not
+    -- conjure PTO modes or force a rear gearbox into the game.
+    vehicle.getOutputPowerTakeOffs=function() return {} end
+    local none=R.resolveCapability(vehicle)
+    assert(R.vehicleHasOutputPto(vehicle)==false)
+    assert(none.source=="PROFILE_OUTPUT_UNVERIFIED")
+    assert(next(none.modes)==nil)
+end
+for _,id in ipairs(P.LARGE_CATALOG) do
+    assert(tested[id]==true or P.PENDING_LARGE[id]~=nil,
+        "large tractor unclassified: "..id)
+end
+assert(P.findTractor({getName=function() return 'Versatile 1080 "Big Roy"' end})==nil)
+assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
+assert(P.findTractor({getName=function() return "John Deere 9RX 830" end}).id=="john_deere_9rx_710_830")
+assert(P.findTractor({getName=function() return "John Deere 8RX 410" end}).id=="john_deere_8rx")
+assert(P.findTractor({getName=function() return "Ford 976 Versatile" end}).id=="ford_976_versatile")
+assert(P.findTractor({getName=function() return "Steiger 785 Quadtrac Black Edition" end}).id=="case_ih_steiger_715_785_black")
+
 print("pto_resolver_harness: OK")

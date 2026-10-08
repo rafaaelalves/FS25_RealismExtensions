@@ -44,6 +44,22 @@ end
 function Resolver.vehicleHasOutputPto(vehicle)
     if vehicle == nil then return false end
 
+    -- For Large Tractors a brochure's optional PTO is not enough. It must be
+    -- physically represented by GIANTS output PowerTakeOffs on this vehicle.
+    local profile = Profiles.findTractor(vehicle)
+    if profile ~= nil and profile.requiresOutputPto == true then
+        if type(vehicle.getOutputPowerTakeOffs) == "function" then
+            local ok, outputs = pcall(vehicle.getOutputPowerTakeOffs, vehicle)
+            if ok and tableHasEntries(outputs) then return true end
+        end
+        local spec = vehicle.spec_powerTakeOffs
+        return spec ~= nil and (
+            tableHasEntries(spec.outputPowerTakeOffs)
+            or tableHasEntries(spec.outputs)
+            or tableHasEntries(spec.powerTakeOffs)
+        ) or false
+    end
+
     if type(vehicle.getOutputPowerTakeOffs) == "function" then
         local ok, outputs = pcall(vehicle.getOutputPowerTakeOffs, vehicle)
         if ok and tableHasEntries(outputs) then return true end
@@ -80,7 +96,12 @@ function Resolver.resolveCapability(vehicle)
         modes = {}
     }
 
-    if profile ~= nil then
+    if profile ~= nil and profile.requiresOutputPto == true
+        and not Resolver.vehicleHasOutputPto(vehicle) then
+        -- Explicit negative hardware evidence: no installed rear PTO output.
+        -- Never expose 540 just because the tractor has a large engine.
+        result.source = "PROFILE_OUTPUT_UNVERIFIED"
+    elseif profile ~= nil then
         for mode, entry in pairs(profile.modes or {}) do
             local normalized = Model.normalizeMode(mode)
             result.modes[normalized] = {
