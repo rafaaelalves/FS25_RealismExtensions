@@ -332,8 +332,16 @@ Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
+assert(Recovery.getDiagnostics().passStarted==0)
 assert(Recovery.getDiagnostics().passActive==0)
-assert(Recovery.getDiagnostics().passCompleted>=1)
+assert(Recovery.getDiagnostics().passCompleted==0)
+-- A genuine follow-up operation opens a pass; lifting it closes that pass
+-- without changing any of the native TARGET recovery assertions above.
+Recovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+assert(Recovery.getDiagnostics().passActive==1)
+Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
+assert(Recovery.getDiagnostics().passActive==0)
+assert(Recovery.getDiagnostics().passCompleted==1)
 assert(perfBegins==perfFinishes)
 
 print("terrain_recovery_r7_tillage_profiles_harness: OK")
