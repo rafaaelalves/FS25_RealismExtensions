@@ -171,4 +171,68 @@ engaged,source=R.isPtoEngaged(fiat)
 assert(engaged==false)
 assert(source=="NO_ACTIVE_CONSUMER")
 
+-- Every current medium tractor store family must be recorded, even if
+-- its exact PTO hardware still requires factory/configuration evidence.
+local P=RealismExtensionsPTOProfiles
+assert(#P.MEDIUM_CATALOG==24)
+local ids={}
+for _,p in ipairs(P.TRACTORS) do
+    assert(ids[p.id]==nil,"duplicate PTO profile "..p.id)
+    assert(type(p.evidenceUrl)=="string" and p.evidenceUrl:find("https://",1,true)==1)
+    ids[p.id]=true
+end
+local coverage={
+    agco_white_8010={"AGCO White 8010", "agco_white_8010"},
+    case_ih_puma_afs={"Puma 260", "case_ih_puma_afs"},
+    challenger_mt600={"Challenger MT635", "challenger_mt600"},
+    deutz_agrostar_831={"AgroStar 8.31", "deutz_agrostar_831"},
+    deutz_6230_ttv={"6230 TTV", "deutz_6230_ttv"},
+    deutz_7_ttv_hd={"7250 TTV", "deutz_7_ttv_hd"},
+    deutz_8_ttv={"8280 TTV", "deutz_8_ttv"},
+    fendt_700_gen7={"Fendt 728 Vario", "fendt_700_gen7"},
+    fiat_160_90={"Fiat 160-90 DT", "fiat_160_90"},
+    jcb_fastrac_4000_icon={"Fastrac 4220", "jcb_fastrac_4000_icon"},
+    john_deere_6r_145_185={"6R 145", "john_deere_6r_145_185"},
+    john_deere_6r_230_250={"6R 230", "john_deere_6r_230_250"},
+    kubota_m8={"Kubota M8-181", "kubota_m8"},
+    massey_ferguson_7s={"MF 7S.190", "massey_ferguson_7s"},
+    mccormick_x8={"X8 VT-Drive", "mccormick_x8"},
+    mercedes_mb_trac_1100_1500={"MB-trac 1500", "mercedes_mb_trac_1100_1500"},
+    mercedes_mb_trac_1300_1800={"MB-trac 1800", "mercedes_mb_trac_1300_1800"},
+    mercedes_unimog_1800_2400=nil,
+    mercedes_unimog_527_535=nil,
+    new_holland_t7_lwb={"T7.260", "new_holland_t7_lwb"},
+    steyr_absolut_cvt={"Absolut CVT", "steyr_absolut_cvt"},
+    valtra_t={"Valtra T Series", "valtra_t"},
+    versatile_nemesis={"Versatile Nemesis", "versatile_nemesis"},
+    zetor_crystal_hd={"Crystal HD 170", "zetor_crystal_hd"}
+}
+for _,id in ipairs(P.MEDIUM_CATALOG) do
+    assert(coverage[id]~=nil or P.PENDING_MEDIUM[id]~=nil, "medium family undocumented: "..id)
+    if coverage[id] then
+        local label,profileId=table.unpack(coverage[id])
+        local found=P.findTractor({configFileName="/vehicles/sample.xml",getName=function() return label end})
+        assert(found~=nil and found.id==profileId,
+            "medium profile identity failed: "..id.." / "..label.." / "..tostring(found and found.id))
+    end
+end
+local function claim(label, expected, unexpected)
+    local p=P.findTractor({configFileName="/vehicles/sample.xml",getName=function() return label end})
+    assert(p~=nil, "missing profile "..label)
+    local cap=R.resolveCapability({configFileName="/vehicles/sample.xml",getName=function() return label end,getMotor=function() return motor end})
+    for _,m in ipairs(expected) do assert(cap.modes[M.normalizeMode(m)]~=nil,label.." missing "..m) end
+    for _,m in ipairs(unexpected or {}) do assert(cap.modes[M.normalizeMode(m)]==nil,label.." must not offer "..m) end
+end
+claim("Fendt 728 Vario",{"540","540E","1000","1000E"})
+claim("8280 TTV",{"540E","1000","1000E"},{"540"})
+claim("6R 250",{"540E","1000","1000E"},{"540"})
+claim("AgroStar 8.31",{"1000"},{"540"})
+claim("Versatile Nemesis 255",{"540E","1000","1000E"},{"540"})
+claim("MF 7S.155",{"540","1000"},{"540E","1000E"})
+claim("Valtra T Series",{"540","1000"},{"540E","1000E"})
+claim("Fiat 160-90 DT",{"540","1000"},{"540E","1000E"})
+assert(P.findTractor({getName=function() return "6R 155" end}).id=="john_deere_6r_155")
+assert(P.findTractor({getName=function() return "Fiat 180-90 DT" end}).id=="fiat_180_90")
+assert(P.findTractor({getName=function() return "Unimog U 535" end})==nil)
+
 print("pto_resolver_harness: OK")
