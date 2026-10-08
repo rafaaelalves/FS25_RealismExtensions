@@ -416,6 +416,11 @@ assert(math.abs(measured("ARION 470","540E")-1560)<0.001)
 assert(math.abs(measured("ARION 470","1000")-1964)<0.001)
 assert(math.abs(measured("John Deere 6M 105","540")-1977)<0.001)
 assert(math.abs(measured("Mercedes MB-trac 700","1000")-2196)<0.001)
+-- The shop's series-range labels must never borrow one member's calibrated
+-- engine-to-shaft ratio. They resolve to conservative family mode-only records.
+assert(P.findTractor({getName=function()return "ARION 470-410" end}).id=="claas_arion_400")
+assert(P.findTractor({getName=function()return "ARION 570-530" end}).id=="claas_arion_570_530")
+assert(P.findTractor({getName=function()return "Mercedes MB-trac 700-900" end}).id=="mercedes_mb_trac_700_900")
 assert(P.findTractor({getName=function() return "TK4.80 Methane Power" end})==nil)
 assert(P.findTractor({getName=function() return "Fendt 728 Vario" end}).id=="fendt_700_gen7")
 assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")

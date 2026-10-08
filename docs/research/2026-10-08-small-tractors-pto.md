@@ -59,3 +59,7 @@ Inventory scope: [official FS25 small tractor shop](https://farmingsimulator.wik
 ### Claas ARION 570 vs 530–560
 
 [CLAAS manufacturer release](https://www.claas.com/en-tw/press/press-releases/2025-02-11-arion-570) proves all 540/540E/1000/1000E gears on the 570 CMATIC, but not the same factory gearbox on lesser ARION 530–560. [Historical ARION 530 specification](https://www.tractordata.com/farm-tractors/006/5/8/6583-claas-arion-530.html) distinguishes 540/1000 base and optional four-speed. Only 570 now defaults to four speeds; other variants conservatively keep 540/1000 until the actual FS25-installed package is known.
+
+### Series-label matching regression
+
+The shop labels `ARION 470-410`, `ARION 570-530` and `MB-trac 700-900` must resolve to **generic family profiles**, not the measured 470 / 570 / 700 standalone model. Exact model tokens are matched with a trailing separator (rather than unconstrained substring); tests assert that both names take their respective family gearbox, avoiding transferred exact RPMs.
