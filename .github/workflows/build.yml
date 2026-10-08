@@ -38,7 +38,7 @@ jobs:
           convert -background none -density 192 \
             scripts/pto/ui/pto_icon.svg \
             -resize 512x320 \
-            -define dds:compression=none \
+            -define dds:compression=dxt5 \
             scripts/pto/ui/pto_icon.dds
           test -s scripts/pto/ui/pto_icon.dds
 

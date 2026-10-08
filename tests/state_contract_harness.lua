@@ -6,8 +6,8 @@ assert(RealismExtensionsState.API_VERSION == 2)
 assert(RealismExtensionsState.getWheelContext({}, {}) == nil)
 
 local provider = {
-    API_VERSION = 1,
-    WHEEL_CONTEXT_VERSION = 1,
+    API_VERSION = 2,
+    WHEEL_CONTEXT_VERSION = 2,
     getProviderInfo = function(self)
         return {
             id = "test-provider",
@@ -17,7 +17,7 @@ local provider = {
     end,
     getWheelContext = function(self, vehicle, wheel)
         return {
-            contextVersion = 1,
+            contextVersion = 2,
             grounded = true,
             longitudinalSlip = 0.42,
             lateralSlip = -0.06,
@@ -49,9 +49,9 @@ RealismExtensionsState.clearProvider(provider)
 assert(RealismExtensionsState.getWheelContext({}, {}) == nil)
 
 local bad = {
-    API_VERSION = 2,
-    WHEEL_CONTEXT_VERSION = 1,
-    getWheelContext = function() return { contextVersion = 1 } end
+    API_VERSION = 3,
+    WHEEL_CONTEXT_VERSION = 2,
+    getWheelContext = function() return { contextVersion = 2 } end
 }
 local badOk, badReason = RealismExtensionsState.registerProvider(bad)
 assert(badOk == false)
@@ -79,11 +79,11 @@ print("state_contract_harness: OK")
 -- Optional hints must be forwarded without changing the provider contract version.
 local hintedSeen = nil
 local hintProvider = {
-    API_VERSION = 1,
-    WHEEL_CONTEXT_VERSION = 1,
+    API_VERSION = 2,
+    WHEEL_CONTEXT_VERSION = 2,
     getWheelContext = function(self, vehicle, wheel, hints)
         hintedSeen = hints
-        return { contextVersion = 1, grounded = true }
+        return { contextVersion = 2, grounded = true }
     end
 }
 assert(RealismExtensionsState.registerProvider(hintProvider))
