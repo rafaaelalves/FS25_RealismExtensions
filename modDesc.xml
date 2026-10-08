@@ -26,6 +26,7 @@
         <sourceFile filename="scripts/terrain/TerrainPerformance.lua"/>
         <sourceFile filename="scripts/terrain/RecoverySurfaceEstimator.lua"/>
         <sourceFile filename="scripts/terrain/TillageRecoveryProfiles.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainPassTracker.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWorkContext.lua"/>
         <sourceFile filename="scripts/terrain/TerrainActorPolicy.lua"/>
         <sourceFile filename="scripts/terrain/TerrainMaintenancePolicy.lua"/>
