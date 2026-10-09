@@ -8,6 +8,8 @@ Updated: 2026-10-02
 
 **2026-10-09 traffic-versus-tillage physics/efficiency study:** [Source-informed design analysis](../research/terrain-tillage-traffic-net-effect-study-2026-10-09.md) identifies the global 1.5s root suppression and 8s owner-agnostic 0.40m area mask; per-work-area 0.20m history scans happen even on mostly undamaged fields. Recommendation: retain net-effect write coalescing (do not write rut and undo immediately), pursue efficient spatial broad-phase and root-aware masking only if measured or visible issues justify them. No changes to terrain code or severity approved. PTO independent.
 
+**2026-10-09 priority revision:** user's harvest→cultivate→seed loop is unplayable in ordinary field conditions; **terrain v1 cannot yet be called done just because R6/A1 tests passed**. [Physical diagnosis and focused implementation gate](../research/terrain-three-outcomes-bearing-capacity-2026-10-09.md). Existing RE `TerrainResponseModel` has no explicit bearing/yield threshold between normal compaction and persistent rut geometry; `SpatialHistory` resets rut exposure on cultivation but not SoilCompaction's external agronomic state. Next increment: pure model of plastic yield plus scenario harness, then one real A/B; no crude seeders immunity nor double compaction author. PTO untouched.
+
 ## Read this first
 
 Canonical active branch for TerrainRecovery work: `feat/terrain-recovery`.
