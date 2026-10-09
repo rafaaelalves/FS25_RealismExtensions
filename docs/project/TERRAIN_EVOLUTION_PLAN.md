@@ -6,6 +6,8 @@ Status: canonical terrain-algorithm plan for the next TerrainDeformation / Terra
 
 **Integrated stabilization plan (2026-10-08):** [STABILIZATION_ROADMAP_2026-10-08.md](STABILIZATION_ROADMAP_2026-10-08.md). This also tracks wide/narrow/dual/triple/track contact coverage, difficulty-balance hypotheses and recovery-winch audit gates. No new difficulty coefficient has been approved.
 
+**2026-10-09 release-scope decision:** [terrain closure and next module priority](STABILIZATION_ROADMAP_2026-10-08.md#decisão-de-execução--2026-10-09-encerrar-o-terreno-por-resultados-de-gameplay). The advanced A2/B1–B4/C extensions below are research opportunities, **not mandatory v1 release gates**. A1's passive observer is integrated and field-tested, but its original FPS-independent physical dosing goal is expressly deferred unless gameplay demonstrates an actual regression. Focus on closing R6/R8/R9, save/performance, then advance to multiband/crawler ContactFootprint.
+
 This document starts from the first runtime-validated TerrainRecovery baseline. The goal is no longer to prove that recovery can work; the goal is to evolve it into a coherent soil-interaction system without losing monotonic convergence, ownership boundaries or observability.
 
 ## Baseline that must be preserved
