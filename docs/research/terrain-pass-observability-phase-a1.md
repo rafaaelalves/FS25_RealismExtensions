@@ -70,3 +70,7 @@ Observações independentes no mesmo log (fora de escopo de reparo):
 - `FS25_SeedSelect 1.0.0.1` é candidato à captura indevida de Y sem seeder; seu próprio ModHub especifica a exigência de implemento compatível; source exato não auditado.
 - `FS25_manualAttach` lança `delete(nil)` no `deleteMap` após salvar/quitar o jogo (DetectionHandler.lua:65), uma falha real de teardown de mod externo, não de TerrainRecovery.
 - ModMixer SCAN usa dataset histórico de 2026-06-01 para muitos conflitos; não interpretar todos como incidentes runtime recentes.
+
+### FK/GIANTS area metric sanity caution
+
+The first observed total `processedAreaUnits=17,276,396` includes `repeatAreaUnits=16,783,700`, and the final cumulative `processedAreaUnits=18,180,630` includes `repeatAreaUnits=16,799,348`. Each anomalous repeat sum is close to `2^24=16,777,216` plus a comparatively small residual (6,484 / 22,132). Do **not** present those aggregated raw return values as actual square meters or work-footprint coverage. GIANTS returns `changedArea, totalArea` from the cultivator according to public scripting docs, but the reason for this enormous observed number could be an upstream mod return, a packed/sentinel flag, or a different runtime path. **Root cause not established, no arithmetic stripping of `2^24` without evidence.** A1 therefore tracks physical travel separately and keeps raw work-area returns diagnostic-only. If a later pass dose policy requires true worked area, derive it independently from geometry and spatial traversal instead of trusting these sums.
