@@ -14,6 +14,11 @@ experimental `feat/terrain-recovery` branch enables its gameplay modules
 intentionally for controlled tests; installing a ZIP built from `main` does
 not activate the research feature.
 
+**PTO candidate branch:** this branch opts into `PTOControl=true` while keeping
+`TerrainDeformation=false` and disabling terrain diagnostics. PTO can be tested
+without creating additional persistent ruts; the separate terrain research
+branches retain their explicit opt-in settings.
+
 
 Version `0.0.1.0` is an active development line.
 

@@ -1,13 +1,23 @@
 # Project status
 
-Updated: 2026-09-30
+Updated: 2026-10-09
+
+## Native PTO consolidation checkpoint (2026-10-09)
+
+- Draft PR #33 selectively ports the native PTO feature onto main without importing experimental terrain or recovery code.
+- Main-based companion bridge is RC draft PR #16; both consolidated branches passed Lua/XML/harness/ZIP CI gates.
+- PTOController/HUD/manual governor are included; PTOControl is enabled on this candidate branch only.
+- Runtime evidence: non-PTO cultivator classification, 540-RPM VariPack, 1000-RPM Heizohack, operator selector/interlock, MR+RE/RMS+RE bridges and 273 detailed MRPTO causality samples have been observed with the paired October 9 builds. Outstanding release gates: AI-powered implement in game, save/reload of nondefault mode and throttle, and final smoke of the terrain-disabled build. CI alone cannot satisfy these gates.
+- RE #34 merged into `main` at `cbb9a941`: terrain is disabled by default and specialization registration is inert. This PTO candidate preserves `PTOControl=true`, `TerrainDeformation=false` and RC StateContract 2/2; dedicated harness guards the defaults.
+- Canonical experimental terrain branch remains `feat/terrain-recovery` and is not merged as part of PTO.
+- Sections below retain earlier terrain-baseline history.
 
 ## Current release line
 
 - Version: `0.0.1.0`
 - Phase: TerrainDeformation baseline integrated; completion work reopened
-- Production defaults: gameplay modules disabled; verbose and timing diagnostics disabled.
-- Safety gate: disabled TerrainDeformation does not register the vehicle specialization or append a `TypeManager.validateTypes` hook; development branches explicitly opt in. See stabilization fix of 2026-10-08.
+- Production terrain default: TerrainDeformation disabled, verbose and performance diagnostics disabled; this candidate explicitly enables PTOControl only.
+- Safety gate: disabled TerrainDeformation does not register its vehicle specialization or wrap `TypeManager.validateTypes`; development terrain branches intentionally opt in.
 - TerrainDeformation: integrated into `main` via PR #24, runtime-validated as a baseline, **not yet complete**
 
 ## Baseline validated

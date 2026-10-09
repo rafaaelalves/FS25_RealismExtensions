@@ -5,8 +5,8 @@
 
 RealismExtensionsState = {
     API_VERSION = 2,
-    REQUIRED_PROVIDER_API_VERSION = 1,
-    REQUIRED_WHEEL_CONTEXT_VERSION = 1,
+    REQUIRED_PROVIDER_API_VERSION = 2,
+    REQUIRED_WHEEL_CONTEXT_VERSION = 2,
     provider = nil,
     providerInfo = nil,
     providerReason = nil

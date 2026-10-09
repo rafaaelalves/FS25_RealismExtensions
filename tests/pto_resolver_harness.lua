@@ -1,0 +1,543 @@
+dofile("scripts/pto/PTOModel.lua")
+dofile("scripts/pto/PTOProfiles.lua")
+dofile("scripts/pto/PTOResolver.lua")
+
+local M=RealismExtensionsPTOModel
+local R=RealismExtensionsPTOResolver
+
+local motor={
+    minRpm=800,
+    maxRpm=2200,
+    getPtoMotorRpmRatio=function() return 4.0 end
+}
+
+local fiat={
+    configFileName="/mods/fiat18090.xml",
+    getName=function() return "Fiat 180-90 DT" end,
+    getMotor=function() return motor end,
+    getOutputPowerTakeOffs=function() return {rear={}} end,
+    getAttachedImplements=function() return {} end
+}
+
+assert(R.vehicleHasOutputPto(fiat)==true)
+local cap=R.resolveCapability(fiat)
+assert(cap.source=="PROFILE")
+assert(cap.modes[M.MODE.RPM_540]~=nil)
+assert(cap.modes[M.MODE.RPM_1000]~=nil)
+assert(cap.modes[M.MODE.RPM_540_ECO]==nil)
+
+local johnDeere={
+    configFileName="data/vehicles/johnDeere/series6R/series6RLarge.xml",
+    getName=function() return "6R 155" end,
+    getMotor=function() return motor end,
+    getOutputPowerTakeOffs=function() return {rear={}} end,
+    getAttachedImplements=function() return {} end
+}
+local jdCap=R.resolveCapability(johnDeere)
+assert(jdCap.source=="PROFILE")
+assert(jdCap.profileId=="john_deere_6r_155")
+assert(jdCap.modes[M.MODE.RPM_540]~=nil)
+assert(jdCap.modes[M.MODE.RPM_540_ECO]~=nil)
+assert(jdCap.modes[M.MODE.RPM_1000]~=nil)
+assert(jdCap.modes[M.MODE.RPM_1000_ECO]==nil)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_540].effectiveMotorRatio-(1987/540)
+)<0.000001)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_540_ECO].effectiveMotorRatio-(1753/540)
+)<0.000001)
+assert(math.abs(
+    jdCap.modes[M.MODE.RPM_1000].effectiveMotorRatio-2.0
+)<0.000001)
+
+local unknown={
+    configFileName="/mods/unknownTractor.xml",
+    getMotor=function() return motor end,
+    getOutputPowerTakeOffs=function() return {rear={}} end,
+    getAttachedImplements=function() return {} end
+}
+local fallback=R.resolveCapability(unknown)
+assert(fallback.source=="NATIVE_FALLBACK")
+assert(fallback.modes[M.MODE.RPM_540]~=nil)
+assert(fallback.modes[M.MODE.RPM_1000]==nil)
+assert(math.abs(fallback.modes[M.MODE.RPM_540].effectiveMotorRatio-4.0)<0.000001)
+
+local chipperActive=false
+local chipper={
+    configFileName="/mods/hm10500KF.xml",
+    spec_powerConsumer={ptoRpm=540},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getIsPowerTakeOffActive=function() return chipperActive end,
+    getIsTurnedOn=function() return chipperActive end,
+    getAttachedImplements=function() return {} end
+}
+local mowerActive=false
+local mower={
+    configFileName="/mods/mower.xml",
+    spec_powerConsumer={ptoRpm=540},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getIsPowerTakeOffActive=function() return mowerActive end,
+    getIsTurnedOn=function() return mowerActive end,
+    getAttachedImplements=function() return {} end
+}
+local hydraulicPlowActive=true
+local hydraulicPlow={
+    configFileName="/mods/hydraulicPlow.xml",
+    -- Generic power consumer + hoses/cables, but deliberately no input PTO
+    -- and no ptoRpm. This must never become a PTO consumer.
+    spec_powerConsumer={neededPower=85},
+    spec_connectionHoses={hoses={{type="hydraulic"},{type="electric"}}},
+    spec_plow={},
+    getInputPowerTakeOffs=function() return {} end,
+    getIsTurnedOn=function() return hydraulicPlowActive end,
+    getAttachedImplements=function() return {} end
+}
+
+local unknownInputPto={
+    configFileName="/mods/unknownPtoImplement.xml",
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getAttachedImplements=function() return {} end
+}
+
+fiat.getAttachedImplements=function()
+    return {{object=hydraulicPlow}}
+end
+local req=R.collectRequirements(fiat)
+assert(req.hasPtoConsumer==false)
+assert(req.requiredRpm==nil)
+assert(req.knownCount==0)
+assert(req.unknownCount==0)
+
+-- A real input PTO without an RPM remains a PTO consumer, but requirement
+-- family is intentionally unknown rather than guessed.
+fiat.getAttachedImplements=function()
+    return {{object=unknownInputPto}}
+end
+req=R.collectRequirements(fiat)
+assert(req.hasPtoConsumer==true)
+assert(req.requiredRpm==nil)
+assert(req.knownCount==0)
+assert(req.unknownCount==1)
+assert(req.items[1].source=="INPUT_PTO")
+
+fiat.getAttachedImplements=function()
+    return {{object=chipper}}
+end
+req=R.collectRequirements(fiat)
+assert(req.hasPtoConsumer==true)
+assert(req.requiredRpm==1000)
+assert(req.conflict==false)
+assert(req.primary.source=="PROFILE")
+
+fiat.getAttachedImplements=function()
+    return {{object=chipper},{object=mower}}
+end
+req=R.collectRequirements(fiat)
+assert(req.conflict==true)
+assert(req.requiredRpm==nil)
+
+-- Turned-on hydraulic/electrical tools with a generic PowerConsumer must not
+-- be mistaken for PTO engagement.
+fiat.getAttachedImplements=function()
+    return {{object=hydraulicPlow}}
+end
+fiat.getIsPowerTakeOffActive=function() return false end
+local engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
+
+-- Tractor PowerTakeOffs itself reports false; active state lives on the
+-- attached PTO-consuming implement specialization.
+fiat.getAttachedImplements=function()
+    return {{object=chipper}}
+end
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
+
+chipperActive=true
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==true)
+assert(source=="IMPLEMENT_PTO_ACTIVE")
+
+-- Fallback: a modded PTO consumer can expose only TurnOnVehicle state.
+chipper.getIsPowerTakeOffActive=nil
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==true)
+assert(source=="IMPLEMENT_TURNED_ON")
+
+chipperActive=false
+engaged,source=R.isPtoEngaged(fiat)
+assert(engaged==false)
+assert(source=="NO_ACTIVE_CONSUMER")
+
+-- Every current medium tractor store family must be recorded, even if
+-- its exact PTO hardware still requires factory/configuration evidence.
+local P=RealismExtensionsPTOProfiles
+assert(#P.MEDIUM_CATALOG==24)
+local ids={}
+for _,p in ipairs(P.TRACTORS) do
+    assert(ids[p.id]==nil,"duplicate PTO profile "..p.id)
+    assert(type(p.evidenceUrl)=="string" and p.evidenceUrl:find("https://",1,true)==1)
+    ids[p.id]=true
+end
+local coverage={
+    agco_white_8010={"AGCO White 8010", "agco_white_8010"},
+    case_ih_puma_afs={"Puma 260", "case_ih_puma_afs"},
+    challenger_mt600={"Challenger MT645", "challenger_mt600"},
+    deutz_agrostar_831={"AgroStar 8.31", "deutz_agrostar_831"},
+    deutz_6230_ttv={"6230 TTV", "deutz_6230_ttv"},
+    deutz_7_ttv_hd={"7250 TTV", "deutz_7_ttv_hd"},
+    deutz_8_ttv={"8280 TTV", "deutz_8_ttv"},
+    fendt_700_gen7={"Fendt 728 Vario", "fendt_700_gen7"},
+    fiat_160_90={"Fiat 160-90 DT", "fiat_160_90"},
+    jcb_fastrac_4000_icon={"Fastrac 4220", "jcb_fastrac_4000_icon"},
+    john_deere_6r_145_185={"6R 165", "john_deere_6r_145_185"},
+    john_deere_6r_230_250={"6R 230", "john_deere_6r_230_250"},
+    kubota_m8={"Kubota M8-181", "kubota_m8"},
+    massey_ferguson_7s={"MF 7S.190", "massey_ferguson_7s"},
+    mccormick_x8={"X8 VT-Drive", "mccormick_x8"},
+    mercedes_mb_trac_1100_1500={"MB-trac 1500", "mercedes_mb_trac_1100_1500"},
+    mercedes_mb_trac_1300_1800={"MB-trac 1800", "mercedes_mb_trac_1300_1800"},
+    mercedes_unimog_1800_2400=nil,
+    mercedes_unimog_527_535=nil,
+    new_holland_t7_lwb={"T7.260", "new_holland_t7_lwb"},
+    steyr_absolut_cvt={"Absolut CVT", "steyr_absolut_cvt"},
+    valtra_t={"Valtra T Series", "valtra_t"},
+    versatile_nemesis={"Versatile Nemesis", "versatile_nemesis"},
+    zetor_crystal_hd={"Crystal HD 170", "zetor_crystal_hd"}
+}
+for _,id in ipairs(P.MEDIUM_CATALOG) do
+    assert(coverage[id]~=nil or P.PENDING_MEDIUM[id]~=nil, "medium family undocumented: "..id)
+    if coverage[id] then
+        local label,profileId=table.unpack(coverage[id])
+        local found=P.findTractor({configFileName="/vehicles/sample.xml",getName=function() return label end})
+        assert(found~=nil and found.id==profileId,
+            "medium profile identity failed: "..id.." / "..label.." / "..tostring(found and found.id))
+    end
+end
+local function claim(label, expected, unexpected)
+    local p=P.findTractor({configFileName="/vehicles/sample.xml",getName=function() return label end})
+    assert(p~=nil, "missing profile "..label)
+    local cap=R.resolveCapability({configFileName="/vehicles/sample.xml",getName=function() return label end,getMotor=function() return motor end})
+    for _,m in ipairs(expected) do assert(cap.modes[M.normalizeMode(m)]~=nil,label.." missing "..m) end
+    for _,m in ipairs(unexpected or {}) do assert(cap.modes[M.normalizeMode(m)]==nil,label.." must not offer "..m) end
+end
+claim("Fendt 728 Vario",{"540","540E","1000","1000E"})
+claim("8280 TTV",{"540E","1000","1000E"},{"540"})
+claim("6R 250",{"540E","1000","1000E"},{"540"})
+claim("AgroStar 8.31",{"1000"},{"540"})
+claim("Versatile Nemesis 255",{"540E","1000","1000E"},{"540"})
+claim("MF 7S.155",{"540","1000"},{"540E","1000E"})
+claim("Valtra T Series",{"540","1000"},{"540E","1000E"})
+claim("Challenger MT635",{"540","1000"},{"540E"})
+claim("Challenger MT645",{"540","1000"},{"540E"})
+claim("6R 165",{"540","540E","1000"},{"1000E"})
+claim("Fiat 160-90 DT",{"540","1000"},{"540E","1000E"})
+assert(P.findTractor({getName=function() return "6R 145" end}).id=="john_deere_6r_145")
+assert(P.findTractor({getName=function() return "MT635" end}).id=="challenger_mt635")
+assert(P.findTractor({getName=function() return "6R 155" end}).id=="john_deere_6r_155")
+assert(P.findTractor({getName=function() return "Fiat 180-90 DT" end}).id=="fiat_180_90")
+assert(P.findTractor({getName=function() return "Unimog U 535" end})==nil)
+
+
+-- FS25 official Large Tractors shop includes 26 category entries as of 1.24,
+-- counting the additional Steiger Black Edition separately.
+assert(#P.LARGE_CATALOG==26)
+assert(P.PENDING_LARGE.versatile_big_roy~=nil)
+
+local largeCases={
+    {"T8050","new_holland_t8000",{"1000"},{"540"}},
+    {"Versatile 976","versatile_976",{"1000"},{"540"}},
+    {"Ford 976 Versatile","ford_976_versatile",{"1000"},{"540"}},
+    {"Versatile 1156","versatile_1156",{"1000"},{"540"}},
+    {"Ford 1156 Versatile","ford_1156_versatile",{"1000"},{"540"}},
+    {"Fastrac 8330","jcb_fastrac_8000_icon",{"540E","1000"},{"540","1000E"}},
+    {"Valtra S Series","valtra_s",{"540E","1000"},{"540","1000E"}},
+    {"MF 9S.425","massey_ferguson_9s",{"540E","1000"},{"540","1000E"}},
+    {"Versatile MFWD","versatile_mfwd",{"1000"},{"540"}},
+    {"T8.410","new_holland_t8_genesis",{"1000"},{"540"}},
+    {"7R 310","john_deere_7r",{"1000"},{"540"}},
+    {"8R 410","john_deere_8r",{"1000"},{"540"}},
+    {"Fendt 942 Vario","fendt_900_vario",{"540E","1000"},{"540","1000E"}},
+    {"Magnum 380","case_ih_magnum_afs",{"1000"},{"540"}},
+    {"Fendt 1050 Vario","fendt_1000_vario",{"1000","1000E"},{"540"}},
+    {"8RT 410","john_deere_8rt",{"1000"},{"540"}},
+    {"1156 Vario MT","fendt_1100_vario_mt",{"1000","1000E"},{"540"}},
+    {"9R 590","john_deere_9r_440_640",{"1000"},{"540"}},
+    {"8RX 410","john_deere_8rx",{"1000"},{"540"}},
+    {"Versatile DeltaTrack","versatile_deltatrack",{"1000"},{"540"}},
+    {"9RX 590","john_deere_9rx_490_640",{"1000"},{"540"}},
+    {"XERION 12.650","claas_xerion_12",{"1000"},{"540"}},
+    {"Steiger 785 Quadtrac Black Edition","case_ih_steiger_715_785_black",{"1000"},{"540"}},
+    {"Steiger 715 Quadtrac","case_ih_steiger_715_785",{"1000"},{"540"}},
+    {"9RX 830","john_deere_9rx_710_830",{"1000"},{"540"}}
+}
+assert(#largeCases==25)
+local tested={}
+for _,case in ipairs(largeCases) do
+    local label,id,want,deny=table.unpack(case)
+    local vehicle={
+        configFileName="/vehicles/test.xml",
+        getName=function() return label end,
+        getMotor=function() return motor end,
+        getOutputPowerTakeOffs=function() return { rear={} } end
+    }
+    local profile=P.findTractor(vehicle)
+    assert(profile~=nil and profile.id==id,
+        "large identity: "..label.." -> "..tostring(profile and profile.id))
+    assert(profile.requiresOutputPto==true)
+    assert(type(profile.evidenceUrl)=="string")
+    local cap=R.resolveCapability(vehicle)
+    assert(cap.profileId==id and cap.source=="PROFILE")
+    for _,mode in ipairs(want) do
+        assert(cap.modes[M.normalizeMode(mode)]~=nil,label.." missing "..mode)
+    end
+    for _,mode in ipairs(deny) do
+        assert(cap.modes[M.normalizeMode(mode)]==nil,label.." unsourced "..mode)
+    end
+    assert(R.vehicleHasOutputPto(vehicle)==true)
+    tested[id]=true
+
+    -- Same real tractor with NO native physical shaft: profile must not
+    -- conjure PTO modes or force a rear gearbox into the game.
+    vehicle.getOutputPowerTakeOffs=function() return {} end
+    local none=R.resolveCapability(vehicle)
+    assert(R.vehicleHasOutputPto(vehicle)==false)
+    assert(none.source=="PROFILE_OUTPUT_UNVERIFIED")
+    assert(next(none.modes)==nil)
+
+    -- A generic PTO specialization/connector is NOT an installed rear
+    -- output. Do not confuse it with actual outputPowerTakeOffs.
+    vehicle.spec_powerTakeOffs={ powerTakeOffs={{}} }
+    assert(R.vehicleHasOutputPto(vehicle)==false)
+    assert(next(R.resolveCapability(vehicle).modes)==nil)
+
+    -- The GIANTS specialization exposes an actual populated output list.
+    vehicle.spec_powerTakeOffs={ outputPowerTakeOffs={{}} }
+    assert(R.vehicleHasOutputPto(vehicle)==true)
+    assert(R.resolveCapability(vehicle).modes[M.MODE.RPM_1000]~=nil
+        or R.resolveCapability(vehicle).modes[M.MODE.RPM_540_ECO]~=nil)
+end
+for _,id in ipairs(P.LARGE_CATALOG) do
+    assert(tested[id]==true or P.PENDING_LARGE[id]~=nil,
+        "large tractor unclassified: "..id)
+end
+assert(P.findTractor({getName=function() return 'Versatile 1080 "Big Roy"' end})==nil)
+assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
+assert(P.findTractor({getName=function() return "John Deere 9RX 830" end}).id=="john_deere_9rx_710_830")
+assert(P.findTractor({getName=function() return "John Deere 8RX 410" end}).id=="john_deere_8rx")
+assert(P.findTractor({getName=function() return "8RX 340" end}).id=="john_deere_8rx_340")
+assert(P.findTractor({getName=function() return "8R 250" end}).id=="john_deere_8r_250")
+assert(P.findTractor({getName=function() return "8RT 340" end}).id=="john_deere_8rt")
+local function shaftRatioFor(label)
+    local v={getName=function() return label end,getMotor=function() return motor end,getOutputPowerTakeOffs=function() return {rear={}} end}
+    return R.resolveCapability(v).modes[M.MODE.RPM_1000].effectiveMotorRatio
+end
+assert(math.abs(shaftRatioFor("8RX 340")-(1995/1000))<0.000001)
+assert(math.abs(shaftRatioFor("8R 250")-(1995/1000))<0.000001)
+assert(math.abs(shaftRatioFor("XERION 12.650")-(1500/1000))<0.000001)
+assert(math.abs(shaftRatioFor("Valtra S Series")-(1882/1000))<0.000001)
+assert(P.findTractor({getName=function() return "Ford 976 Versatile" end}).id=="ford_976_versatile")
+assert(P.findTractor({getName=function() return "Steiger 785 Quadtrac Black Edition" end}).id=="case_ih_steiger_715_785_black")
+
+-- Small shop: 25 identities and 27 profiles (three per-model RPM variants).
+assert(#P.SMALL_CATALOG==25)
+assert(P.PENDING_SMALL.new_holland_tk4_80_methane~=nil)
+local smallCases={
+    {"antonio_carraro_mach_4r","Mach 4R",{"540","540E"}},
+    {"antonio_carraro_tony_10900_ttr","Tony 10900 TTR",{"540","540E"}},
+    {"case_ih_farmall_c","Farmall C Series",{"540","1000"}},
+    {"case_ih_vestrum","Vestrum 130",{"540","540E","1000"}},
+    {"claas_arion_470","ARION 470",{"540","540E","1000"}},
+    {"claas_arion_400","ARION 410",{"540","540E","1000"}},
+    {"claas_arion_570","ARION 570",{"540","540E","1000","1000E"}},
+    {"claas_arion_570_530","ARION 530",{"540","1000"}},
+    {"deutz_fahr_6c_rvshift","6C RVShift",{"540","540E","1000"}},
+    {"fendt_200_v_vario","Fendt 200 V Vario",{"540","540E","1000"}},
+    {"fendt_300_vario","Fendt 300 Vario",{"540","540E","1000"}},
+    {"fendt_500_vario","Fendt 500 Vario",{"540","540E","1000"}},
+    {"iseki_tjw","ISEKI TJW1233",{"540","540E","1000"}},
+    {"jcb_fastrac_2000_4ws","JCB Fastrac 2000 4WS Series",{"540","1000"}},
+    {"john_deere_3650","John Deere 3650",{"540","1000"}},
+    {"john_deere_6m_105","John Deere 6M 105",{"540","1000"}},
+    {"john_deere_6m","John Deere 6M 125",{"540","1000"}},
+    {"landini_rex4_gt","Landini REX 4 GT",{"540","540E"}},
+    {"lindner_lintrac_130","Lindner Lintrac 130",{"540","1000"}},
+    {"massey_ferguson_5700_s","Massey Ferguson MF 5700 S",{"540","540E"}},
+    {"mercedes_mb_trac_700","Mercedes MB-trac 700",{"540","1000"}},
+    {"mercedes_mb_trac_700_900","Mercedes MB-trac 900",{"540","1000"}},
+    {"mercedes_mb_trac_1000_1100","Mercedes MB-trac 1000",{"540","1000"}},
+    {"rigitrac_skh60","Rigitrac SKH 60",{"540","1000"}},
+    {"same_virtus_135_rvshift","SAME Virtus 135 RVShift",{"540","540E","1000"}},
+    {"zetor_crystal_16045","Zetor Crystal 16045",{"540","1000"}},
+    {"zetor_forterra_hsx","Zetor Forterra HSX",{"540","540E","1000","1000E"}},
+    {"zetor_proxima_hs","Zetor Proxima HS",{"540"}},
+}
+local matched={}
+for _,c in ipairs(smallCases) do
+    local id,label,wanted=table.unpack(c)
+    local obj={configFileName="/vehicles/test.xml",getName=function()return label end,
+        getMotor=function()return motor end,
+        getOutputPowerTakeOffs=function()return {rear={}} end}
+    local p=P.findTractor(obj)
+    assert(p~=nil and p.id==id,"small token: "..label.." -> "..tostring(p and p.id))
+    local cap=R.resolveCapability(obj)
+    assert(cap.source=="PROFILE",label.." capability source")
+    local count=0
+    for mode in pairs(cap.modes) do count=count+1 end
+    assert(count==#wanted,label.." unsourced speeds (expected "..#wanted..", got "..count..")")
+    for _,mode in ipairs(wanted) do
+        assert(cap.modes[M.normalizeMode(mode)]~=nil,label.." missing "..mode)
+    end
+    matched[id]=true
+end
+local representative={
+  claas_arion_400="claas_arion_400",
+  john_deere_6m="john_deere_6m",
+  mercedes_mb_trac_700_900="mercedes_mb_trac_700_900"
+}
+for _,id in ipairs(P.SMALL_CATALOG) do
+    assert(matched[id] or P.PENDING_SMALL[id],
+        "Small category unaccounted: "..id)
+end
+local function measured(label,mode)
+    local cap=R.resolveCapability({configFileName="/test.xml",
+        getName=function()return label end,getMotor=function()return motor end})
+    local m=cap.modes[M.normalizeMode(mode)]
+    assert(m~=nil,label.." no "..mode)
+    return m.effectiveMotorRatio*m.shaftRpm
+end
+assert(math.abs(measured("John Deere 3650","540")-2178)<0.001)
+assert(math.abs(measured("John Deere 3650","1000")-2172)<0.001)
+assert(math.abs(measured("Zetor Crystal 16045","540")-1900)<0.001)
+assert(math.abs(measured("Zetor Crystal 16045","1000")-2200)<0.001)
+assert(math.abs(measured("ARION 470","540E")-1560)<0.001)
+assert(math.abs(measured("ARION 470","1000")-1964)<0.001)
+assert(math.abs(measured("John Deere 6M 105","540")-1977)<0.001)
+assert(math.abs(measured("Mercedes MB-trac 700","1000")-2196)<0.001)
+-- The shop's series-range labels must never borrow one member's calibrated
+-- engine-to-shaft ratio. They resolve to conservative family mode-only records.
+assert(P.findTractor({getName=function()return "ARION 470-410" end}).id=="claas_arion_400")
+assert(P.findTractor({getName=function()return "ARION 570-530" end}).id=="claas_arion_570_530")
+assert(P.findTractor({getName=function()return "Mercedes MB-trac 700-900" end}).id=="mercedes_mb_trac_700_900")
+assert(P.findTractor({getName=function() return "TK4.80 Methane Power" end})==nil)
+assert(P.findTractor({getName=function() return "Fendt 728 Vario" end}).id=="fendt_700_gen7")
+assert(P.findTractor({getName=function() return "John Deere 7R 310" end}).id=="john_deere_7r")
+assert(P.findTractor({getName=function() return "8RX 340" end}).id=="john_deere_8rx_340")
+
+
+-- Official other-category carriers: evidence does not automatically grant a
+-- mechanical PTO gearbox if no GIANTS output shaft is instantiated.
+assert(#P.OTHER_PTO_CARRIERS_CATALOG==2)
+local otherCases={
+    {
+        id="pfanzelt_pm_trac_iii",
+        name="Pfanzelt Pm Trac III",
+        path="data/vehicles/pfanzelt/pmTracIII/pmTracIII.xml",
+        modes={"540E","1000"},
+        forbidden={"540","1000E"},
+        category="FORESTRY_TRACTOR"
+    },
+    {
+        id="merlo_multifarmer_mf44_9",
+        name="Merlo MF44.9CS-170-CVTRONIC",
+        path="data/vehicles/merlo/mf44_9CS/mf44_9CS.xml",
+        modes={"540","1000"},
+        forbidden={"540E","1000E"},
+        category="TELEHANDLER"
+    }
+}
+for _,case in ipairs(otherCases) do
+    for _,identityMethod in ipairs({"name","file"}) do
+        local vehicle={
+            configFileName=identityMethod=="file" and case.path or "/vehicles/other.xml",
+            getName=function()
+                if identityMethod=="file" then return "Non-matching display label"
+                else return case.name end
+            end,
+            getMotor=function() return motor end,
+            getOutputPowerTakeOffs=function() return {{attacherJointIndices={[1]=true}}} end,
+        }
+        local found=P.findTractor(vehicle)
+        assert(found and found.id==case.id,case.name.." profile identity mismatch "..identityMethod)
+        assert(found.catalogGroup==case.category)
+        assert(found.requiresOutputPto==true)
+        assert(type(found.evidenceUrl)=="string" and
+            found.evidenceUrl:find("https://",1,true)==1)
+        assert(R.vehicleHasOutputPto(vehicle)==true)
+        local capability=R.resolveCapability(vehicle)
+        assert(capability.profileId==case.id)
+        local count=0
+        for _ in pairs(capability.modes) do count=count+1 end
+        assert(count==#case.modes,case.name.." unexpected installed modes")
+        for _,mode in ipairs(case.modes) do
+            assert(capability.modes[M.normalizeMode(mode)]~=nil,
+                case.name.." missing supported mode "..mode)
+        end
+        for _,mode in ipairs(case.forbidden) do
+            assert(capability.modes[M.normalizeMode(mode)]==nil,
+                case.name.." advertised forbidden mode "..mode)
+        end
+        -- Missing physical output is a negative fact: zero modes, not 540
+        -- fallback, even if engine/three-point/hydraulics remain present.
+        vehicle.getOutputPowerTakeOffs=function() return {} end
+        assert(R.vehicleHasOutputPto(vehicle)==false)
+        local missing=R.resolveCapability(vehicle)
+        assert(missing.source=="PROFILE_OUTPUT_UNVERIFIED")
+        assert(next(missing.modes)==nil)
+        -- The generic specialization is not physical PTO shaft evidence.
+        vehicle.spec_powerTakeOffs={powerTakeOffs={{}}}
+        assert(R.vehicleHasOutputPto(vehicle)==false)
+        assert(next(R.resolveCapability(vehicle).modes)==nil)
+        vehicle.spec_powerTakeOffs={outputPowerTakeOffs={{}}}
+        assert(R.vehicleHasOutputPto(vehicle)==true)
+        assert(#M.sortedModes(R.resolveCapability(vehicle).modes)==#case.modes)
+    end
+end
+-- Reviewed special vehicles cannot be accidentally claimed by either profile.
+for _,name in ipairs({
+    "NEXAT Carrier Vehicle", "Prinoth Leitwolf Agripower",
+    "ROPA NawaRo-Maus", "JCB World's Fastest Tractor",
+    "Heizomat Heizotruck V2", "Sennebogen 340G",
+    "Merlo EW 25.5-90", "JENZ HEM 922 DQ"
+}) do
+    assert(P.findTractor({getName=function()return name end})==nil,
+        name.." must not borrow tractor PTO gearbox profile")
+end
+assert(P.findTractor({getName=function()return "Fendt 728 Vario" end}).id
+    =="fendt_700_gen7")
+
+-- Exact PTO consumer requirements are not the same thing as a binary
+-- 540/1000 family. In particular, 750, 900, 1300 and 1400 must not
+-- masquerade as 1000; future hardware modes will need a typed extension.
+for _,rpm in ipairs({540, 750, 900, 1000, 1300, 1400}) do
+    local explicit = {
+        configFileName="/mods/explicitPto"..tostring(rpm)..".xml",
+        spec_powerConsumer={ptoRpm=rpm},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function() return {} end
+    }
+    fiat.getAttachedImplements=function() return {{object=explicit}} end
+    local requirement = R.collectRequirements(fiat)
+    assert(requirement.hasPtoConsumer==true)
+    assert(requirement.knownCount==1)
+    assert(requirement.conflict==false)
+    assert(requirement.requiredRpm==rpm,
+        "PTO native rpm rounded incorrectly: "..tostring(rpm))
+    assert(requirement.primary.confidence=="NATIVE_EXPLICIT")
+end
+-- 540 + 750 or 750 + 1000 are distinct demands and stay in conflict,
+-- rather than silently accepting a 750 device on a 1000 gearbox.
+local devices={}
+for _,rpm in ipairs({540, 750}) do
+    local obj={spec_powerConsumer={ptoRpm=rpm},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function() return {} end}
+    devices[#devices+1]={object=obj}
+end
+fiat.getAttachedImplements=function() return devices end
+local mixed=R.collectRequirements(fiat)
+assert(mixed.conflict==true and mixed.requiredRpm==nil)
+
+print("pto_resolver_harness: OK")
