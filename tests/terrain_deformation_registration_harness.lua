@@ -34,6 +34,16 @@ Utils = {
     end
 }
 
+-- A production-safe baseline must not install an inert specialization or
+-- intercept GIANTS vehicle type validation when TerrainDeformation is OFF.
+RealismExtensionsConfig = { modules = { TerrainDeformation = false } }
+local originalValidateTypes = TypeManager.validateTypes
+dofile("scripts/terrain/TerrainDeformationRegistration.lua")
+assert(registered.realismExtensionsTerrainDeformation == nil)
+assert(TypeManager.validateTypes == originalValidateTypes)
+
+-- Explicit feature/development opt-in still registers correctly.
+RealismExtensionsConfig.modules.TerrainDeformation = true
 dofile("scripts/terrain/TerrainDeformationRegistration.lua")
 assert(registered.realismExtensionsTerrainDeformation == true)
 

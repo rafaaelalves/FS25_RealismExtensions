@@ -1,11 +1,11 @@
 RealismExtensionsConfig = {
     version = "0.0.1.0",
     diagnostics = {
-        verbose = true,
+        verbose = false,
         expensiveGeometry = false,
-        performanceTiming = true
+        performanceTiming = false
     },
     modules = {
-        TerrainDeformation = true
+        TerrainDeformation = false
     }
 }

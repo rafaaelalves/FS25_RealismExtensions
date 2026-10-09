@@ -6,7 +6,8 @@ Updated: 2026-09-30
 
 - Version: `0.0.1.0`
 - Phase: TerrainDeformation baseline integrated; completion work reopened
-- Production defaults: gameplay modules disabled; verbose diagnostics disabled
+- Production defaults: gameplay modules disabled; verbose and timing diagnostics disabled.
+- Safety gate: disabled TerrainDeformation does not register the vehicle specialization or append a `TypeManager.validateTypes` hook; development branches explicitly opt in. See stabilization fix of 2026-10-08.
 - TerrainDeformation: integrated into `main` via PR #24, runtime-validated as a baseline, **not yet complete**
 
 ## Baseline validated
