@@ -15,6 +15,9 @@ RealismExtensionsConfig = {
     modules = {
         TerrainDeformation = true,
         TerrainRecovery = true,
+        -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
+        -- toggle false to compare original R6 behavior on the same backup save.
+        TerrainPlasticYield = true,
         TerrainMaintenance = true,
         SoilMassTransport = false,
         NativeTireTrackProbe = true,
