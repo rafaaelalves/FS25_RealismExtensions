@@ -5,6 +5,34 @@
 **PTO:** desenvolvimento isolado em outro chat/PR; este roteiro **não altera nem testa a PTO**.  
 **Princípio:** menos versões de teste inúteis, testes que resolvam hipóteses inteiras, manutenção de um único autor por estado físico e não substituir capacidades especialistas apenas para reduzir ZIPs.
 
+## Decisão de execução — 2026-10-09: encerrar o terreno por resultados de gameplay
+
+**Prioridade de produto:** o objetivo não é provar cada variável do sistema, mas **concluir uma experiência de terreno funcional e avançar ao próximo módulo**. Os capítulos P1–P6 abaixo são um inventário de capacidades e pesquisa; **não são todos bloqueadores de release**.
+
+**A1 concluído no escopo passivo:** a [PR #35](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/35) foi mesclada em `feat/terrain-recovery` após CI verde e aproximadamente 52 minutos de gameplay. Ela comprovou passes reais `SHALLOW_DISC`, conexão RC provider v2, centenas de milhares de contextos de roda, 2.072 TARGETs físicos e save sem falha do RE. **A1 não está concluído como dosagem por passada independente de FPS**, e isso é aceito explicitamente para a versão atual porque o R6 vem funcionando no jogo. Não ampliar instrumentação sem uma regressão observável.
+
+### Escopo indispensável para fechar TerrainDeformation/Recovery v1
+
+1. **R6/R7:** conservar o que o jogador já consegue observar: sulcos por contato sob condições adequadas, recuperação útil com cultivador/grade/arado conforme capacidade física do implemento, ausência de aumento progressivo de danos ao trabalhar a área; não exigir `worsened=0`, `noOp=0` ou milhares de amostras extras se o resultado é estável. Se surgir patologia visível, corrigir **aquele cenário reproduzido**.
+2. **R8 e independência de condutor:** a IA deve produzir consequências físicas normais sem loops de escavação infinita; manter defesa contra estados inválidos. Um teste representativo player + GIANTS helper/Courseplay é suficiente para decidir se a regressão relevante existe, não uma auditoria de todos os veículos.
+3. **R9:** confirmar no harness limites de proprietário, período e custo; fazer **um ciclo controlado no jogo** de mudança de período para verificar NPC/municipal. Se permanecer não validado fisicamente, **deixar opt-in/desabilitado na configuração de release**, claramente documentado; não impedir fechamento do terreno principal.
+4. **Durabilidade:** save/reload com altura e histórico RE coerentes; fila zerada ao estabilizar; sem exceptions do RE; CPU e memória aceitáveis durante sessão normal prolongada. Multiplayer não verificado deve ser **rotulado não validado**, nunca suposto compatível.
+5. **Release/branch hygiene:** deixar `feat/terrain-recovery` consolidada; CI e pacote identificáveis; `main` com configurações seguras; não misturar PTO nem experimentos de outros módulos durante o fechamento.
+
+**Critério de saída:** se esses cinco itens passarem, **declarar terreno v1 concluído com limitações documentadas**, sem aumentar escopo para `RecoveryPassSummary`, investigação causal por cada callback, curvas de rugosidade, parâmetros de chuva, SoilMassTransport, distribuição estocástica de roletes ou conservação perfeita por patch. Trabalho que não altera gameplay é investigação sob demanda, não gate permanente.
+
+### Próximo módulo com retorno físico concreto: ContactFootprint
+
+O próximo módulo priorizado é **contato de rodas e esteiras**, porque afeta geometria visível e pressão real. Não inventar uma regra por tipo de implemento (semeadeira vs colheitadeira). A diferença emerge da **carga, quantidade/posição de bandas, largura, pressão, estrutura da roda/esteira e solo**; implementos agrícolas são *atuadores de trabalho/recuperação*, não fontes arbitrárias de sulcos distintos.
+
+**Entrega útil esperada:** duplos/estreitos duplos não escavam uma faixa sólida atravessando o espaço entre pneus; pneus largos distribuem carga de modo coerente; esteiras deixam duas faixas com contato longitudinal e sem pressão fictícia de inflação; rodas auxiliares/implementos participam quando têm apoio real. Projetar sob RC provider v2 `supportSegments`/`supportSpanM`/`supportContactWidthM`, mantendo a pressão/mobilidade do Mud/MR e o desgaste do Reifen como autoridades.
+
+**Fora do caminho crítico:** A2 `RecoveryPassSummary`, B1–B4 medição e calibração avançadas, C1–C4 generalização extra de ferramentas, modelo mass-transport experimental, tuning de dificuldade antes de observar safras, guinchos RE próprios, arar todos os tipos de veículos e cobertura de mods sem evidência de incompatibilidade. Permanecem registradas para necessidades futuras.
+
+**Próxima ação:** terminar checklist de R9 + estado de release de terreno. Em seguida abrir uma branch curta e específica para `ContactFootprint` com os dois casos de maior valor visível: **duplos separados** e **esteiras**. Sem novo projeto de telemetria antes deles.
+
+---
+
 ## 0. Estado verificável e fontes de verdade
 
 - RE `main`: base consolidada de TerrainDeformation anterior ao trabalho atual; **não é a branch R9**. Correção dos defaults seguros em [PR #34](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/34), CI verde; manter sem merge até revisão. Nenhuma correção desta trilha deve modificar branches da PTO.
