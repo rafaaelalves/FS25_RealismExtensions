@@ -1,5 +1,7 @@
 RealismExtensionsConfig = {
     version = "0.0.1.0",
+    -- Explicitly NOT the production main release profile.
+    releaseChannel = "experimental-terrain-pto",
     diagnostics = {
         -- development: causal runtime telemetry enabled for active research.
         -- stabilization: retain cheap health/perf telemetry, reduce research noise.
