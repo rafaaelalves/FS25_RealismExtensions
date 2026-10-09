@@ -87,12 +87,15 @@ function Model.sameFamily(a, b)
 end
 
 function Model.modeForFamily(shaftRpm, economy)
-    shaftRpm = tonumber(shaftRpm) or 0
-    if shaftRpm >= 750 then
+    -- Family resolution must be an EXACT nominal shaft-speed match.
+    -- 750/900/1300/1400 are real, distinct PTO speeds and cannot be rounded
+    -- to 1000 or 540 simply because our UI has only four supported modes.
+    shaftRpm = tonumber(shaftRpm)
+    if shaftRpm == 1000 then
         return economy and Model.MODE.RPM_1000_ECO
             or Model.MODE.RPM_1000
     end
-    if shaftRpm > 0 then
+    if shaftRpm == 540 then
         return economy and Model.MODE.RPM_540_ECO
             or Model.MODE.RPM_540
     end
