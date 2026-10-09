@@ -19,6 +19,7 @@
         <sourceFile filename="scripts/api/StateContract.lua"/>
         <sourceFile filename="scripts/terrain/FootprintModel.lua"/>
         <sourceFile filename="scripts/terrain/SurfaceResponse.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainPlasticYield.lua"/>
         <sourceFile filename="scripts/terrain/TerrainResponseModel.lua"/>
         <sourceFile filename="scripts/terrain/SpatialHistory.lua"/>
         <sourceFile filename="scripts/terrain/TerrainPersistence.lua"/>
