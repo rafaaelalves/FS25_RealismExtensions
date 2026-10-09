@@ -373,7 +373,11 @@ function Engine.processSample(
 
     local modelOptions = {
         absoluteMaxStaticRutDepthM = surface.maxStaticRutDepthM,
-        absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM
+        absoluteMaxSlipRutDepthM = surface.maxSlipRutDepthM,
+        plasticYieldEnabled = RealismExtensionsConfig ~= nil
+            and RealismExtensionsConfig.modules ~= nil
+            and RealismExtensionsConfig.modules.TerrainPlasticYield == true,
+        surfaceCategory = surface.category
     }
     local actorPolicy = RealismExtensionsTerrainActorPolicy
     local actorOverrides = actorPolicy ~= nil
@@ -393,6 +397,22 @@ function Engine.processSample(
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
         return false
+    end
+
+    if response.plasticYield01 ~= nil then
+        diagMax("plasticYieldMax01", response.plasticYield01)
+        diagMax("plasticDemandBearingRatioMax",
+            tonumber(response.plasticDemandBearingRatio) or 0)
+        if response.plasticYield01 <= 0 and previousDepth <= 0 then
+            -- No permanent mechanical yield: Mud may sink transiently and
+            -- SoilCompaction may densify, but RE must not allocate an empty
+            -- SpatialHistory tombstone or a native heightmap write.
+            diagCount("plasticSupportedSamples", 1)
+            return false
+        end
+        if response.plasticYield01 > 0 then
+            diagCount("plasticYieldSamples", 1)
+        end
     end
 
     diagMax("maxRutDepthM", tonumber(response.rutDepthM) or 0)
