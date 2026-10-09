@@ -508,4 +508,36 @@ end
 assert(P.findTractor({getName=function()return "Fendt 728 Vario" end}).id
     =="fendt_700_gen7")
 
+-- Exact PTO consumer requirements are not the same thing as a binary
+-- 540/1000 family. In particular, 750, 900, 1300 and 1400 must not
+-- masquerade as 1000; future hardware modes will need a typed extension.
+for _,rpm in ipairs({540, 750, 900, 1000, 1300, 1400}) do
+    local explicit = {
+        configFileName="/mods/explicitPto"..tostring(rpm)..".xml",
+        spec_powerConsumer={ptoRpm=rpm},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function() return {} end
+    }
+    fiat.getAttachedImplements=function() return {{object=explicit}} end
+    local requirement = R.collectRequirements(fiat)
+    assert(requirement.hasPtoConsumer==true)
+    assert(requirement.knownCount==1)
+    assert(requirement.conflict==false)
+    assert(requirement.requiredRpm==rpm,
+        "PTO native rpm rounded incorrectly: "..tostring(rpm))
+    assert(requirement.primary.confidence=="NATIVE_EXPLICIT")
+end
+-- 540 + 750 or 750 + 1000 are distinct demands and stay in conflict,
+-- rather than silently accepting a 750 device on a 1000 gearbox.
+local devices={}
+for _,rpm in ipairs({540, 750}) do
+    local obj={spec_powerConsumer={ptoRpm=rpm},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function() return {} end}
+    devices[#devices+1]={object=obj}
+end
+fiat.getAttachedImplements=function() return devices end
+local mixed=R.collectRequirements(fiat)
+assert(mixed.conflict==true and mixed.requiredRpm==nil)
+
 print("pto_resolver_harness: OK")

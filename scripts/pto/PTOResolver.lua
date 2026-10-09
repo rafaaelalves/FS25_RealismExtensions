@@ -201,9 +201,13 @@ local function detectImplement(object)
         return {
             object = object,
             usesPto = true,
-            shaftRpm = rpm >= 750 and 1000 or 540,
+            -- Preserve the *actual* manufacturer's explicit shaft demand.
+            -- Treating every rpm >= 750 as 1000 would falsely accept 750,
+            -- 900, 1300 and 1400 PTO tools. Unsupported modes must remain
+            -- visible as an honest mismatch, not silently rounded to 1000.
+            shaftRpm = rpm,
             source = "POWER_CONSUMER_PTO_RPM",
-            confidence = rpm >= 750 and "NATIVE_EXPLICIT" or "NATIVE_AMBIGUOUS"
+            confidence = "NATIVE_EXPLICIT"
         }
     end
 
