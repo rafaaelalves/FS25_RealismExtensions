@@ -51,3 +51,22 @@ Depois de correlacionar `TerrainPass` com um log real:
 - integrar `ContactFootprint` de grupos físicos como trilha independente, preservando pneus simples e separando largura de contato de colisor temporário FarmKit.
 
 Documento de escopo: [roteiro estabilização](../project/STABILIZATION_ROADMAP_2026-10-08.md) e [Terrain Evolution Plan](../project/TERRAIN_EVOLUTION_PLAN.md).
+
+## 2026-10-09 — primeiro log real, incompatibilidade RC/RE identificada
+
+Arquivo observado: `log(20261009-084831).txt`. BuildIdentities do jogo: RE `35/merge@c849694d`; RC `16/merge@001774b3`. O provider RC publica `apiVersion=2`, `wheelContextVersion=2` (confere com `RC/scripts/api/ExtensionsStateProvider.lua`), mas a revisão inicial desta PR esperava apenas versão 1. O log repetiu `expected 1, got 2` a cada segundo. **A falha de ABI invalida o teste físico**, não os contadores básicos de passagens.
+
+Os dois eventos observados:
+- passagem #1 `SHALLOW_DISC`, `IDLE`, 405,25 m, 132,57 s, 11,05 km/h, 2.945 callbacks (2.906 changed + 39 repeat);
+- passagem #2 `SHALLOW_DISC`, `IDLE`, 546,26 m, 232,77 s, 8,49 km/h, 5.339 callbacks (5.247 changed + 92 repeat).
+
+O RE restaurou e salvou 49.913 células históricas, mas amostrou **0 contextos em 40.008 tentativas**, nenhuma deformação e nenhum TARGET. Nenhum candidato causal foi encontrado sob o implemento nessa sessão; mesmo com ABI corrigida, isso não provaria automaticamente falta de bug de recuperação: exigimos sulco causal na área para testar o atuador.
+
+**Correção isolada nesta mesma branch, sem PTO e sem física:** `StateContract.lua` negocia explicitamente pares `(API=1,wheel=1)` e `(API=2,wheel=2)`. Não aceita outras versões ou pares mistos; `getWheelContext` verifica sempre a versão negociada em cada retorno. A v2 RC conserva `grounded`, `physicalGroundWetness`, `longitudinalSlip`, `wheelLoadN`, `structuralRadiusM`, `sinkDepthM`, `supportWidthM`, e **acrescenta** `supportSpanM`, `supportGapWidthM` e `supportSegments`. Essa mudança é compatível com o `FootprintModel` atual, que ainda não tenta modelar bandas separadas ou esteiras. O harness `state_contract_harness` foi ampliado para v2, v3 não suportado, pares mistos e context retornado com versão errada.
+
+**Importante:** `RC 16/merge` anuncia bridges `MR+RE PTO FAILED (PTO API not loaded)`; isso é resultado esperado da combinação de branches escolhida pelo usuário para testar terrain, **não** autorização para editar PTO aqui. O coordenamento definitivo das branches ainda precisa de merge/rebase consciente; não devemos juntar PRs experimentalmente. Depois do CI desta mudança, **somente o próximo build** deve ser usado para validação da deformação.
+
+Observações independentes no mesmo log (fora de escopo de reparo):
+- `FS25_SeedSelect 1.0.0.1` é candidato à captura indevida de Y sem seeder; seu próprio ModHub especifica a exigência de implemento compatível; source exato não auditado.
+- `FS25_manualAttach` lança `delete(nil)` no `deleteMap` após salvar/quitar o jogo (DetectionHandler.lua:65), uma falha real de teardown de mod externo, não de TerrainRecovery.
+- ModMixer SCAN usa dataset histórico de 2026-06-01 para muitos conflitos; não interpretar todos como incidentes runtime recentes.
