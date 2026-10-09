@@ -6,6 +6,8 @@ Updated: 2026-10-02
 
 **Execution decision — 2026-10-09:** [v1 release closure gates in roadmap](STABILIZATION_ROADMAP_2026-10-08.md). PR #35 (TerrainPassTracker, RC provider v2) merged into this branch, source gameplay PASS for passive observation on 2026-10-09. **Do not expand A2 pass-correlated per-callback telemetry in absence of a reproducible visible issue.** Close R6/R8/R9/release safety instead; next tangible module is grouped wheel/track `ContactFootprint`, not arbitrary implement-specific ruts. PTO remains independent.
 
+**2026-10-09 traffic-versus-tillage physics/efficiency study:** [Source-informed design analysis](../research/terrain-tillage-traffic-net-effect-study-2026-10-09.md) identifies the global 1.5s root suppression and 8s owner-agnostic 0.40m area mask; per-work-area 0.20m history scans happen even on mostly undamaged fields. Recommendation: retain net-effect write coalescing (do not write rut and undo immediately), pursue efficient spatial broad-phase and root-aware masking only if measured or visible issues justify them. No changes to terrain code or severity approved. PTO independent.
+
 ## Read this first
 
 Canonical active branch for TerrainRecovery work: `feat/terrain-recovery`.
