@@ -5,8 +5,13 @@
 
 RealismExtensionsState = {
     API_VERSION = 2,
-    REQUIRED_PROVIDER_API_VERSION = 1,
-    REQUIRED_WHEEL_CONTEXT_VERSION = 1,
+    -- RC v2 is additive for the terrain state consumed today and introduces
+    -- grouped support geometry (segments/contact width vs lateral span).
+    -- Negotiate only explicit, paired v1/v2 contracts; never accept an unknown
+    -- future schema simply because the method name still exists.
+    SUPPORTED_PROVIDER_API_VERSIONS = { [1] = true, [2] = true },
+    SUPPORTED_WHEEL_CONTEXT_VERSIONS = { [1] = true, [2] = true },
+    negotiatedWheelContextVersion = nil,
     provider = nil,
     providerInfo = nil,
     providerReason = nil
@@ -39,19 +44,30 @@ function RealismExtensionsState.validateProvider(provider)
         return false, "provider info unavailable", nil
     end
 
-    if tonumber(info.apiVersion) ~= RealismExtensionsState.REQUIRED_PROVIDER_API_VERSION then
+    local apiVersion = tonumber(info.apiVersion)
+    local wheelContextVersion = tonumber(info.wheelContextVersion)
+    if RealismExtensionsState.SUPPORTED_PROVIDER_API_VERSIONS[apiVersion]
+        ~= true then
         return false, string.format(
-            "provider API version mismatch: expected %d, got %s",
-            RealismExtensionsState.REQUIRED_PROVIDER_API_VERSION,
+            "unsupported provider API version: got %s (supports 1, 2)",
             tostring(info.apiVersion)
         ), info
     end
 
-    if tonumber(info.wheelContextVersion)
-        ~= RealismExtensionsState.REQUIRED_WHEEL_CONTEXT_VERSION then
+    if RealismExtensionsState.SUPPORTED_WHEEL_CONTEXT_VERSIONS[wheelContextVersion]
+        ~= true then
         return false, string.format(
-            "wheel context version mismatch: expected %d, got %s",
-            RealismExtensionsState.REQUIRED_WHEEL_CONTEXT_VERSION,
+            "unsupported wheel context version: got %s (supports 1, 2)",
+            tostring(info.wheelContextVersion)
+        ), info
+    end
+
+    -- The supported RC generations use paired revisions; v1/v2 mixed metadata
+    -- is not a reviewed contract. Fail closed rather than trusting field names.
+    if wheelContextVersion ~= apiVersion then
+        return false, string.format(
+            "provider/wheel context version pair mismatch: %s/%s",
+            tostring(info.apiVersion),
             tostring(info.wheelContextVersion)
         ), info
     end
@@ -65,12 +81,15 @@ function RealismExtensionsState.registerProvider(provider)
         RealismExtensionsState.provider = nil
         RealismExtensionsState.providerInfo = info
         RealismExtensionsState.providerReason = reason
+        RealismExtensionsState.negotiatedWheelContextVersion = nil
         return false, reason
     end
 
     RealismExtensionsState.provider = provider
     RealismExtensionsState.providerInfo = info
     RealismExtensionsState.providerReason = nil
+    RealismExtensionsState.negotiatedWheelContextVersion =
+        tonumber(info.wheelContextVersion)
     return true
 end
 
@@ -110,6 +129,7 @@ function RealismExtensionsState.clearProvider(provider)
         RealismExtensionsState.provider = nil
         RealismExtensionsState.providerInfo = nil
         RealismExtensionsState.providerReason = nil
+        RealismExtensionsState.negotiatedWheelContextVersion = nil
     end
 end
 
@@ -137,7 +157,7 @@ function RealismExtensionsState.getWheelContext(vehicle, wheel, hints)
     end
 
     if tonumber(context.contextVersion)
-        ~= RealismExtensionsState.REQUIRED_WHEEL_CONTEXT_VERSION then
+        ~= RealismExtensionsState.negotiatedWheelContextVersion then
         return nil
     end
 
