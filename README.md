@@ -6,6 +6,20 @@ RealismExtensions does not try to replace mature systems merely to reduce the mo
 
 ## Current state
 
+**Default behavior on `main`: foundation-only.** TerrainDeformation is
+explicitly disabled by default, including verbose/performance diagnostics. The
+registration bootstrap is inert while disabled: it does not wrap GIANTS
+`TypeManager.validateTypes` or add a specialization to vehicle types. The
+experimental `feat/terrain-recovery` branch enables its gameplay modules
+intentionally for controlled tests; installing a ZIP built from `main` does
+not activate the research feature.
+
+**PTO candidate branch:** this branch opts into `PTOControl=true` while keeping
+`TerrainDeformation=false` and disabling terrain diagnostics. PTO can be tested
+without creating additional persistent ruts; the separate terrain research
+branches retain their explicit opt-in settings.
+
+
 Version `0.0.1.0` is an active development line.
 
 `TerrainDeformation` has a validated wheel-based baseline in `main`, but the module is intentionally still open while low-speed invariance, dual/twin behavior, crawler support and AI/implement parity are completed.

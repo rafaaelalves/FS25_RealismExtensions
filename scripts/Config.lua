@@ -1,9 +1,9 @@
 RealismExtensionsConfig = {
     version = "0.0.1.0",
     diagnostics = {
-        verbose = true,
+        verbose = false,
         expensiveGeometry = false,
-        performanceTiming = true
+        performanceTiming = false
     },
     ptoHud = {
         enabled = true,
@@ -23,7 +23,7 @@ RealismExtensionsConfig = {
         warningBlinkIntervalMs = 600
     },
     modules = {
-        TerrainDeformation = true,
+        TerrainDeformation = false,
         PTOControl = true
     }
 }

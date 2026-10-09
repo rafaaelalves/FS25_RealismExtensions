@@ -5,6 +5,16 @@
 -- first as an extraSourceFile can recursively re-enter registration and loses
 -- reliable access to g_currentModName during later TypeManager callbacks.
 
+-- This is a build-time/source-load capability decision. When the module is
+-- disabled, do not register a specialization on every wheeled vehicle or
+-- wrap TypeManager.validateTypes merely to perform a no-op at runtime.
+-- Development builds opt in through Config.lua before this source is loaded.
+if RealismExtensionsConfig == nil
+    or RealismExtensionsConfig.modules == nil
+    or RealismExtensionsConfig.modules.TerrainDeformation ~= true then
+    return
+end
+
 local MOD_NAME = g_currentModName
 local MOD_DIRECTORY = g_currentModDirectory
 local SPEC_NAME = "realismExtensionsTerrainDeformation"
