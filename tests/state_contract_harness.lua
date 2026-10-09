@@ -55,7 +55,7 @@ local bad = {
 }
 local badOk, badReason = RealismExtensionsState.registerProvider(bad)
 assert(badOk == false)
-assert(string.find(badReason, "provider API version mismatch", 1, true) ~= nil)
+assert(string.find(badReason, "version pair mismatch", 1, true) ~= nil)
 
 _G.FS25_RealismCompatibility = {
     RealismCompatStateProvider = provider
@@ -95,3 +95,68 @@ assert(hintedCtx ~= nil)
 assert(hintedSeen ~= nil)
 assert(hintedSeen.speedKph == 3.5)
 assert(hintedSeen.wheelSurfaceSpeedMps == 1.25)
+
+-- RC 0.2.0.2 advertises API v2 / context v2. It preserves terrain's
+-- historical fields while distinguishing tire-contact width vs wheel span.
+local rc2 = {
+    API_VERSION = 2,
+    WHEEL_CONTEXT_VERSION = 2,
+    getProviderInfo = function(self)
+        return {
+            id = "RC-v2",
+            apiVersion = self.API_VERSION,
+            wheelContextVersion = self.WHEEL_CONTEXT_VERSION
+        }
+    end,
+    getWheelContext = function(self)
+        return {
+            contextVersion = 2,
+            grounded = true, soilContact = true,
+            longitudinalSlip = 0.31,
+            physicalGroundWetness = 0.60,
+            structuralRadiusM = 0.85,
+            tireWidthM = 0.62, supportWidthM = 1.24,
+            supportContactWidthM = 1.24,
+            supportSpanM = 1.46, supportGapWidthM = 0.22,
+            supportKind = "MULTI",
+            supportSegmentCount = 2,
+            isCrawler = false,
+            wheelLoadN = 36000, sinkDepthM = 0.04
+        }
+    end
+}
+assert(RealismExtensionsState.registerProvider(rc2))
+local state2 = RealismExtensionsState.getWheelContext({}, {})
+assert(state2 ~= nil and state2.contextVersion == 2)
+assert(state2.longitudinalSlip == 0.31)
+assert(state2.physicalGroundWetness == 0.60)
+assert(state2.wheelLoadN == 36000)
+assert(state2.supportWidthM == 1.24 and state2.supportSpanM == 1.46)
+assert(state2.supportSegmentCount == 2)
+local _, _, v2Info = RealismExtensionsState.getProviderStatus()
+assert(v2Info.apiVersion == 2)
+assert(RealismExtensionsState.negotiatedWheelContextVersion == 2)
+-- A returned v1 record from an accepted v2 provider is not v2.
+rc2.getWheelContext = function() return { contextVersion = 1 } end
+assert(RealismExtensionsState.getWheelContext({}, {}) == nil)
+RealismExtensionsState.clearProvider(rc2)
+assert(RealismExtensionsState.negotiatedWheelContextVersion == nil)
+
+-- Do not silently approve newer or mixed API revisions.
+local unknown = {
+    API_VERSION = 3,
+    WHEEL_CONTEXT_VERSION = 3,
+    getWheelContext = function() return {contextVersion = 3} end
+}
+local accepted, unsupportedReason =
+    RealismExtensionsState.registerProvider(unknown)
+assert(accepted == false)
+assert(string.find(unsupportedReason, "unsupported provider API", 1, true))
+local mixed = {
+    API_VERSION = 1,
+    WHEEL_CONTEXT_VERSION = 2,
+    getWheelContext = function() return {contextVersion = 2} end
+}
+accepted, unsupportedReason = RealismExtensionsState.registerProvider(mixed)
+assert(accepted == false)
+assert(string.find(unsupportedReason, "version pair mismatch", 1, true))
