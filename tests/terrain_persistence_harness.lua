@@ -61,7 +61,7 @@ dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainPersistence.lua")
 
 local h=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
-h:commit(1.0,2.0,{rutDepthM=0.03,longitudinalShearDistanceM=1.2,lateralShearDistanceM=0.2,slipExcavationDistanceM=2.5,deformationExposure=3.4,passCount=7})
+h:commit(1.0,2.0,{rutDepthM=0.03,longitudinalShearDistanceM=1.2,lateralShearDistanceM=0.2,slipExcavationDistanceM=2.5,deformationExposure=3.4,passCount=7,maintenanceAgePeriods=3})
 h:commit(-2.0,4.0,{rutDepthM=0.01,passCount=2})
 terrainHeights["1.0:2.0"]=99.97
 terrainHeights["-2.0:4.0"]=99.99
@@ -77,6 +77,7 @@ assert(math.abs(restored:get(1.0,2.0).rutDepthM-0.03)<0.000001)
 assert(restored:get(1.0,2.0).passCount==7)
 assert(math.abs(restored:get(1.0,2.0).slipExcavationDistanceM-2.5)<0.000001)
 assert(math.abs(restored:get(1.0,2.0).deformationExposure-3.4)<0.000001)
+assert(restored:get(1.0,2.0).maintenanceAgePeriods==3)
 
 -- If GIANTS reloads a flatter/different heightmap, the sidecar must not
 -- restore rut/shear memory into visually incompatible terrain.

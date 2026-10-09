@@ -36,10 +36,10 @@
     </l10n>
 
     <extraSourceFiles>
+        <sourceFile filename="scripts/BuildInfo.lua"/>
         <sourceFile filename="scripts/Config.lua"/>
         <sourceFile filename="scripts/Diagnostics.lua"/>
         <sourceFile filename="scripts/api/StateContract.lua"/>
-        <sourceFile filename="scripts/BuildInfo.lua"/>
         <sourceFile filename="scripts/api/PTOContract.lua"/>
         <sourceFile filename="scripts/pto/PTOModel.lua"/>
         <sourceFile filename="scripts/pto/PTOProfiles.lua"/>
@@ -50,13 +50,30 @@
         <sourceFile filename="scripts/pto/PTOBootstrap.lua"/>
         <sourceFile filename="scripts/terrain/FootprintModel.lua"/>
         <sourceFile filename="scripts/terrain/SurfaceResponse.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainPlasticYield.lua"/>
         <sourceFile filename="scripts/terrain/TerrainResponseModel.lua"/>
         <sourceFile filename="scripts/terrain/SpatialHistory.lua"/>
         <sourceFile filename="scripts/terrain/TerrainPersistence.lua"/>
         <sourceFile filename="scripts/terrain/SoilMassTransportModel.lua"/>
         <sourceFile filename="scripts/terrain/TerrainPerformance.lua"/>
+        <sourceFile filename="scripts/terrain/RecoverySurfaceEstimator.lua"/>
+        <sourceFile filename="scripts/terrain/TillageRecoveryProfiles.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainPassTracker.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainWorkContext.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainActorPolicy.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainMaintenancePolicy.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainMaintenance.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainTelemetry.lua"/>
+        <sourceFile filename="scripts/terrain/LoadedContactRegistry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
+        <sourceFile filename="scripts/tracks/NativeTireTrackAdapter.lua"/>
+        <sourceFile filename="scripts/tracks/AIVisualTrackPolicy.lua"/>
+        <sourceFile filename="scripts/tracks/NativeTireTrackBootstrap.lua"/>
+        <sourceFile filename="scripts/tracks/VisualTrackJournal.lua"/>
+        <sourceFile filename="scripts/tracks/VisualTrackChunkStore.lua"/>
+        <sourceFile filename="scripts/tracks/VisualTrackRuntime.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
     <actions>
