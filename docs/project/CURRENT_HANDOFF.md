@@ -4,6 +4,8 @@
 
 Updated: 2026-10-02
 
+**Execution decision — 2026-10-09:** [v1 release closure gates in roadmap](STABILIZATION_ROADMAP_2026-10-08.md). PR #35 (TerrainPassTracker, RC provider v2) merged into this branch, source gameplay PASS for passive observation on 2026-10-09. **Do not expand A2 pass-correlated per-callback telemetry in absence of a reproducible visible issue.** Close R6/R8/R9/release safety instead; next tangible module is grouped wheel/track `ContactFootprint`, not arbitrary implement-specific ruts. PTO remains independent.
+
 ## Read this first
 
 Canonical active branch for TerrainRecovery work: `feat/terrain-recovery`.
