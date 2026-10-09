@@ -485,6 +485,11 @@ function Model.compute(context, footprint, history, dtMs, options)
         0,
         rutCapacityM
     )
+    if yieldState ~= nil and plasticYield01 <= 0 then
+        -- Previously stored exposure is not fresh mechanical failure.
+        -- A change of soil moisture/capacity alone cannot carve a new rut.
+        nextRutM = previousRutM
+    end
 
     local sinkSeverity = clamp(
         validPositive(radius) and persistentSinkM / radius or 0,
