@@ -267,7 +267,8 @@ assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
 local aiStartSent=sent
 local messages={}
 RealismExtensionsDiagnostics={
-    info=function(message) messages[#messages+1]=message end
+    info=function(message) messages[#messages+1]=message end,
+    verbose=function() end
 }
 RealismExtensionsConfig.diagnostics={ptoWorkerEvents=true}
 workerActive=true
