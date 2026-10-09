@@ -5,6 +5,14 @@
 **PTO:** desenvolvimento isolado em outro chat/PR; este roteiro **não altera nem testa a PTO**.  
 **Princípio:** menos versões de teste inúteis, testes que resolvam hipóteses inteiras, manutenção de um único autor por estado físico e não substituir capacidades especialistas apenas para reduzir ZIPs.
 
+## Atualização de escopo — ciclo agrícola sem fim de deformação (2026-10-09)
+
+**Relato de gameplay confirmado pelo usuário:** colheita com sulcos severos → 2–5 passagens de cultivo para recuperar → semeadora refaz sulcos, sem operação agrícola válida para reparar sem destruir o plantio. A preocupação central é **deformação visível excessiva em condições normalmente trafegáveis**, não apenas insuficiência de observabilidade.
+
+**Prioridade real de v1 (substitui qualquer leitura de "fechar a qualquer custo")**: tratar esse loop como **critério bloqueador de jogabilidade** antes da promoção da feature. [Estudo de três resultados do tráfego](../research/terrain-three-outcomes-bearing-capacity-2026-10-09.md). Em vez de calibrar `wetnessExponent` às cegas ou isentar semeadeiras, modelar **demanda de contato versus capacidade portante**, de modo que a passagem possa compactar (`SoilCompaction`) e/ou afundar temporariamente (`Mud`) **sem automaticamente criar crateras persistentes** (`RE`). Evitar duplicar autoridade de compactação ou inventar densidade a partir da penalidade de rendimento de SoilCompaction.
+
+**Gate enxuto:** A/B do ciclo colheita→cultivo→semeadura em solo comum, contraste com terreno saturado e slip alto, confirmar sulcos só onde força/material justifica e persistência agronômica independente de alisamento visual. Não transformar o desenvolvimento em nova campanha infinita de telemetria; preservar módulos PTO e guincho fora do escopo.
+
 ## Decisão de execução — 2026-10-09: encerrar o terreno por resultados de gameplay
 
 **Prioridade de produto:** o objetivo não é provar cada variável do sistema, mas **concluir uma experiência de terreno funcional e avançar ao próximo módulo**. Os capítulos P1–P6 abaixo são um inventário de capacidades e pesquisa; **não são todos bloqueadores de release**.
