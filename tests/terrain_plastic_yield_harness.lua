@@ -54,6 +54,17 @@ for _=1,120 do
 end
 assert(history.deformationExposure==0 and history.rutDepthM==0)
 assert(history.longitudinalShearDistanceM==0)
+-- A field can contain legacy rut *exposure* from earlier wet operation.
+-- Merely checking a dry contact must not turn that stale exposure into
+-- newly visible terrain damage when pressure is below bearing capacity.
+local historicNoRut={
+    rutDepthM=0, deformationExposure=9.0,
+    longitudinalShearDistanceM=0.5,
+    slipExcavationDistanceM=0.5
+}
+local dryWithOldExposure=M.compute(ordinary,footprint,historicNoRut,250,opt)
+assert(dryWithOldExposure.rutDepthM==0)
+assert(dryWithOldExposure.rutDepthDeltaM==0)
 -- It is still a valid contact for Mud and SoilCompaction, neither runs here.
 
 local wet=copy(ordinary)
