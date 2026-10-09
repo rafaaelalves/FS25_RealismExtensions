@@ -1,7 +1,7 @@
 RealismExtensionsPTOHUD = RealismExtensionsPTOHUD or {}
 local HUD = RealismExtensionsPTOHUD
 
-HUD.VERSION = 3
+HUD.VERSION = 4
 HUD.enabled = true
 HUD.modDirectory = tostring(g_currentModDirectory or "")
 HUD.installRetryMs = 250
@@ -33,6 +33,11 @@ local DEFAULT_LAYOUT = {
     iconHeightPx = 18.75,
     modeTextSizePx = 9,
     modeTextGapPx = 5,
+    showEstimatedRpm = true,
+    rpmTextSizePx = 8,
+    rpmTextGapPx = 3,
+    -- Screen-only time constant: never alters the engine, shaft or MR load.
+    rpmSmoothingMs = 350,
     transportWarningKph = 25,
     warningBlinkIntervalMs = 600
 }
@@ -61,7 +66,13 @@ local function resetStats()
     HUD._lastMismatch = false
     HUD._lastTransportWarning = false
     HUD._lastSpeedKph = 0
-    HUD._lastActualRpm = nil
+    HUD._lastActualRpm = nil -- legacy diagnostics: kinematic estimate, not a sensor
+    HUD._lastEstimatedRpm = nil
+    HUD._lastDisplayedRpm = nil
+    HUD._smoothVehicle = nil
+    HUD._smoothMode = nil
+    HUD._smoothedRpm = nil
+    HUD._smoothTimeMs = nil
     HUD._lastHandThrottleRpm = 0
     HUD._lastAvailableModeMask = 0
     HUD._lastProfileId = nil
@@ -186,14 +197,55 @@ local function getVehicleSpeedKph(vehicle)
     return 0
 end
 
-local function getActualPtoRpm(vehicle, state, engaged)
+local function getKinematicPtoRpm(vehicle, state, engaged)
     if not engaged then return nil end
     local ratio = tonumber(state ~= nil and state.effectiveMotorRatio or nil)
-    if ratio == nil or ratio <= 0 then return nil end
+    if ratio == nil or ratio <= 0 or ratio == math.huge then return nil end
 
     local engineRpm = getEngineRpm(getMotor(vehicle))
-    if engineRpm == nil or engineRpm < 0 then return nil end
+    if engineRpm == nil or engineRpm < 0
+        or engineRpm == math.huge then return nil end
     return engineRpm / ratio
+end
+
+-- Render-time smoothing only; never modify physics, motor state or owner API.
+-- The first engaged sample appears immediately, and state is cleared when the
+-- PTO disengages, the operator changes tractors/gear, or input is invalid.
+local function smoothDisplayRpm(vehicle, modeToken, engaged, sample)
+    if not engaged or sample == nil then
+        HUD._smoothVehicle = nil
+        HUD._smoothMode = nil
+        HUD._smoothedRpm = nil
+        HUD._smoothTimeMs = nil
+        return nil
+    end
+
+    local now = tonumber(g_currentMission ~= nil
+        and g_currentMission.time or g_time)
+    if now == math.huge then now = nil end
+    if HUD._smoothVehicle ~= vehicle
+        or HUD._smoothMode ~= modeToken
+        or HUD._smoothedRpm == nil
+        or now == nil
+        or HUD._smoothTimeMs == nil
+        or now < HUD._smoothTimeMs then
+        HUD._smoothedRpm = sample
+    else
+        local elapsed = math.min(1000, math.max(0, now - HUD._smoothTimeMs))
+        local timeConstant = math.max(1, cfgNumber("rpmSmoothingMs"))
+        local alpha = 1 - math.exp(-elapsed / timeConstant)
+        HUD._smoothedRpm = HUD._smoothedRpm
+            + alpha * (sample - HUD._smoothedRpm)
+    end
+    HUD._smoothVehicle = vehicle
+    HUD._smoothMode = modeToken
+    HUD._smoothTimeMs = now
+    return HUD._smoothedRpm
+end
+
+local function estimatedRpmLabel(value)
+    if value == nil then return nil end
+    return string.format("≈%d", math.floor(value + 0.5))
 end
 
 local function getDisplayState(vehicle)
@@ -352,7 +404,7 @@ local function getWarningColor()
     return HUD.COLOR_ACTIVE
 end
 
-local function drawFallbackText(modeText, iconColor)
+local function drawFallbackText(modeText, iconColor, rpmLabel)
     if type(renderText) ~= "function" then return false end
 
     local size = type(getCorrectTextSize) == "function"
@@ -372,7 +424,9 @@ local function drawFallbackText(modeText, iconColor)
         )
     end
 
-    renderText(0.985, 0.235, size, "PTO " .. tostring(modeText))
+    local value = "PTO " .. tostring(modeText)
+    if rpmLabel ~= nil then value = value .. "  " .. rpmLabel end
+    renderText(0.985, 0.235, size, value)
 
     if type(setTextColor) == "function" then setTextColor(1, 1, 1, 1) end
     if type(setTextBold) == "function" then setTextBold(false) end
@@ -409,7 +463,13 @@ function HUD:drawControlledVehicle()
     local transportWarning = engaged
         and speedKph > math.max(0, cfgNumber("transportWarningKph"))
     local activeWarning = engaged and (mismatch or transportWarning)
-    local actualRpm = getActualPtoRpm(vehicle, state, engaged)
+    local estimatedRpm = getKinematicPtoRpm(vehicle, state, engaged)
+    local displayedRpm = smoothDisplayRpm(
+        vehicle, modeText, engaged, estimatedRpm
+    )
+    local rpmLabel = cfgNumber("rpmTextSizePx") > 0
+        and getHudConfig().showEstimatedRpm ~= false
+        and estimatedRpmLabel(displayedRpm) or nil
 
     HUD._lastMode = modeText
     HUD._lastEngaged = engaged
@@ -417,7 +477,9 @@ function HUD:drawControlledVehicle()
     HUD._lastMismatch = mismatch
     HUD._lastTransportWarning = transportWarning
     HUD._lastSpeedKph = speedKph
-    HUD._lastActualRpm = actualRpm
+    HUD._lastActualRpm = estimatedRpm -- legacy name, no shaft sensor
+    HUD._lastEstimatedRpm = estimatedRpm
+    HUD._lastDisplayedRpm = displayedRpm
     HUD._lastHandThrottleRpm = tonumber(state.handThrottleRpm) or 0
     HUD._lastAvailableModeMask = tonumber(state.availableModeMask) or 0
     HUD._lastProfileId = state.capabilityProfileId
@@ -442,7 +504,7 @@ function HUD:drawControlledVehicle()
     local anchorSpeedMeter, centerX, centerY = getDashboardAnchor()
     if anchorSpeedMeter == nil then
         count("noSpeedMeter")
-        if drawFallbackText(modeText, iconColor) then
+        if drawFallbackText(modeText, iconColor, rpmLabel) then
             count("fallbackRendered")
             count("rendered")
         end
@@ -509,6 +571,19 @@ function HUD:drawControlledVehicle()
         end
 
         renderText(textX, textY, textSize, modeText)
+
+        -- Second compact line: nominal gear above, approximate live speed
+        -- below. No low-RPM warning or work penalty is inferred from this.
+        if rpmLabel ~= nil then
+            local rpmSize = scalePixelHeight(
+                anchorSpeedMeter, cfgNumber("rpmTextSizePx")
+            )
+            local rpmGap = scalePixelHeight(
+                anchorSpeedMeter,
+                cfgNumber("modeTextSizePx") + cfgNumber("rpmTextGapPx")
+            )
+            renderText(textX, textY - rpmGap, rpmSize, rpmLabel)
+        end
 
         if type(setTextColor) == "function" then setTextColor(1, 1, 1, 1) end
         if type(setTextBold) == "function" then setTextBold(false) end
@@ -590,6 +665,10 @@ function HUD:consoleCommandScale(factor)
         or DEFAULT_LAYOUT.modeTextSizePx) * factor
     cfg.modeTextGapPx = (tonumber(cfg.modeTextGapPx)
         or DEFAULT_LAYOUT.modeTextGapPx) * factor
+    cfg.rpmTextSizePx = (tonumber(cfg.rpmTextSizePx)
+        or DEFAULT_LAYOUT.rpmTextSizePx) * factor
+    cfg.rpmTextGapPx = (tonumber(cfg.rpmTextGapPx)
+        or DEFAULT_LAYOUT.rpmTextGapPx) * factor
     return layoutSummary()
 end
 
@@ -710,6 +789,10 @@ function HUD:deleteMap()
     HUD._cacheRevision = nil
     HUD._cacheModeText = nil
     HUD._cacheMismatch = false
+    HUD._smoothVehicle = nil
+    HUD._smoothMode = nil
+    HUD._smoothedRpm = nil
+    HUD._smoothTimeMs = nil
     HUD._installElapsedMs = HUD.installRetryMs
 end
 
@@ -726,7 +809,9 @@ function HUD.getDiagnostics()
     out.lastMismatch = HUD._lastMismatch
     out.lastTransportWarning = HUD._lastTransportWarning
     out.lastSpeedKph = HUD._lastSpeedKph
-    out.lastActualRpm = HUD._lastActualRpm
+    out.lastActualRpm = HUD._lastActualRpm -- deprecated alias
+    out.lastEstimatedRpm = HUD._lastEstimatedRpm
+    out.lastDisplayedRpm = HUD._lastDisplayedRpm
     out.lastHandThrottleRpm = HUD._lastHandThrottleRpm
     out.lastAvailableModeMask = HUD._lastAvailableModeMask
     out.lastProfileId = HUD._lastProfileId

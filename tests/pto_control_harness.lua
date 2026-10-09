@@ -265,6 +265,11 @@ spec.handThrottlePercent=0.6
 C.refreshPowerTakeOffRequirements(vehicle)
 assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
 local aiStartSent=sent
+local messages={}
+RealismExtensionsDiagnostics={
+    info=function(message) messages[#messages+1]=message end
+}
+RealismExtensionsConfig.diagnostics={ptoWorkerEvents=true}
 workerActive=true
 C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_1000)
@@ -272,8 +277,13 @@ assert(spec.aiOriginalMode==M.MODE.RPM_540)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
 assert(C.getPublicState(vehicle).effectiveMotorRatio~=nil)
 assert(sent==aiStartSent+1)
+assert(#messages==1)
+assert(messages[1]:find("PTO AI",1,true)~=nil)
+assert(messages[1]:find("540 -> 1000",1,true)~=nil)
+assert(messages[1]:find("required=1000",1,true)~=nil)
 C.onAIFieldWorkerStart(vehicle)
 assert(sent==aiStartSent+1) -- duplicate callbacks do not resend
+assert(#messages==1) -- no duplicate diagnostic on same decision
 
 -- A save in the middle of a worker's job must persist the OPERATOR gear.
 local aiSave={}
@@ -291,6 +301,8 @@ workerActive=false
 C.onAIJobFinished(vehicle)
 assert(spec.aiRestorePending==true)
 assert(spec.mode==M.MODE.RPM_1000)
+assert(#messages==2)
+assert(messages[2]:find("restore-deferred",1,true)~=nil)
 C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_1000)
 engaged=false
@@ -298,6 +310,8 @@ C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_540)
 assert(spec.aiOriginalMode==nil and spec.aiRestorePending==false)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
+assert(#messages==3)
+assert(messages[3]:find("decision=restored",1,true)~=nil)
 
 -- AI must not round incompatible 750-rpm tools to 1000.
 RealismExtensionsPTOResolver.collectRequirements=function()
@@ -349,5 +363,17 @@ assert(aiDiag.aiModeSwitches==1)
 assert(aiDiag.aiRestores==1)
 assert(aiDiag.aiModeUnavailable>=1)
 assert(aiDiag.aiUnsafeShiftSkipped>=1)
+assert(aiDiag.aiDiagnosticEvents>=6)
+-- A PTO-less operation and duplicate callbacks do not spam the log.
+assert(#messages==aiDiag.aiDiagnosticEvents)
+-- Tracing can be disabled without affecting automatic gear choice.
+RealismExtensionsConfig.diagnostics.ptoWorkerEvents=false
+local previouslyLogged=#messages
+spec.mode=M.MODE.RPM_540
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(#messages==previouslyLogged)
+workerActive=false
+C.onAIJobFinished(vehicle)
 
 print("pto_control_harness: OK")
