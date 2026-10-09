@@ -1,7 +1,7 @@
 RealismExtensionsTerrainResponseModel = RealismExtensionsTerrainResponseModel or {}
 local Model = RealismExtensionsTerrainResponseModel
 
-Model.VERSION = 4
+Model.VERSION = 5
 
 Model.DEFAULTS = {
     referencePressurePa = 100000,
@@ -231,22 +231,44 @@ function Model.compute(context, footprint, history, dtMs, options)
     local susceptibility, susceptibilitySource =
         computeSoilSusceptibility(context, options)
 
+    -- A separate, pure yield decision distinguishes normal contact
+    -- densification (SoilCompaction-owned) from a justified permanent
+    -- heightfield rut (RE-owned). Default-off in pure-model calls preserves
+    -- historical harness scenarios and permits A/B via Config.
+    local yieldState = nil
+    local plasticYield01 = 1
+    if options.plasticYieldEnabled == true then
+        local yieldApi = RealismExtensionsTerrainPlasticYield
+        if yieldApi == nil or type(yieldApi.compute) ~= "function" then
+            return unavailable("plastic yield module missing")
+        end
+        yieldState = yieldApi.compute(context, footprint,
+            { category = options.surfaceCategory }, options)
+        if yieldState == nil or yieldState.available ~= true then
+            return unavailable("plastic yield state unavailable")
+        end
+        plasticYield01 = clamp(yieldState.plasticYield01 or 0, 0, 1)
+    end
+
     local dtSeconds = math.max(0, tonumber(dtMs) or 0) / 1000
     local vehicleSpeedMps = math.abs(tonumber(context.speedKph) or 0) / 3.6
     local normalTravelDistanceM = vehicleSpeedMps * dtSeconds
 
+    -- Only physically yielded shear becomes *geometric* excavation debt.
+    -- Without this rule, dry/normal traffic could silently accumulate
+    -- deformationExposure and create a large rut as soon as soil becomes wet.
     local longIncrement = computeShearIncrement(
         context,
         dtSeconds,
         context.longitudinalSlip,
         options.longitudinalSlipDeadband
-    )
+    ) * plasticYield01
     local latIncrement = computeShearIncrement(
         context,
         dtSeconds,
         context.lateralSlip,
         options.lateralSlipDeadband
-    )
+    ) * plasticYield01
 
     local maxLongHistory = options.longitudinalShearK
         * math.max(1, options.maxHistoryShearMultiple)
@@ -351,7 +373,7 @@ function Model.compute(context, footprint, history, dtMs, options)
     -- instantaneous Mud sink could bypass SurfaceResponse's absolute rut limit
     -- and permanently write a much deeper heightfield rut.
     local persistentSinkM = math.min(
-        persistentSinkRawM,
+        persistentSinkRawM * plasticYield01,
         maxSlipCapacity
     )
 
@@ -407,7 +429,7 @@ function Model.compute(context, footprint, history, dtMs, options)
     local lateralIncrementExposure = latIncrement
         / math.max(0.001, tonumber(options.lateralShearK) or 0.14)
 
-    local verticalExposureDrive = normalPassExposure * (
+    local verticalExposureDrive = normalPassExposure * plasticYield01 * (
         math.max(0, tonumber(options.basePassDrive) or 0)
         + math.max(0, tonumber(options.verticalPassWeight) or 0) * verticalImprint01
     )
@@ -463,6 +485,11 @@ function Model.compute(context, footprint, history, dtMs, options)
         0,
         rutCapacityM
     )
+    if yieldState ~= nil and plasticYield01 <= 0 then
+        -- Previously stored exposure is not fresh mechanical failure.
+        -- A change of soil moisture/capacity alone cannot carve a new rut.
+        nextRutM = previousRutM
+    end
 
     local sinkSeverity = clamp(
         validPositive(radius) and persistentSinkM / radius or 0,
@@ -491,6 +518,12 @@ function Model.compute(context, footprint, history, dtMs, options)
 
         soilSusceptibility01 = susceptibility,
         susceptibilitySource = susceptibilitySource,
+        plasticYield01 = yieldState ~= nil and plasticYield01 or nil,
+        plasticYieldReason = yieldState ~= nil and yieldState.reason or nil,
+        plasticDemandBearingRatio = yieldState ~= nil
+            and yieldState.demandToBearingRatio or nil,
+        plasticEstimatedBearingPa = yieldState ~= nil
+            and yieldState.estimatedBearingPa or nil,
         pressureDrive = pressureDrive,
 
         verticalImprint01 = verticalImprint01,

@@ -22,7 +22,7 @@ Utils = {
 
 RealismExtensionsConfig = {
     diagnostics = { verbose = true },
-    modules = { TerrainDeformation = true, TerrainRecovery = true }
+    modules = { TerrainDeformation = true, TerrainRecovery = true, TerrainPlasticYield = true }
 }
 
 g_currentMission = { time = 1000 }
@@ -239,6 +239,8 @@ local beforeAIStraight = enqueued
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert(enqueued > beforeAIStraight)
 assert(lastModelOptions ~= nil)
+assert(lastModelOptions.plasticYieldEnabled == true)
+assert(lastModelOptions.surfaceCategory == "FIELD")
 assert(lastModelOptions.longitudinalPassWeight==nil)
 assert(lastModelOptions.lateralPassWeight==nil)
 assert(lastModelOptions.plasticSinkSlipBoost==nil)

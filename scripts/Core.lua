@@ -639,6 +639,18 @@ function RealismExtensionsCore:update(dt)
                     ))
                 end
 
+                if RealismExtensionsConfig ~= nil
+                    and RealismExtensionsConfig.modules ~= nil
+                    and RealismExtensionsConfig.modules.TerrainPlasticYield == true then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainPlasticYield | supported=%d yielded=%d maxYield=%.3f maxDemandBearing=%.2f",
+                        d.plasticSupportedSamples or 0,
+                        d.plasticYieldSamples or 0,
+                        d.plasticYieldMax01 or 0,
+                        d.plasticDemandBearingRatioMax or 0
+                    ))
+                end
+
                 if (d.axleCrestSamples or 0) > 0 then
                     RealismExtensionsDiagnostics.verbose(string.format(
                         "TerrainClearance runtime | axleSamples=%d maxSpan=%.2f maxCentralCrest=%.3f crest>5cm=%d crest>10cm=%d crest>15cm=%d",

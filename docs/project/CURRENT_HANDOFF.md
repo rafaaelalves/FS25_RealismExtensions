@@ -10,6 +10,8 @@ Updated: 2026-10-02
 
 **2026-10-09 priority revision:** user's harvest→cultivate→seed loop is unplayable in ordinary field conditions; **terrain v1 cannot yet be called done just because R6/A1 tests passed**. [Physical diagnosis and focused implementation gate](../research/terrain-three-outcomes-bearing-capacity-2026-10-09.md). Existing RE `TerrainResponseModel` has no explicit bearing/yield threshold between normal compaction and persistent rut geometry; `SpatialHistory` resets rut exposure on cultivation but not SoilCompaction's external agronomic state. Next increment: pure model of plastic yield plus scenario harness, then one real A/B; no crude seeders immunity nor double compaction author. PTO untouched.
 
+**2026-10-09 prototype now implemented (EXPERIMENTAL):** [TerrainPlasticYield v1 implementation and A/B gate](../research/terrain-plastic-yield-v1-implementation-2026-10-09.md) on `feat/terrain-plastic-yield-v1` branched from `feat/terrain-recovery`. Pure mechanical demand/bearing gate plugged into `TerrainResponseModel`, only RE persistent rut writes gated; normal Mud sinking and external SoilCompaction unchanged. Config `modules.TerrainPlasticYield=true` in this test branch; false restores prior R6 path. Pure and integration harnesses in CI, GIANTS physical A/B not yet done. Do NOT merge into `main` or declare calibrated before fieldwork cycle harvest→cultivate→seed and saturated/stuck scenario. PTO untouched.
+
 ## Read this first
 
 Canonical active branch for TerrainRecovery work: `feat/terrain-recovery`.
