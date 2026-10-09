@@ -27,6 +27,10 @@ local function resetStats()
         throttleChanges = 0,
         rejectedUnsupported = 0,
         rejectedEngaged = 0,
+        aiModeSwitches = 0,
+        aiRestores = 0,
+        aiModeUnavailable = 0,
+        aiUnsafeShiftSkipped = 0,
         actionEventsRegistered = 0,
         actionEventsFailed = 0,
         actionEventsCollisionBypass = 0,
@@ -62,6 +66,14 @@ end
 
 local function getSpec(vehicle)
     return vehicle ~= nil and vehicle[Control.SPEC_TABLE] or nil
+end
+
+local function isAiActive(vehicle)
+    if vehicle == nil or type(vehicle.getIsAIActive) ~= "function" then
+        return false
+    end
+    local ok, active = pcall(vehicle.getIsAIActive, vehicle)
+    return ok and active == true
 end
 
 local function firstAvailableMode(capability)
@@ -220,6 +232,116 @@ local function refreshRequirements(vehicle, spec)
     end
 end
 
+
+-- Only the worker's *effective gearbox mode* is temporary. Player mode and
+-- hand throttle survive the job, saves and ordinary operator action bindings.
+-- MR/GIANTS, not RE, regulate engine RPM during AI operation.
+local function applyServerMode(vehicle, spec, mode)
+    if vehicle.isServer ~= true or spec.mode == mode then return end
+    spec.mode = mode
+    refreshPublicState(vehicle, spec)
+    if spec.dirtyFlag ~= 0
+        and type(vehicle.raiseDirtyFlags) == "function" then
+        vehicle:raiseDirtyFlags(spec.dirtyFlag)
+    end
+    if RealismExtensionsPTOStateEvent ~= nil
+        and type(RealismExtensionsPTOStateEvent.send) == "function" then
+        RealismExtensionsPTOStateEvent.send(
+            vehicle, spec.mode, spec.handThrottlePercent
+        )
+    end
+end
+
+local function restoreOperatorMode(vehicle, spec)
+    if vehicle.isServer ~= true or spec.aiOriginalMode == nil then
+        return
+    end
+    -- Never shift an engaged physical PTO, even if the worker was cancelled
+    -- without turning off the implement first.
+    if Resolver.isPtoEngaged(vehicle) then
+        spec.aiRestorePending = true
+        return
+    end
+    local original = spec.aiOriginalMode
+    spec.aiOriginalMode = nil
+    spec.aiRestorePending = false
+    if isAvailable(spec, original) then
+        applyServerMode(vehicle, spec, original)
+    end
+    count("aiRestores")
+end
+
+local function selectWorkerMode(vehicle, spec)
+    if vehicle.isServer ~= true or spec == nil or spec.enabled ~= true
+        or spec.hasPtoOutput ~= true or spec.aiRestorePending == true then
+        return
+    end
+
+    -- When starting another AI stage, keep the already selected suitable
+    -- gearbox, rather than replacing the saved player's original choice.
+    refreshRequirements(vehicle, spec)
+    local req = spec.requirements
+    if req == nil or req.hasPtoConsumer ~= true
+        or req.conflict == true
+        or (req.unknownCount or 0) > 0 then
+        return
+    end
+    local rpm = req.requiredRpm
+    if rpm == nil then return end
+
+    -- A conservative operator prefers ordinary gears to 540E/1000E:
+    -- nominal RPM is known, but available engine power is not guaranteed.
+    local desired = Model.modeForFamily(rpm, false)
+    if not isAvailable(spec, desired) then
+        desired = Model.modeForFamily(rpm, true)
+    end
+    if desired == nil or not isAvailable(spec, desired)
+        or spec.capability.modes[desired].effectiveMotorRatio == nil then
+        count("aiModeUnavailable")
+        return
+    end
+
+    if desired == spec.mode then return end
+    -- The job must configure the mechanical gear *before* it drives
+    -- the implement. Fieldworker-start is a backup for custom AI jobs;
+    -- if the shaft is already engaged we do not force an unsafe shift.
+    if Resolver.isPtoEngaged(vehicle) then
+        count("aiUnsafeShiftSkipped")
+        return
+    end
+    if spec.aiOriginalMode == nil then
+        spec.aiOriginalMode = spec.mode
+    end
+    applyServerMode(vehicle, spec, desired)
+    count("aiModeSwitches")
+end
+
+function Control:onAIJobStarted(job, helperIndex, farmId)
+    selectWorkerMode(self, getSpec(self))
+end
+
+function Control:onAIFieldWorkerStart()
+    selectWorkerMode(self, getSpec(self))
+end
+
+function Control:onAIJobFinished()
+    restoreOperatorMode(self, getSpec(self) or {})
+end
+
+function Control:onAIFieldWorkerEnd()
+    restoreOperatorMode(self, getSpec(self) or {})
+end
+
+function Control:onUpdate(dt)
+    local spec = getSpec(self)
+    -- Constant-time early return on ordinary updates. Only a cancelled
+    -- worker with an engaged implement requires a short deferred check.
+    if spec ~= nil and spec.aiRestorePending == true
+        and not isAiActive(self) then
+        restoreOperatorMode(self, spec)
+    end
+end
+
 function Control.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Motorized, specializations)
         and SpecializationUtil.hasSpecialization(Drivable, specializations)
@@ -278,6 +400,11 @@ function Control.registerEventListeners(vehicleType)
     SpecializationUtil.registerEventListener(vehicleType, "onPostLoad", Control)
     SpecializationUtil.registerEventListener(vehicleType, "onPostAttachImplement", Control)
     SpecializationUtil.registerEventListener(vehicleType, "onPostDetachImplement", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onAIJobStarted", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onAIJobFinished", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onAIFieldWorkerStart", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onAIFieldWorkerEnd", Control)
+    SpecializationUtil.registerEventListener(vehicleType, "onUpdate", Control)
     SpecializationUtil.registerEventListener(vehicleType, "onRegisterActionEvents", Control)
     SpecializationUtil.registerEventListener(vehicleType, "onWriteStream", Control)
     SpecializationUtil.registerEventListener(vehicleType, "onReadStream", Control)
@@ -296,6 +423,8 @@ function Control:onLoad(savegame)
     spec.capability = Resolver.resolveCapability(self)
     spec.availableModes = spec.capability.modes
     spec.mode = firstAvailableMode(spec.capability)
+    spec.aiOriginalMode = nil
+    spec.aiRestorePending = false
     spec.handThrottlePercent = 0
     spec.requirements = {
         items = {},
@@ -369,14 +498,14 @@ function Control:saveToXMLFile(xmlFile, key, usedModNames)
     -- <vehicle>.<modName>.<specialization>. Appending our namespace again
     -- produces an unregistered path and breaks persistence.
     if type(xmlFile.setValue) == "function" then
-        xmlFile:setValue(key .. "#mode", spec.mode)
+        xmlFile:setValue(key .. "#mode", spec.aiOriginalMode or spec.mode)
         xmlFile:setValue(
             key .. "#handThrottle",
             spec.handThrottlePercent or 0
         )
     else
         if type(xmlFile.setInt) == "function" then
-            xmlFile:setInt(key .. "#mode", spec.mode)
+            xmlFile:setInt(key .. "#mode", spec.aiOriginalMode or spec.mode)
         end
         if type(xmlFile.setFloat) == "function" then
             xmlFile:setFloat(
@@ -405,6 +534,11 @@ function Control:setPowerTakeOffState(mode, throttle, noEventSend, replicated)
     throttle = Model.clampThrottle(throttle)
 
     if replicated ~= true then
+        if isAiActive(self) or spec.aiOriginalMode ~= nil then
+            -- Only the worker controller may change the temporary AI gear.
+            -- Player commands must never override an operating worker.
+            return false
+        end
         if not isAvailable(spec, mode) then
             count("rejectedUnsupported")
             notifyOperator(
@@ -596,10 +730,17 @@ end
 
 function Control:onPostAttachImplement(attachable, inputJointDescIndex, jointDescIndex)
     Control.refreshPowerTakeOffRequirements(self)
+    if isAiActive(self) then
+        selectWorkerMode(self, getSpec(self))
+    end
 end
 
 function Control:onPostDetachImplement(implementIndex)
     Control.refreshPowerTakeOffRequirements(self)
+    local spec = getSpec(self)
+    if spec ~= nil and spec.aiRestorePending == true then
+        restoreOperatorMode(self, spec)
+    end
 end
 
 local function actionName(name)

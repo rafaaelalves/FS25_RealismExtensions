@@ -252,4 +252,102 @@ assert(dl.hasPtoOutput==false)
 assert(next(dl.availableModes)==nil)
 assert(C.getPublicState(delayed)==nil)
 
+
+-- AI gears: a worker must switch to the exact implement shaft family before
+-- engagement. MR owns the RPM governor, while saved manual preferences survive.
+local originalCollect=RealismExtensionsPTOResolver.collectRequirements
+local workerActive=false
+vehicle.getIsAIActive=function() return workerActive end
+vehicle.getAttachedImplements=function() return {{object=chipper}} end
+C.onPostLoad(vehicle,nil)
+spec.mode=M.MODE.RPM_540
+spec.handThrottlePercent=0.6
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
+local aiStartSent=sent
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(spec.aiOriginalMode==M.MODE.RPM_540)
+assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
+assert(C.getPublicState(vehicle).effectiveMotorRatio~=nil)
+assert(sent==aiStartSent+1)
+C.onAIFieldWorkerStart(vehicle)
+assert(sent==aiStartSent+1) -- duplicate callbacks do not resend
+
+-- A save in the middle of a worker's job must persist the OPERATOR gear.
+local aiSave={}
+C.saveToXMLFile(vehicle,{setValue=function(_,k,v) aiSave[k]=v end},
+    specializationSaveKey,{})
+assert(aiSave[specializationSaveKey.."#mode"]==M.MODE.RPM_540)
+assert(math.abs(aiSave[specializationSaveKey.."#handThrottle"]-0.6)<0.000001)
+assert(C.setPowerTakeOffState(vehicle,M.MODE.RPM_540,0.1)==false)
+assert(spec.mode==M.MODE.RPM_1000)
+
+-- Never restore physical gear while shaft is engaged. Only a short pending
+-- release check is performed after the worker is done.
+engaged=true
+workerActive=false
+C.onAIJobFinished(vehicle)
+assert(spec.aiRestorePending==true)
+assert(spec.mode==M.MODE.RPM_1000)
+C.onUpdate(vehicle,16)
+assert(spec.mode==M.MODE.RPM_1000)
+engaged=false
+C.onUpdate(vehicle,16)
+assert(spec.mode==M.MODE.RPM_540)
+assert(spec.aiOriginalMode==nil and spec.aiRestorePending==false)
+assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
+
+-- AI must not round incompatible 750-rpm tools to 1000.
+RealismExtensionsPTOResolver.collectRequirements=function()
+    return {hasPtoConsumer=true, requiredRpm=750,
+        conflict=false, unknownCount=0}
+end
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_540)
+assert(spec.aiOriginalMode==nil)
+
+-- Conflicting and unknown demand must never trigger a gear change.
+RealismExtensionsPTOResolver.collectRequirements=function()
+    return {hasPtoConsumer=true, requiredRpm=nil,
+        conflict=true, unknownCount=0}
+end
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_540)
+RealismExtensionsPTOResolver.collectRequirements=function()
+    return {hasPtoConsumer=true, requiredRpm=1000,
+        conflict=false, unknownCount=1}
+end
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_540)
+
+-- Active PTO can't be shifted, even when another worker/job starts.
+RealismExtensionsPTOResolver.collectRequirements=function()
+    return {hasPtoConsumer=true, requiredRpm=1000,
+        conflict=false, unknownCount=0}
+end
+engaged=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_540)
+assert(spec.aiOriginalMode==nil)
+engaged=false
+
+-- Normal operator mode 1000 can also be retained by a worker without change.
+spec.mode=M.MODE.RPM_1000
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(spec.aiOriginalMode==nil)
+workerActive=false
+C.onAIJobFinished(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+RealismExtensionsPTOResolver.collectRequirements=originalCollect
+
+local aiDiag=C.getDiagnostics()
+assert(aiDiag.aiModeSwitches==1)
+assert(aiDiag.aiRestores==1)
+assert(aiDiag.aiModeUnavailable>=1)
+assert(aiDiag.aiUnsafeShiftSkipped>=1)
+
 print("pto_control_harness: OK")
