@@ -19,6 +19,9 @@ Yield.DEFAULTS = {
     lateralSlipDeadband = 0.08,
     lateralShearDemand = 0.65,
     frozenBearingMultiplier = 8.0,
+    -- Ignore vanishing overload noise; avoid empty/near-zero plastic history
+    -- in vast ordinary fields around the yield boundary.
+    minimumEffectiveYield = 0.02,
     -- Less structured freshly worked topsoil gives way earlier when wet,
     -- but is still allowed to carry normal traffic in suitable conditions.
     bearingPa = {
@@ -89,6 +92,9 @@ function Yield.compute(context, footprint, surface, options)
     local fullAt = math.max(0.01, tonumber(opt.fullYieldOverload)
         or defaults.fullYieldOverload)
     local plasticYield01 = smoothstep((overload - 1) / fullAt)
+    if plasticYield01 < defaults.minimumEffectiveYield then
+        plasticYield01 = 0
+    end
 
     return {
         available = true,
