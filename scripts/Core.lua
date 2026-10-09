@@ -229,6 +229,33 @@ function RealismExtensionsCore:update(dt)
                 end
 
                 if RealismExtensionsTerrainRecovery ~= nil then
+                    -- Summarize actual completed physical tillage passes only
+                    -- when the completion counter changes (not each tick).
+                    local previousCompleted = self.terrainDiagPrevious ~= nil
+                        and self.terrainDiagPrevious.passCompleted or 0
+                    local last = r.passLast
+                    if last ~= nil
+                        and (r.passCompleted or 0) > previousCompleted then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainPass | started=%d completed=%d active=%d lastId=%d op=%s profile=%s end=%s calls=%d changed=%d repeat=%d distance=%.2fm duration=%.2fs speed=%.2f/%.2f/%.2fkph causalCells=%d%s",
+                            r.passStarted or 0, r.passCompleted or 0,
+                            r.passActive or 0,
+                            last.passId or 0,
+                            tostring(last.operationKind),
+                            tostring(last.toolProfileId),
+                            tostring(last.reason),
+                            last.callbacks or 0,
+                            last.changedCallbacks or 0,
+                            last.repeatCallbacks or 0,
+                            last.distanceM or 0,
+                            (last.durationMs or 0) / 1000,
+                            last.minSpeedKph or 0,
+                            last.meanSpeedKph or 0,
+                            last.maxSpeedKph or 0,
+                            last.uniqueCausalCells or 0,
+                            last.cellsCapped and " CAPPED" or ""
+                        ))
+                    end
                     RealismExtensionsDiagnostics.verbose(string.format(
                         "TerrainRecovery v32R7 | calls=%d worked=%d intentCells=%d intentPoints=%d intentEmpty=%d intentMaxRut=%.3fm staleDeferred=%d stampSkips=%d enqueued=%d rejected=%d callbacks=%d roughness=%d improved=%d worsened=%d neutral=%d improve=%.4fm worsen=%.4fm centerUp=%d centerDown=%d historyRecoveredCells=%d historyRecoveredDepth=%.3fm deferredCreated=%d deferredApplied=%d deferredBlocked=%d deferredExpired=%d deferredSuperseded=%d deferredRejected=%d deferredQueued=%d deferredPeak=%d protectedMarks=%d workAreas=%d width=%.2f..%.2fm depth=%.2f..%.2fm machineSmoothJobs=%d machineSmoothBrushes=%d activeMarks=%d activeQueries=%d activeHits=%d physical=%d changed=%d repeat=%d areaPositive=%d preMarks=%d changedArea=%.0f processedArea=%.0f repeatArea=%.0f",
                         r.workAreaCalls or 0,

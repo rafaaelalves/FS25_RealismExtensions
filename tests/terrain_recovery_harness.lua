@@ -173,6 +173,7 @@ SpecializationUtil={
     registerOverwrittenFunction=function() end
 }
 dofile("scripts/terrain/TillageRecoveryProfiles.lua")
+dofile("scripts/terrain/TerrainPassTracker.lua")
 dofile("scripts/terrain/TerrainWorkContext.lua")
 dofile("scripts/terrain/TerrainRecovery.lua")
 
@@ -218,6 +219,7 @@ Recovery.resetRuntimeState()
 targetFraction=0.90
 forceTargetNoop=false
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(RealismExtensionsTerrainPassTracker.getActivePassId(vehicle,"CULTIVATOR")~=nil)
 pump()
 local d=Recovery.getDiagnostics()
 assert(targetCalls>=2)
@@ -235,6 +237,9 @@ assert(d.targetPatchRecoveredDepthM>=0.139)
 assert(d.targetPatchSampleFailures==0)
 assert(d.toolProfiles.CULTIVATOR~=nil)
 assert(d.toolProfiles.CULTIVATOR.targetApplied==targetCalls)
+-- The controller can legitimately keep pumping TARGET after the physical
+-- tool pass has timed out. The pass is not a deferred-job lifecycle.
+assert(d.passStarted>=1)
 
 -- 2. An initial positive mound with stale rut history is not touched. Positive
 -- correction is only allowed after a target sequence started from a causal rut.
@@ -329,6 +334,16 @@ Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
 Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
 assert(Recovery.getDiagnostics().deferredCount==0)
+assert(Recovery.getDiagnostics().passStarted==0)
+assert(Recovery.getDiagnostics().passActive==0)
+assert(Recovery.getDiagnostics().passCompleted==0)
+-- A genuine follow-up operation opens a pass; lifting it closes that pass
+-- without changing any of the native TARGET recovery assertions above.
+Recovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+assert(Recovery.getDiagnostics().passActive==1)
+Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
+assert(Recovery.getDiagnostics().passActive==0)
+assert(Recovery.getDiagnostics().passCompleted==1)
 assert(perfBegins==perfFinishes)
 
 print("terrain_recovery_r7_tillage_profiles_harness: OK")
