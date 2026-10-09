@@ -636,6 +636,15 @@ function HUD:consoleCommandLayout(x, y, width, height, textSize, textGap)
     if not ok then
         return "Usage: rePTOHud [x y width height textSize textGap]"
     end
+    if textSize ~= nil and tostring(textSize) ~= "" then
+        -- The console layout command historically adjusts only nominal text.
+        -- Keep the new secondary line proportional if that font size changes;
+        -- otherwise a previous scale command may leave it larger than 540.
+        cfg.rpmTextSizePx = math.max(0,
+            (tonumber(cfg.modeTextSizePx) or DEFAULT_LAYOUT.modeTextSizePx)
+            * DEFAULT_LAYOUT.rpmTextSizePx / DEFAULT_LAYOUT.modeTextSizePx
+        )
+    end
     return layoutSummary()
 end
 
