@@ -186,11 +186,22 @@ local function detectImplement(object)
     local usesPto = profile ~= nil or hasInput or rpm ~= nil
     if not usesPto then return nil end
 
-    if profile ~= nil then
+    -- Profiles for operating speeds other than 540/1000 (e.g. pump
+    -- demand 500rpm in MR) must never overwrite a revised native XML.
+    -- The source remains the authority on actual physical demand.
+    local profileApplies = profile ~= nil and (
+        profile.expectedNativeRpm == nil
+        or rpm == tonumber(profile.expectedNativeRpm)
+    )
+    if profileApplies then
         return {
             object = object,
             usesPto = true,
             shaftRpm = tonumber(profile.shaftRpm),
+            -- Mechanical spline/gearbox family can differ from the pump's
+            -- continuous operating speed; NO rounding for unknown tools.
+            gearboxFamilyRpm = tonumber(profile.gearboxFamilyRpm)
+                or tonumber(profile.shaftRpm),
             source = "PROFILE",
             profileId = profile.id,
             confidence = "EVIDENCE"
@@ -269,6 +280,20 @@ function Resolver.collectRequirements(vehicle)
 
     if familyCount ~= 1 then requiredRpm = nil end
 
+    -- Only a single evidenced operating target may claim a matching
+    -- gearbox family. Mixed 500+540 demands remain conflicting, even if
+    -- their physical PTO spline/nominal selector would both be 540.
+    local requiredGearboxFamilyRpm = nil
+    if requiredRpm ~= nil then
+        for _, item in ipairs(items) do
+            if item.shaftRpm == requiredRpm then
+                requiredGearboxFamilyRpm = item.gearboxFamilyRpm
+                    or item.shaftRpm
+                break
+            end
+        end
+    end
+
     return {
         items = items,
         primary = primary,
@@ -276,7 +301,8 @@ function Resolver.collectRequirements(vehicle)
         knownCount = knownCount,
         unknownCount = unknownCount,
         conflict = familyCount > 1,
-        requiredRpm = requiredRpm
+        requiredRpm = requiredRpm,
+        requiredGearboxFamilyRpm = requiredGearboxFamilyRpm
     }
 end
 

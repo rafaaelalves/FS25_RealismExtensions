@@ -540,4 +540,78 @@ fiat.getAttachedImplements=function() return devices end
 local mixed=R.collectRequirements(fiat)
 assert(mixed.conflict==true and mixed.requiredRpm==nil)
 
+
+-- Source-confirmed MR sprayers: pump target 500 != the tractor's
+-- physically selectable nominal 540-rpm gearbox family.
+local P=RealismExtensionsPTOProfiles
+local exactPumpCases={
+    { "data/vehicles/hardi/aeon5200/aeon5200.xml",
+      "MR AEON 5200 DELTA FORCE", "mr_hardi_aeon5200_500" },
+    { "data/vehicles/berthoud/vantage4300/vantage4300.xml",
+      "MR Berthoud Vantage 4300", "mr_berthoud_vantage4300_500" }
+}
+for _, row in ipairs(exactPumpCases) do
+    local pump = {
+        configFileName=row[1],
+        getName=function()return row[2] end,
+        spec_powerConsumer={ptoRpm=500, neededMaxPtoPower=12},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function()return {} end
+    }
+    local prof=P.findImplement(pump)
+    assert(prof and prof.id==row[3])
+    fiat.getAttachedImplements=function()return {{object=pump}} end
+    local demand=R.collectRequirements(fiat)
+    assert(demand.primary.profileId==row[3])
+    assert(demand.primary.source=="PROFILE")
+    assert(demand.requiredRpm==500) -- preserve MR's real demand
+    assert(demand.requiredGearboxFamilyRpm==540)
+    assert(demand.conflict==false and demand.unknownCount==0)
+
+    -- A revision with a different native powerConsumer figure wins over
+    -- the old MR profile. No permanent identity-based guessing.
+    pump.spec_powerConsumer.ptoRpm=1000
+    demand=R.collectRequirements(fiat)
+    assert(demand.requiredRpm==1000)
+    assert(demand.requiredGearboxFamilyRpm==1000)
+    assert(demand.primary.source=="POWER_CONSUMER_PTO_RPM")
+    pump.spec_powerConsumer.ptoRpm=500
+
+    -- A source with no explicit target must not inherit the MR override.
+    pump.spec_powerConsumer={neededMaxPtoPower=12}
+    demand=R.collectRequirements(fiat)
+    assert(demand.requiredRpm==nil)
+    assert(demand.unknownCount==1)
+    pump.spec_powerConsumer.ptoRpm=500
+
+    -- 500 target plus a distinct 540 target is still a genuine load conflict
+    -- until we model separate simultaneous PTO drives.
+    local ordinary={
+        configFileName="/mods/other_tool.xml",
+        spec_powerConsumer={ptoRpm=540},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function()return {} end
+    }
+    fiat.getAttachedImplements=function()
+        return {{object=pump},{object=ordinary}}
+    end
+    demand=R.collectRequirements(fiat)
+    assert(demand.conflict==true)
+    assert(demand.requiredRpm==nil)
+    assert(demand.requiredGearboxFamilyRpm==nil)
+end
+
+-- Arbitrary 500 rpm without a supported machine profile is still EXACT
+-- 500; selecting 540 must not turn every 500-rpm tool into a match.
+local generic500={
+    configFileName="/mods/unrelated500.xml",
+    spec_powerConsumer={ptoRpm=500},
+    getAttachedImplements=function()return {} end
+}
+fiat.getAttachedImplements=function()return {{object=generic500}} end
+local genericDemand=R.collectRequirements(fiat)
+assert(genericDemand.requiredRpm==500)
+assert(genericDemand.requiredGearboxFamilyRpm==500)
+assert(genericDemand.primary.source=="POWER_CONSUMER_PTO_RPM")
+
 print("pto_resolver_harness: OK")

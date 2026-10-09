@@ -141,7 +141,8 @@ local function logOperatorState(vehicle, spec, reason)
         tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
         tostring(spec.requirements ~= nil
             and spec.requirements.requiredRpm ~= nil
-            and spec.requirements.requiredRpm ~= mode.shaftRpm)
+            and (spec.requirements.requiredGearboxFamilyRpm
+                or spec.requirements.requiredRpm) ~= mode.shaftRpm)
     ))
 end
 
@@ -193,6 +194,7 @@ local function refreshPublicState(vehicle, spec)
         maxRpm
     )
     state.requiredShaftRpm = requirements.requiredRpm
+    state.requiredGearboxFamilyRpm = requirements.requiredGearboxFamilyRpm
     state.requirementKnown = requirements.requiredRpm ~= nil
     state.requirementConflict = requirements.conflict == true
     state.hasPtoConsumer = requirements.hasPtoConsumer == true
@@ -203,7 +205,8 @@ local function refreshPublicState(vehicle, spec)
     state.requirementProfileId = requirements.primary ~= nil
         and requirements.primary.profileId or nil
     state.mismatch = requirements.requiredRpm ~= nil
-        and requirements.requiredRpm ~= modeDef.shaftRpm
+        and (requirements.requiredGearboxFamilyRpm
+            or requirements.requiredRpm) ~= modeDef.shaftRpm
     state.capabilitySource = spec.capability ~= nil
         and spec.capability.source or "UNKNOWN"
     state.capabilityProfileId = spec.capability ~= nil
@@ -220,12 +223,13 @@ local function refreshRequirements(vehicle, spec)
         local req = spec.requirements or {}
         local primary = req.primary
         RealismExtensionsDiagnostics.verbose(string.format(
-            "PTO requirements | vehicle=%s consumers=%d known=%d unknown=%d required=%s conflict=%s source=%s profile=%s",
+            "PTO requirements | vehicle=%s consumers=%d known=%d unknown=%d required=%s gearFamily=%s conflict=%s source=%s profile=%s",
             vehicleLabel(vehicle),
             #(req.items or {}),
             tonumber(req.knownCount) or 0,
             tonumber(req.unknownCount) or 0,
             tostring(req.requiredRpm or "-"),
+            tostring(req.requiredGearboxFamilyRpm or "-"),
             tostring(req.conflict == true),
             tostring(primary ~= nil and primary.source or "-"),
             tostring(primary ~= nil and primary.profileId or "-")
@@ -255,11 +259,12 @@ local function logWorkerDecision(vehicle, spec, decision, reason)
     local req = spec.requirements or {}
     local old = spec.aiOriginalMode
     RealismExtensionsDiagnostics.info(string.format(
-        "PTO AI | vehicle=%s decision=%s reason=%s mode=%s original=%s required=%s handThrottle=%.1f%%",
+        "PTO AI | vehicle=%s decision=%s reason=%s mode=%s original=%s required=%s gearFamily=%s handThrottle=%.1f%%",
         vehicleLabel(vehicle), tostring(decision), tostring(reason or "-"),
         Model.getModeToken(spec.mode),
         old ~= nil and Model.getModeToken(old) or "-",
         tostring(req.requiredRpm or "-"),
+        tostring(req.requiredGearboxFamilyRpm or "-"),
         (tonumber(spec.handThrottlePercent) or 0) * 100
     ))
     count("aiDiagnosticEvents")
@@ -332,7 +337,7 @@ local function selectWorkerMode(vehicle, spec)
             "PTO nominal family not resolved")
         return
     end
-    local rpm = req.requiredRpm
+    local rpm = req.requiredGearboxFamilyRpm or req.requiredRpm
 
     -- A conservative operator prefers ordinary gears to 540E/1000E:
     -- nominal RPM is known, but available engine power is not guaranteed.

@@ -377,4 +377,43 @@ assert(#messages==previouslyLogged)
 workerActive=false
 C.onAIJobFinished(vehicle)
 
+
+-- MR Hardi/Berthoud pumps use 500 physical shaft RPM, but the real fitted
+-- tractor selector is 540 (not 500, not 1000). The HUD must not warn on 540.
+RealismExtensionsPTOResolver.collectRequirements=originalCollect
+local sprayer={
+    configFileName="data/vehicles/hardi/aeon5200/aeon5200.xml",
+    spec_powerConsumer={ptoRpm=500, neededMaxPtoPower=7.5},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getAttachedImplements=function()return {} end
+}
+vehicle.getAttachedImplements=function()return {{object=sprayer}} end
+spec.mode=M.MODE.RPM_540
+workerActive=false
+C.refreshPowerTakeOffRequirements(vehicle)
+local pumpState=C.getPublicState(vehicle)
+assert(pumpState.requiredShaftRpm==500)
+assert(pumpState.requiredGearboxFamilyRpm==540)
+assert(pumpState.requirementProfileId=="mr_hardi_aeon5200_500")
+assert(pumpState.mismatch==false)
+-- A 1000 selector is NOT compatible with a 500 pump.
+spec.mode=M.MODE.RPM_1000
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).mismatch==true)
+-- AI chooses the 540 family but preserves the user's former 1000 gear
+-- and manual governor target for later restoration.
+C.resetDiagnostics()
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_540)
+assert(spec.aiOriginalMode==M.MODE.RPM_1000)
+assert(C.getPublicState(vehicle).mismatch==false)
+assert(C.getPublicState(vehicle).requiredShaftRpm==500)
+workerActive=false
+C.onAIJobFinished(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(spec.aiOriginalMode==nil)
+assert(C.getDiagnostics().aiModeSwitches==1)
+assert(C.getDiagnostics().aiRestores==1)
+
 print("pto_control_harness: OK")

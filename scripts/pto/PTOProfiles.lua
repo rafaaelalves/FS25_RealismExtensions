@@ -555,6 +555,29 @@ Profiles.IMPLEMENTS = {
         id = "heizohack_hm10_500",
         tokens = { "hm10500", "hm10-500", "hm10_500", "hm 10-500" },
         shaftRpm = 1000
+    },
+    -- MR 0.26.10.08 explicitly declares ptoRpm=500 for these two
+    -- trailed sprayers. That is their PUMP OPERATING TARGET, not a
+    -- non-existent tractor gearbox gear. 540 is the actual PTO family.
+    -- Apply these profiles ONLY when the explicit 500-rpm demand is
+    -- present. Other revisions/variants keep their own XML requirement.
+    {
+        id = "mr_hardi_aeon5200_500",
+        tokens = { "hardi/aeon5200", "aeon 5200 delta force" },
+        shaftRpm = 500,
+        gearboxFamilyRpm = 540,
+        expectedNativeRpm = 500,
+        evidenceUrl = "https://github.com/quadural/MoreRealistic_FS25/blob/b38d5667e073505255cd7ce170ab568616a91221/MoreRealistic/data/overriding/vehicles/hardi/aeon5200.xml",
+        evidenceNote = "MR pump operates at 500 rpm; tractor selects standard 540 PTO."
+    },
+    {
+        id = "mr_berthoud_vantage4300_500",
+        tokens = { "berthoud/vantage4300", "vantage 4300" },
+        shaftRpm = 500,
+        gearboxFamilyRpm = 540,
+        expectedNativeRpm = 500,
+        evidenceUrl = "https://github.com/quadural/MoreRealistic_FS25/blob/b38d5667e073505255cd7ce170ab568616a91221/MoreRealistic/data/overriding/vehicles/berthoud/vantage4300.xml",
+        evidenceNote = "MR pump operates at 500 rpm; tractor selects standard 540 PTO."
     }
 }
 
