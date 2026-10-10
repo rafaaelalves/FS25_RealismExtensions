@@ -23,6 +23,8 @@ local ptoActive = false
 local tool = {
     configFileName = "data/vehicles/johnDeere/r975i/r975i.xml",
     spec_powerConsumer = { ptoRpm = 400, neededMaxPtoPower = 12 },
+    mrPtoCurrentRpm = 296, mrPtoCurrentRpmRatio = 0.74,
+    mrPowerConsumerForcePtoRpm = true, mrBalerLastNeededPower = 19,
     spec_powerTakeOffs = {
         inputPowerTakeOffs = { {connectedVehicle = {}} }
     },
@@ -43,6 +45,8 @@ local vehicle = {
 local state = {
     modeToken = "540", shaftRpm = 540, requiredShaftRpm = 400,
     requirementConflict = false, hasPtoConsumer = true,
+    requiredGearboxFamilyRpm = nil, gearCompatibility = "UNKNOWN",
+    knownRequirementCount = 0, unknownRequirementCount = 1,
     handThrottleRpm = 0, effectiveMotorRatio = 4
 }
 RealismExtensionsPTO = {
@@ -62,12 +66,19 @@ local report=I.snapshot(vehicle)
 assert(#report==3)
 assert(report[1]:find("hasConsumer=true",1,true))
 assert(report[1]:find("required=400",1,true))
+assert(report[1]:find("nominalFamily=-",1,true))
+assert(report[1]:find("gearCompatibility=UNKNOWN",1,true))
+assert(report[1]:find("known=0 unknown=1",1,true))
 assert(report[2]:find("maxPtoDemand=400",1,true))
 assert(report[2]:find("mrMinPtoRot=125",1,true))
 assert(report[3]:find("inputPto=1",1,true))
 assert(report[3]:find("connectedInput=1",1,true))
 assert(report[3]:find("rawConsumerRPM=400",1,true))
 assert(report[3]:find("liveConsumerRPM=0",1,true))
+assert(report[3]:find("mrPtoCurrentRPM=296",1,true))
+assert(report[3]:find("mrPtoRpmRatio=0.74",1,true))
+assert(report[3]:find("forcePtoRpm=true",1,true))
+assert(report[3]:find("mrBalerPowerKW=19",1,true))
 assert(report[3]:find("turnedOn=false",1,true))
 assert(report[3]:find("powerKW=12",1,true))
 local response=I:consoleCommandInspect()
@@ -83,6 +94,14 @@ assert(report[1]:find("engaged=true",1,true))
 assert(report[3]:find("rawConsumerRPM=500",1,true))
 assert(report[3]:find("liveConsumerRPM=400",1,true))
 assert(report[3]:find("activePto=true",1,true))
+-- Optional MR fields absent on vanilla/mod equipment must not break read-only reports.
+tool.mrPtoCurrentRpm=nil
+tool.mrPtoCurrentRpmRatio=nil
+tool.mrPowerConsumerForcePtoRpm=nil
+tool.mrBalerLastNeededPower=nil
+report=I.snapshot(vehicle)
+assert(report[3]:find("mrPtoRpmRatio=-",1,true))
+assert(report[3]:find("mrBalerPowerKW=-",1,true))
 -- Generic power consumer has no physical input; output must expose that.
 tool.spec_powerTakeOffs.inputPowerTakeOffs={}
 report=I.snapshot(vehicle)
