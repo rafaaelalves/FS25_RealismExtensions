@@ -106,7 +106,8 @@ assert(spec.availableModes[M.MODE.RPM_1000]~=nil)
 
 local state=C.getPublicState(vehicle)
 assert(state~=nil)
-assert(state.requiredShaftRpm==1000)
+assert(state.requiredShaftRpm==540) -- raw native consumer demand
+assert(state.requiredGearboxFamilyRpm==1000) -- sourced chipper profile
 assert(state.mismatch==true)
 assert(state.capabilitySource=="PROFILE")
 
@@ -263,7 +264,8 @@ C.onPostLoad(vehicle,nil)
 spec.mode=M.MODE.RPM_540
 spec.handThrottlePercent=0.6
 C.refreshPowerTakeOffRequirements(vehicle)
-assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
+assert(C.getPublicState(vehicle).requiredShaftRpm==540)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==1000)
 local aiStartSent=sent
 local messages={}
 RealismExtensionsDiagnostics={
@@ -317,6 +319,7 @@ assert(messages[3]:find("decision=restored",1,true)~=nil)
 -- AI must not round incompatible 750-rpm tools to 1000.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=750,
+        requiredGearboxFamilyRpm=750,
         conflict=false, unknownCount=0}
 end
 workerActive=true
