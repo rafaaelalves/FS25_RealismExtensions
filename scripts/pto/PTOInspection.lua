@@ -55,8 +55,7 @@ local function add(lines, message)
 end
 
 local function formatRoot(vehicle, lines)
-    local owner = RealismExtensionsPTO ~= nil
-        and safeCall(RealismExtensionsPTO, "unused") or nil
+    local owner = nil
     -- Owner API is static (getVehicleState(vehicle)), not an instance method.
     if RealismExtensionsPTO ~= nil
         and type(RealismExtensionsPTO.getVehicleState) == "function" then
@@ -85,11 +84,15 @@ local function formatRoot(vehicle, lines)
     end
     local ai = safeCall(vehicle, "getIsAIActive")
     add(lines, string.format(
-        "ROOT name=%s ai=%s gear=%s selected=%s required=%s conflict=%s hasConsumer=%s engaged=%s engagementSource=%s",
+        "ROOT name=%s ai=%s gear=%s selected=%s required=%s nominalFamily=%s gearCompatibility=%s known=%s unknown=%s conflict=%s hasConsumer=%s engaged=%s engagementSource=%s",
         label(vehicle), value(ai),
         value(owner ~= nil and owner.modeToken),
         value(owner ~= nil and owner.shaftRpm),
         value(owner ~= nil and owner.requiredShaftRpm),
+        value(owner ~= nil and owner.requiredGearboxFamilyRpm),
+        value(owner ~= nil and owner.gearCompatibility),
+        value(owner ~= nil and owner.knownRequirementCount),
+        value(owner ~= nil and owner.unknownRequirementCount),
         value(owner ~= nil and owner.requirementConflict),
         value(owner ~= nil and owner.hasPtoConsumer),
         value(engaged), value(source)
@@ -137,11 +140,15 @@ local function formatConsumers(vehicle, lines)
                 local turnedOn = safeCall(tool, "getIsTurnedOn")
                 local active = safeCall(tool, "getIsPowerTakeOffActive")
                 add(lines, string.format(
-                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d rawConsumerRPM=%s liveConsumerRPM=%s consumePower=%s turnedOn=%s activePto=%s powerKW=%s",
+                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s consumePower=%s turnedOn=%s activePto=%s powerKW=%s",
                     count, depth, label(tool), value(tool.configFileName),
                     countTable(inputs), connected,
-                    value(spec.ptoRpm), value(liveRpm), value(consumes),
-                    value(turnedOn), value(active),
+                    value(spec.ptoRpm), value(liveRpm),
+                    value(tool.mrPtoCurrentRpm),
+                    value(tool.mrPtoCurrentRpmRatio),
+                    value(tool.mrPowerConsumerForcePtoRpm),
+                    value(tool.mrBalerLastNeededPower),
+                    value(consumes), value(turnedOn), value(active),
                     value(spec.neededMaxPtoPower or spec.neededPtoPower)
                 ))
                 walk(tool, depth + 1)
