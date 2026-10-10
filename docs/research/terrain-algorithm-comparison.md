@@ -46,9 +46,9 @@ True AI Tracks is much narrower. It mainly enables the game's native displacemen
 
 It does not provide the RE-style pressure/wetness/slip response model or custom spatial rut history.
 
-Version 2.2.0.1 explicitly fixes the earlier units bug that caused the vehicle scan to run every frame instead of every 150 ms. Do not attribute that older defect to the current audited version.
+The exact uploaded 2.2.0.1 ZIP (SHA-256 `b04b46c08c3c84e0b32a73c3f90939dd572db8742cd18e29ac3c8b98c97c3fb4`) contradicts its own changelog: `aiGround.lua` still accumulates FS `dt` in milliseconds but compares it with `CHECK_INTERVAL / 1000`. The intended 150 ms mission-wide rediscovery gate therefore remains effectively open every frame in this exact build. Project evidence must prefer exact-source/hash inspection over the release note.
 
-RE still takes a different ownership approach: it avoids a mission-wide vehicle rediscovery scan by injecting one wheeled-vehicle specialization and processing only that object's wheels. This is an architectural difference, not a claim that True AI Tracks 2.2.0.1 still has the old scan bug.
+RE avoids that mission-wide rediscovery architecture by injecting one wheeled-vehicle specialization and processing each object's own wheels.
 
 ## RealismExtensions pipeline
 

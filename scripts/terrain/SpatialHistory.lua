@@ -1,7 +1,26 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 3
+History.VERSION = 6
+
+local ACTIVE_DEBT_FIELDS = {
+    "rutDepthM",
+    "longitudinalShearDistanceM",
+    "lateralShearDistanceM",
+    "slipExcavationDistanceM",
+    "deformationExposure"
+}
+
+local function isDormantHistory(history, epsilon)
+    if type(history) ~= "table" then return true end
+    local eps = math.max(0, tonumber(epsilon) or 0.000001)
+    for _, field in ipairs(ACTIVE_DEBT_FIELDS) do
+        if math.abs(tonumber(history[field]) or 0) > eps then
+            return false
+        end
+    end
+    return true
+end
 
 function History.new(options)
     options = options or {}
@@ -13,7 +32,8 @@ function History.new(options)
         count = 0,
         touchCounter = 0,
         lruHead = nil,
-        lruTail = nil
+        lruTail = nil,
+        retiredCount = 0
     }
     return setmetatable(self, { __index = History })
 end
@@ -62,6 +82,37 @@ local function touchCell(self, key, cell)
     self.lruTail = key
 end
 
+local function retireCell(self, key, cell)
+    if cell == nil or self.cells[key] ~= cell then return false end
+    unlink(self, key, cell)
+    self.cells[key] = nil
+    self.count = math.max(0, self.count - 1)
+    self.retiredCount = (self.retiredCount or 0) + 1
+    return true
+end
+
+local function touchOrRetire(self, key, cell, epsilon)
+    if cell == nil then return false end
+    if isDormantHistory(cell.history, epsilon) then
+        return retireCell(self, key, cell)
+    end
+    self.touchCounter = self.touchCounter + 1
+    cell.touch = self.touchCounter
+    touchCell(self, key, cell)
+    return false
+end
+
+function History:isDormantAt(x, z, epsilon)
+    local key = self:getKey(x, z)
+    local cell = self.cells[key]
+    return cell == nil or isDormantHistory(cell.history, epsilon)
+end
+
+function History:removeAt(x, z)
+    local key = self:getKey(x, z)
+    return retireCell(self, key, self.cells[key])
+end
+
 function History:get(x, z)
     local key = self:getKey(x, z)
     local cell = self.cells[key]
@@ -82,6 +133,26 @@ end
 function History:commit(x, z, value)
     local key, ix, iz = self:getKey(x, z)
     local cell = self.cells[key]
+    local history = copyHistory(value)
+    if history.maintenanceAgePeriods == nil then
+        local previous = cell ~= nil and cell.history or nil
+        history.maintenanceAgePeriods = previous ~= nil
+            and math.max(
+                0,
+                math.floor(tonumber(previous.maintenanceAgePeriods) or 0)
+            )
+            or 0
+    end
+
+    -- passCount is useful metadata while a physical state is alive, but it is
+    -- not terrain debt by itself. Never create/retain LRU tombstones that have
+    -- no rut/shear/exposure ownership left.
+    if isDormantHistory(history, 0.000001) then
+        if cell ~= nil then
+            retireCell(self, key, cell)
+        end
+        return nil
+    end
 
     self.touchCounter = self.touchCounter + 1
 
@@ -92,7 +163,7 @@ function History:commit(x, z, value)
     end
 
     cell.touch = self.touchCounter
-    cell.history = copyHistory(value)
+    cell.history = history
     touchCell(self, key, cell)
 
     if self.count > self.maxCells then
@@ -129,13 +200,314 @@ function History:prune(targetCount)
 end
 
 
+
+function History:advanceMaintenancePeriod(callback)
+    local scanned = 0
+    for key, cell in pairs(self.cells) do
+        local h = cell ~= nil and cell.history or nil
+        if h ~= nil and not isDormantHistory(h, 0.000001) then
+            h.maintenanceAgePeriods = math.min(
+                255,
+                math.max(
+                    0,
+                    math.floor(tonumber(h.maintenanceAgePeriods) or 0)
+                ) + 1
+            )
+            scanned = scanned + 1
+            if type(callback) == "function" then
+                callback(
+                    key,
+                    cell.ix * self.cellSizeM,
+                    cell.iz * self.cellSizeM,
+                    h
+                )
+            end
+        end
+    end
+    return scanned
+end
+
+function History:forEachActiveCell(callback)
+    if type(callback) ~= "function" then return 0 end
+    local scanned = 0
+    for key, cell in pairs(self.cells) do
+        local h = cell ~= nil and cell.history or nil
+        if h ~= nil and not isDormantHistory(h, 0.000001) then
+            scanned = scanned + 1
+            callback(
+                key,
+                cell.ix * self.cellSizeM,
+                cell.iz * self.cellSizeM,
+                h
+            )
+        end
+    end
+    return scanned
+end
+
+local function pointInParallelogram(px, pz, xs, zs, xw, zw, xh, zh)
+    local ux, uz = xw - xs, zw - zs
+    local vx, vz = xh - xs, zh - zs
+    local dx, dz = px - xs, pz - zs
+    local det = ux * vz - uz * vx
+    if math.abs(det) < 0.000001 then return false end
+    local a = (dx * vz - dz * vx) / det
+    local b = (ux * dz - uz * dx) / det
+    return a >= -0.02 and a <= 1.02 and b >= -0.02 and b <= 1.02
+end
+
+function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, options)
+    options = options or {}
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local cooldownMs = math.max(0, tonumber(options.cooldownMs) or 1500)
+    local nowMs = tonumber(options.nowMs) or 0
+    local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
+
+    local xo, zo = xw + xh - xs, zw + zh - zs
+    local minX = math.min(xs, xw, xh, xo)
+    local maxX = math.max(xs, xw, xh, xo)
+    local minZ = math.min(zs, zw, zh, zo)
+    local maxZ = math.max(zs, zw, zh, zo)
+    local minIx, minIz = self:getCellCoordinates(minX, minZ)
+    local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
+
+    local out = {}
+    for ix = minIx, maxIx do
+        if #out >= maxCells then break end
+        for iz = minIz, maxIz do
+            if #out >= maxCells then break end
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local cell = self.cells[key]
+            local h = cell ~= nil and cell.history or nil
+            local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+            local lastMs = h ~= nil and tonumber(h._lastRecoveryMs) or nil
+            local eligibleByTime = lastMs == nil or nowMs <= 0
+                or nowMs - lastMs >= cooldownMs
+            local x, z = ix * self.cellSizeM, iz * self.cellSizeM
+
+            if rut >= minRutM and eligibleByTime
+                and pointInParallelogram(x, z, xs, zs, xw, zw, xh, zh) then
+                out[#out + 1] = {
+                    key = key,
+                    x = x,
+                    z = z,
+                    rutDepthM = rut
+                }
+            end
+        end
+    end
+    return out
+end
+
+function History:getRecoveryCellsCircle(x, z, radiusM, options)
+    options = options or {}
+    local radius = math.max(0, tonumber(radiusM) or 0)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local maxCells = math.max(
+        1,
+        math.floor(tonumber(options.maxCells) or 128)
+    )
+    if radius <= 0 then return {} end
+
+    local minIx, minIz = self:getCellCoordinates(x - radius, z - radius)
+    local maxIx, maxIz = self:getCellCoordinates(x + radius, z + radius)
+    local radiusSq = radius * radius
+    local out = {}
+
+    for ix = minIx, maxIx do
+        if #out >= maxCells then break end
+        for iz = minIz, maxIz do
+            if #out >= maxCells then break end
+            local cx, cz = ix * self.cellSizeM, iz * self.cellSizeM
+            local dx, dz = cx - x, cz - z
+            if dx * dx + dz * dz <= radiusSq then
+                local key = tostring(ix) .. ":" .. tostring(iz)
+                local cell = self.cells[key]
+                local h = cell ~= nil and cell.history or nil
+                local rut = h ~= nil
+                    and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if rut >= minRutM then
+                    out[#out + 1] = {
+                        key = key,
+                        x = cx,
+                        z = cz,
+                        rutDepthM = rut
+                    }
+                end
+            end
+        end
+    end
+    return out
+end
+
+function History:applyRecoveryAt(x, z, raiseM, options)
+    options = options or {}
+    local key = self:getKey(x, z)
+    local cell = self.cells[key]
+    local h = cell ~= nil and cell.history or nil
+    if h == nil then return 0 end
+
+    local rut = math.max(0, tonumber(h.rutDepthM) or 0)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local requested = math.max(0, tonumber(raiseM) or 0)
+    if rut < minRutM or requested <= 0 then return 0 end
+
+    local applied = math.min(rut, requested)
+    local remaining = math.max(0, rut - applied)
+    local ratio = rut > 0 and remaining / rut or 0
+
+    h.rutDepthM = remaining
+    h.longitudinalShearDistanceM =
+        (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+    h.lateralShearDistanceM =
+        (tonumber(h.lateralShearDistanceM) or 0) * ratio
+    h.slipExcavationDistanceM =
+        (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+    h.deformationExposure =
+        (tonumber(h.deformationExposure) or 0) * ratio
+    h._lastRecoveryMs = tonumber(options.nowMs) or 0
+
+    touchOrRetire(
+        self,
+        key,
+        cell,
+        tonumber(options.retireEpsilon) or 0.000001
+    )
+    return applied
+end
+
+
+function History:applyRecoveryCircle(x, z, radiusM, amountM, fraction, options)
+    options = options or {}
+    local radius = math.max(0, tonumber(radiusM) or 0)
+    local amount = math.max(0, tonumber(amountM) or 0)
+    local frac = math.max(0, math.min(1, tonumber(fraction) or 0))
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    if radius <= 0 or amount <= 0 or frac <= 0 then return 0, 0 end
+
+    local minIx, minIz = self:getCellCoordinates(x - radius, z - radius)
+    local maxIx, maxIz = self:getCellCoordinates(x + radius, z + radius)
+    local radiusSq = radius * radius
+    local recoveredCells, recoveredDepth = 0, 0
+
+    for ix = minIx, maxIx do
+        for iz = minIz, maxIz do
+            local cx, cz = ix * self.cellSizeM, iz * self.cellSizeM
+            local dx, dz = cx - x, cz - z
+            if dx * dx + dz * dz <= radiusSq then
+                local key = tostring(ix) .. ":" .. tostring(iz)
+                local cell = self.cells[key]
+                local h = cell ~= nil and cell.history or nil
+                local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+                if rut >= minRutM then
+                    local applied = math.min(rut * frac, amount, rut)
+                    if applied > 0 then
+                        local remaining = math.max(0, rut - applied)
+                        local ratio = rut > 0 and remaining / rut or 0
+                        h.rutDepthM = remaining
+                        h.longitudinalShearDistanceM =
+                            (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+                        h.lateralShearDistanceM =
+                            (tonumber(h.lateralShearDistanceM) or 0) * ratio
+                        h.slipExcavationDistanceM =
+                            (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+                        h.deformationExposure =
+                            (tonumber(h.deformationExposure) or 0) * ratio
+                        h._lastRecoveryMs = tonumber(options.nowMs) or 0
+                        touchOrRetire(
+                            self,
+                            key,
+                            cell,
+                            tonumber(options.retireEpsilon) or 0.000001
+                        )
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepth = recoveredDepth + applied
+                    end
+                end
+            end
+        end
+    end
+    return recoveredCells, recoveredDepth
+end
+
+
+function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
+    options = options or {}
+    local fraction = math.max(0, math.min(1, tonumber(options.fraction) or 0.45))
+    local maxRaiseM = math.max(0, tonumber(options.maxRaiseM) or 0.025)
+    local minRutM = math.max(0, tonumber(options.minRutM) or 0.003)
+    local cooldownMs = math.max(0, tonumber(options.cooldownMs) or 1500)
+    local nowMs = tonumber(options.nowMs) or 0
+    local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
+
+    local xo, zo = xw + xh - xs, zw + zh - zs
+    local minX = math.min(xs, xw, xh, xo)
+    local maxX = math.max(xs, xw, xh, xo)
+    local minZ = math.min(zs, zw, zh, zo)
+    local maxZ = math.max(zs, zw, zh, zo)
+    local minIx, minIz = self:getCellCoordinates(minX, minZ)
+    local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
+
+    local recoveredCells, recoveredDepthM = 0, 0
+    for ix = minIx, maxIx do
+        if recoveredCells >= maxCells then break end
+        for iz = minIz, maxIz do
+            if recoveredCells >= maxCells then break end
+            local key = tostring(ix) .. ":" .. tostring(iz)
+            local cell = self.cells[key]
+            local h = cell ~= nil and cell.history or nil
+            local rut = h ~= nil and math.max(0, tonumber(h.rutDepthM) or 0) or 0
+            local lastMs = h ~= nil and tonumber(h._lastRecoveryMs) or nil
+            local eligibleByTime = lastMs == nil or nowMs <= 0
+                or nowMs - lastMs >= cooldownMs
+            local x, z = ix * self.cellSizeM, iz * self.cellSizeM
+
+            if rut >= minRutM and eligibleByTime
+                and pointInParallelogram(x, z, xs, zs, xw, zw, xh, zh) then
+                local raiseM = math.min(maxRaiseM, rut * fraction)
+                if raiseM > 0 then
+                    local remaining = math.max(0, rut - raiseM)
+                    local callbackResult = callback == nil
+                        and raiseM or callback(x, z, raiseM, remaining, h)
+                    local appliedRaiseM = callbackResult == true and raiseM
+                        or (type(callbackResult) == "number" and math.max(0, math.min(raiseM, callbackResult)) or 0)
+                    if appliedRaiseM > 0 then
+                        remaining = math.max(0, rut - appliedRaiseM)
+                        local ratio = rut > 0 and remaining / rut or 0
+                        h.rutDepthM = remaining
+                        h.longitudinalShearDistanceM =
+                            (tonumber(h.longitudinalShearDistanceM) or 0) * ratio
+                        h.lateralShearDistanceM =
+                            (tonumber(h.lateralShearDistanceM) or 0) * ratio
+                        h.slipExcavationDistanceM =
+                            (tonumber(h.slipExcavationDistanceM) or 0) * ratio
+                        h.deformationExposure =
+                            (tonumber(h.deformationExposure) or 0) * ratio
+                        h._lastRecoveryMs = nowMs
+                        touchOrRetire(
+                            self,
+                            key,
+                            cell,
+                            tonumber(options.retireEpsilon) or 0.000001
+                        )
+                        recoveredCells = recoveredCells + 1
+                        recoveredDepthM = recoveredDepthM + appliedRaiseM
+                    end
+                end
+            end
+        end
+    end
+    return recoveredCells, recoveredDepthM
+end
+
 local PERSISTED_FIELDS = {
     "rutDepthM",
     "longitudinalShearDistanceM",
     "lateralShearDistanceM",
     "slipExcavationDistanceM",
     "deformationExposure",
-    "passCount"
+    "passCount",
+    "maintenanceAgePeriods"
 }
 
 function History:exportSnapshot()
@@ -147,12 +519,11 @@ function History:exportSnapshot()
 
     for _, cell in pairs(self.cells) do
         local values = {}
-        local material = false
+        local material = not isDormantHistory(cell.history, 0.000001)
         for _, field in ipairs(PERSISTED_FIELDS) do
             local value = cell.history ~= nil and tonumber(cell.history[field]) or nil
             if value ~= nil then
                 values[field] = value
-                if math.abs(value) > 0.000001 then material = true end
             end
         end
 
@@ -200,16 +571,18 @@ function History:importSnapshot(snapshot)
                 if value ~= nil then history[field] = value end
             end
 
-            self.touchCounter = self.touchCounter + 1
-            local cell = {
-                ix = ix,
-                iz = iz,
-                touch = self.touchCounter,
-                history = history
-            }
-            self.cells[key] = cell
-            self.count = self.count + 1
-            touchCell(self, key, cell)
+            if not isDormantHistory(history, 0.000001) then
+                self.touchCounter = self.touchCounter + 1
+                local cell = {
+                    ix = ix,
+                    iz = iz,
+                    touch = self.touchCounter,
+                    history = history
+                }
+                self.cells[key] = cell
+                self.count = self.count + 1
+                touchCell(self, key, cell)
+            end
         end
     end
 
@@ -223,4 +596,5 @@ function History:clear()
     self.touchCounter = 0
     self.lruHead = nil
     self.lruTail = nil
+    self.retiredCount = 0
 end
