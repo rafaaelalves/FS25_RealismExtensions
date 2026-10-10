@@ -125,7 +125,8 @@ fiat.getAttachedImplements=function()
 end
 req=R.collectRequirements(fiat)
 assert(req.hasPtoConsumer==true)
-assert(req.requiredRpm==1000)
+assert(req.requiredRpm==540) -- source raw value, not 1000 gear
+assert(req.requiredGearboxFamilyRpm==1000)
 assert(req.conflict==false)
 assert(req.primary.source=="PROFILE")
 
@@ -134,7 +135,8 @@ fiat.getAttachedImplements=function()
 end
 req=R.collectRequirements(fiat)
 assert(req.conflict==true)
-assert(req.requiredRpm==nil)
+assert(req.requiredRpm==540) -- raw native demand can coincide
+assert(req.requiredGearboxFamilyRpm==nil)
 
 -- Turned-on hydraulic/electrical tools with a generic PowerConsumer must not
 -- be mistaken for PTO engagement.
