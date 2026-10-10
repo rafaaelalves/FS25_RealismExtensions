@@ -1,0 +1,31 @@
+# TerrainPlasticYield — segundo log S780 e otimização de busca negativa
+
+**Data:** 2026-10-09. **Entradas:** `log(20261009-204016).txt` (37.186 linhas) e `ModMixer(20261009-204016).log` (143 linhas). Também comparado ao `log(20261009-200823).txt`. **Versões do jogo:** RE `3e3554a43d1c3c6b3305d609a799d8ffb48a7ca4`, RC `ad7461fb7777691f6f64e2327753417c95b6177b`, MR `0.26.10.08`, Mud `1.3.6.0`, Reifen `1.2.2.70`, RMS `0.11.0.0`, SoilCompaction `1.0.0.0`. Nenhum desses ZIPs foi modificado nesta coleta.
+
+## O que os logs permitem afirmar
+
+- S780 é a **única origem dos brushes RE** nesta sessão: `RutWriters vehicles=[S780=2525]`, distribuídos em `PLAYER=792`, `AI_FIELD=1733` (68,63% dos brushes). A IA não está globalmente imune. Não há trabalho de semeadora nem cultivador (`TerrainRecovery calls=0`, `activeCultivatorRutSkips=0`). Este log **não valida** o ciclo agrícola harvest→tillage→sowing.
+- Primeiro trecho de tráfego em condições favoráveis: `TerrainPlasticYield supported=10589 yielded=5 maxYield=0.045 maxDemandBearing=1.10`, `Footprint pressurePa=250000..250000`, `SurfaceResponse brushes=0`, `modelRut=0.000`; diagnóstico de uma amostra `wet=0.15`. Cinco contatos de cedência marginal não se converteram em writes.
+- Depois da operação com S780: `supported=24046 yielded=2551`, taxa de 90,41% de amostras avaliadas suportadas / 9,59% de cedência (não total de ticks), `modelRut=0.102m` pico de profundidade **calculada**, não prova de heightfield medida; `modelCap=0.102m`, `maxYield=1.000`, `maxDemandBearing=2.16`. A última `TerrainPlasticity sample wet=0.65 slip=0.117` é um único snapshot: não inferir condições exatas do pico de 10,2cm.
+- `Footprint maxLoadN=60096 maxArea=0.240`, `pressurePa=250000..250000`, `maxBaseWidth=0.780m maxSupportWidth=1.300m`, `wideSupport=3408`. **Pressão constante não é prova de erro**: o FootprintModel `PRESSURE_DRIVEN` usa pressão calibrada pelo pneu (`tirePressureBar + casing`) e aumenta área de contato proporcionalmente à carga, salvo limitação geométrica. Testar compactação profunda pelo mod separado; não adulterar `groundPressurePa` do RE para simular massa.
+- `brushesAccepted=2525`, `coalesced=922` (~36,5%), `submittedBrushes=1603`, `submittedJobs=364`, `failedJobs=0`, `cells=1830`, `retired=0`, `queue=0`. `displacedVolume=52.328` é unidade interna de relatório do writer, não uma medição física validada de solo em m³.
+- `TerrainPerf vehicleUpdate=70000 avg=0.0371ms max=2.115ms total=2596.4ms`, `flushInclusive=198 avg=0.0978ms max=0.277ms`, `callbackNested=364 avg=0.0043ms`. Aqui `recovery=0`; não comparar o custo de recuperação com último log (21.537 callbacks) como se fossem workloads idênticos.
+- `TerrainMaintenance periods=4 scanned=12 eligible=0/0` não demonstra manutenção realizada nem falha; não houve histórico antigo elegível. `VisualTrackCapture observerErrors=0 sinkErrors=0`.
+- Três saves bem sucedidos no `savegame2`, `saved terrain history cells=0` depois `3` depois `1830`. **Ponto não esclarecido:** log anterior salvou `2109` células na mesma pasta nominal `savegame2`, mas este carregamento **não** imprimiu `restored terrain history cells=...`. Há registros de restauração em logs mais antigos com 49.913 células, então o caminho funciona em alguns saves. Possíveis explicações incluem troca/restauração da cópia de save ou sidecar ausente; não concluir bug ou perda de altura geométrica sem saber qual cópia do save foi carregada e verificar `realismExtensionsTerrain.xml`. `TerrainPersistence.load` trata arquivo ausente e diretório ainda indisponível como a mesma resposta silenciosa.
+- `MRMudDraft` reportou `draftCalls=7061 overrides=0 samples=0`: não há evidência de trabalho de solo elegível neste segundo log; não diagnosticar bridge quebrada sem cultivar/semeadora ativa.
+- Runtime ModMixer: 59 targets ativos, 0 unknown; as 26 bandeiras de varredura se baseiam em dataset gerado 2026-06-01, não equivalem a conflito dinâmico confirmado em outubro. `widthRadius=false` do MRMud continua aviso conhecido, sem prova de interferência física nesta operação. Oito erros duplicados de `FS25_CBI6800CT.WoodGrinder` não são RE.
+
+## Desenvolvimento iniciado em paralelo, sem mudar build que usuário está testando
+
+**Branch:** `perf/terrain-recovery-history-broadphase`, derivada de `feat/terrain-pto-integration-2026-10-09`.  
+**Escopo:** `SpatialHistory` mantém índice conservador de ocupação por tiles de 16x16 células (3,2x3,2m quando cell=0,2m). Consulta `getRecoveryCandidatesParallelogram` retorna imediatamente quando **nenhuma célula de histórico ativo** existe nas tiles interceptadas pela AABB. Ao encontrar qualquer célula ativa (até se só contém shear/exposure), mantém integralmente a varredura fina e o cooldown. Nenhum cálculo físico/muliplicador de rut, ordem GIANTS ou proteção de 8s foi alterado.
+
+**Invariantes mantidas:** index atualizado em commit somente para nova célula, remoção/dormência, pruning LRU, importSnapshot e clear. Não usar índice somente de rut >=0,003m: cooldown/severity variáveis poderiam dar falsos negativos. Tiles grandes produzem somente falsos positivos conservadores. Grids negativos corretamente mapeados por `math.floor`.
+
+**Prova:** harness novo `tests/terrain_history_broadphase_harness.lua` verifica campo vazio repetido, dano em tiles negativas, mesma célula atualizada, shear-only, remoção/recuperação, duas células por tile, import/export, clear, pruning LRU e cooldown. Comparação de tempo real por chamada deverá ocorrer no próximo teste do cultivador; **não alegar ganho de milissegundos só porque CI passou**.
+
+## Próximo gate de gameplay
+
+Usuário continua a própria rotina de colheita→cultivo→semeadura **na build RE atual 3e3554a**, sem necessidade de trocar ZIP por esta otimização. Quando houver log de semeadora, avaliar deformação geométrica da mesma região após plantio, em condições normais; comparar com colheitadeira sob solo úmido. Um único reload de save com o sidecar presente esclarece persistência. Só incorporar o índice de desempenho depois de CI + revisão de regressões, de preferência sem interromper o teste físico da PlasticYield.
+
+**Decisão:** o segundo log aprova operação de carregamento e diferenciação preliminar de contatos normais/cedência, não a calibração final do ciclo, e demonstra utilidade de separar avaliação do modelo e otimização de Recovery.

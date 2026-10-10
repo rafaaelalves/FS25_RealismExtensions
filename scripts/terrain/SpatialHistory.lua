@@ -33,7 +33,10 @@ function History.new(options)
         touchCounter = 0,
         lruHead = nil,
         lruTail = nil,
-        retiredCount = 0
+        retiredCount = 0,
+        -- Conservative live-cell index; NOT a second soil/compaction model.
+        tileCellSpan = math.max(1, math.floor(tonumber(options.tileCellSpan) or 16)),
+        occupiedTiles = {}
     }
     return setmetatable(self, { __index = History })
 end
@@ -47,6 +50,32 @@ end
 function History:getKey(x, z)
     local ix, iz = self:getCellCoordinates(x, z)
     return tostring(ix) .. ":" .. tostring(iz), ix, iz
+end
+
+local function tileKey(self, ix, iz)
+    local span = self.tileCellSpan
+    return tostring(math.floor(ix / span)) .. ":" .. tostring(math.floor(iz / span))
+end
+
+local function adjustTileOccupancy(self, cell, delta)
+    local key = tileKey(self, cell.ix, cell.iz)
+    local n = (self.occupiedTiles[key] or 0) + delta
+    self.occupiedTiles[key] = n > 0 and n or nil
+end
+
+-- Any live history cell makes a tile positive (including shear-only cells),
+-- so this index may cause unnecessary fine scans but never hide candidates.
+function History:hasOccupiedTileInCellBounds(minIx, minIz, maxIx, maxIz)
+    if self.count <= 0 then return false end
+    local span = self.tileCellSpan
+    for tx = math.floor(minIx / span), math.floor(maxIx / span) do
+        for tz = math.floor(minIz / span), math.floor(maxIz / span) do
+            if (self.occupiedTiles[tostring(tx) .. ":" .. tostring(tz)] or 0) > 0 then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local function unlink(self, key, cell)
@@ -86,6 +115,7 @@ local function retireCell(self, key, cell)
     if cell == nil or self.cells[key] ~= cell then return false end
     unlink(self, key, cell)
     self.cells[key] = nil
+    adjustTileOccupancy(self, cell, -1)
     self.count = math.max(0, self.count - 1)
     self.retiredCount = (self.retiredCount or 0) + 1
     return true
@@ -160,6 +190,7 @@ function History:commit(x, z, value)
         cell = { ix = ix, iz = iz }
         self.cells[key] = cell
         self.count = self.count + 1
+        adjustTileOccupancy(self, cell, 1)
     end
 
     cell.touch = self.touchCounter
@@ -193,6 +224,7 @@ function History:prune(targetCount)
         end
         unlink(self, key, cell)
         self.cells[key] = nil
+        adjustTileOccupancy(self, cell, -1)
         self.count = self.count - 1
         removed = removed + 1
     end
@@ -270,6 +302,12 @@ function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, opti
     local maxZ = math.max(zs, zw, zh, zo)
     local minIx, minIz = self:getCellCoordinates(minX, minZ)
     local maxIx, maxIz = self:getCellCoordinates(maxX, maxZ)
+
+    -- Cold normal field: avoid scanning the entire 20cm grid when its
+    -- coarse cells have no retained history anywhere in the queried AABB.
+    if not self:hasOccupiedTileInCellBounds(minIx, minIz, maxIx, maxIz) then
+        return {}
+    end
 
     local out = {}
     for ix = minIx, maxIx do
@@ -581,6 +619,7 @@ function History:importSnapshot(snapshot)
                 }
                 self.cells[key] = cell
                 self.count = self.count + 1
+                adjustTileOccupancy(self, cell, 1)
                 touchCell(self, key, cell)
             end
         end
@@ -597,4 +636,5 @@ function History:clear()
     self.lruHead = nil
     self.lruTail = nil
     self.retiredCount = 0
+    self.occupiedTiles = {}
 end
