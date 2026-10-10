@@ -139,10 +139,8 @@ local function logOperatorState(vehicle, spec, reason)
         handRpm > 0 and tostring(math.floor(handRpm + 0.5)) or "ROAD/",
         (tonumber(spec.handThrottlePercent) or 0) * 100,
         tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
-        tostring(spec.requirements ~= nil
-            and spec.requirements.requiredRpm ~= nil
-            and (spec.requirements.requiredGearboxFamilyRpm
-                or spec.requirements.requiredRpm) ~= mode.shaftRpm)
+        tostring(spec.publicState ~= nil
+            and spec.publicState.mismatch == true)
     ))
 end
 
@@ -195,7 +193,7 @@ local function refreshPublicState(vehicle, spec)
     )
     state.requiredShaftRpm = requirements.requiredRpm
     state.requiredGearboxFamilyRpm = requirements.requiredGearboxFamilyRpm
-    state.requirementKnown = requirements.requiredRpm ~= nil
+    state.requirementKnown = requirements.requiredGearboxFamilyRpm ~= nil
     state.requirementConflict = requirements.conflict == true
     state.hasPtoConsumer = requirements.hasPtoConsumer == true
     state.knownRequirementCount = requirements.knownCount or 0
@@ -204,9 +202,13 @@ local function refreshPublicState(vehicle, spec)
         and requirements.primary.source or nil
     state.requirementProfileId = requirements.primary ~= nil
         and requirements.primary.profileId or nil
-    state.mismatch = requirements.requiredRpm ~= nil
-        and (requirements.requiredGearboxFamilyRpm
-            or requirements.requiredRpm) ~= modeDef.shaftRpm
+    state.gearCompatibility = requirements.conflict == true
+        and "INCOMPATIBLE"
+        or requirements.requiredGearboxFamilyRpm == nil
+            and "UNKNOWN"
+        or requirements.requiredGearboxFamilyRpm == modeDef.shaftRpm
+            and "COMPATIBLE" or "INCOMPATIBLE"
+    state.mismatch = state.gearCompatibility == "INCOMPATIBLE"
     state.capabilitySource = spec.capability ~= nil
         and spec.capability.source or "UNKNOWN"
     state.capabilityProfileId = spec.capability ~= nil
@@ -332,12 +334,13 @@ local function selectWorkerMode(vehicle, spec)
             "multiple incompatible PTO demands")
         return
     end
-    if (req.unknownCount or 0) > 0 or req.requiredRpm == nil then
+    if (req.unknownCount or 0) > 0
+        or req.requiredGearboxFamilyRpm == nil then
         logWorkerDecision(vehicle, spec, "blocked-unknown",
             "PTO nominal family not resolved")
         return
     end
-    local rpm = req.requiredGearboxFamilyRpm or req.requiredRpm
+    local rpm = req.requiredGearboxFamilyRpm
 
     -- A conservative operator prefers ordinary gears to 540E/1000E:
     -- nominal RPM is known, but available engine power is not guaranteed.
