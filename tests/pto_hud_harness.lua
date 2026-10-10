@@ -264,6 +264,19 @@ missionHud.drawControlledEntityHUD()
 assert(#drawn==before+1)
 assert(drawn[#drawn].text=="1000")
 
+-- A consumer with an unresolved physical gearbox family displays a neutral
+-- question mark rather than a fabricated mismatch or red alert.
+state.revision=6
+state.hasPtoConsumer=true
+state.gearCompatibility="UNKNOWN"
+state.mismatch=false
+speedKph=12
+engaged=false
+missionHud.drawControlledEntityHUD()
+assert(drawn[#drawn].text=="1000 ?")
+assert(H.getDiagnostics().lastMismatch==false)
+assert(H.getDiagnostics().lastGearCompatibility=="UNKNOWN")
+
 -- HUD visibility follows the mission HUD.
 missionHud.isVisible=false
 missionHud.drawControlledEntityHUD()
