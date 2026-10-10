@@ -28,6 +28,10 @@ Relevant fields:
 - `liveConsumerRPM`: `getPtoRpm()`, typically 0 when not running.
 - `inputPto`, `connectedInput`: physical input declarations and observed non-nil connected vehicle; some game implementations may bind via another runtime path.
 - `powerKW`: raw declared max/needed PTO power.
+- `nominalFamily`, `gearCompatibility`, `known`, `unknown`: RE's **inferred/evidenced physical gearbox family** and tri-state conclusion, independent of raw load RPM. `UNKNOWN` does not prove mechanical mismatch.
+- `mrPtoCurrentRPM`, `mrPtoRpmRatio`: MR's per-tool calculated kinematic speed and speed ratio; these are read-only internal values, not a sensor. Values may be stale or absent if MR is not installed or the tool is inactive.
+- `forcePtoRpm`: MR's per-implement explicit engine governor request flag (if present); do not confuse it with the tractor's physical PTO gear.
+- `mrBalerPowerKW`: MR's last modelled baler power consumption, if present, for comparing transient compressor loads to tractor response. No new load is added by the inspector.
 - `mrMinPtoRot` and `mrMinPtoIdleRot`: **radians per second**, NOT RPM; do not compare to engine RPM without converting. Values are the last reported MR state, not an independent RPM control proof.
 - `maxPtoDemand`: aggregate `PowerConsumer.getMaxPtoRpm` result; it can differ from static raw XML and is for *active* consumers.
 
