@@ -283,7 +283,8 @@ assert(sent==aiStartSent+1)
 assert(#messages==1)
 assert(messages[1]:find("PTO AI",1,true)~=nil)
 assert(messages[1]:find("540 -> 1000",1,true)~=nil)
-assert(messages[1]:find("required=1000",1,true)~=nil)
+assert(messages[1]:find("required=540",1,true)~=nil)
+assert(messages[1]:find("gearFamily=1000",1,true)~=nil)
 C.onAIFieldWorkerStart(vehicle)
 assert(sent==aiStartSent+1) -- duplicate callbacks do not resend
 assert(#messages==1) -- no duplicate diagnostic on same decision
