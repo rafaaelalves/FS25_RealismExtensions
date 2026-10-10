@@ -333,6 +333,7 @@ C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_540)
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=1}
 end
 C.onAIJobStarted(vehicle)
@@ -341,6 +342,7 @@ assert(spec.mode==M.MODE.RPM_540)
 -- Active PTO can't be shifted, even when another worker/job starts.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=0}
 end
 engaged=true
@@ -378,8 +380,9 @@ workerActive=false
 C.onAIJobFinished(vehicle)
 
 
--- MR Hardi/Berthoud pumps use 500 physical shaft RPM, but the real fitted
--- tractor selector is 540 (not 500, not 1000). The HUD must not warn on 540.
+-- Native MR load figure 500, with a genuine input PTO, does not
+-- prove any gearbox family. Manual choice stays operable in both gears;
+-- an AI worker must not guess 500->540 and alter the operator selection.
 RealismExtensionsPTOResolver.collectRequirements=originalCollect
 local sprayer={
     configFileName="data/vehicles/hardi/aeon5200/aeon5200.xml",
@@ -393,27 +396,33 @@ workerActive=false
 C.refreshPowerTakeOffRequirements(vehicle)
 local pumpState=C.getPublicState(vehicle)
 assert(pumpState.requiredShaftRpm==500)
-assert(pumpState.requiredGearboxFamilyRpm==540)
-assert(pumpState.requirementProfileId=="mr_hardi_aeon5200_500")
+assert(pumpState.requiredGearboxFamilyRpm==nil)
+assert(pumpState.requirementKnown==false)
+assert(pumpState.gearCompatibility=="UNKNOWN")
+assert(pumpState.requirementProfileId==nil)
 assert(pumpState.mismatch==false)
--- A 1000 selector is NOT compatible with a 500 pump.
 spec.mode=M.MODE.RPM_1000
 C.refreshPowerTakeOffRequirements(vehicle)
-assert(C.getPublicState(vehicle).mismatch==true)
--- AI chooses the 540 family but preserves the user's former 1000 gear
--- and manual governor target for later restoration.
-C.resetDiagnostics()
+assert(C.getPublicState(vehicle).gearCompatibility=="UNKNOWN")
+assert(C.getPublicState(vehicle).mismatch==false)
+local before=sent
 workerActive=true
 C.onAIJobStarted(vehicle)
-assert(spec.mode==M.MODE.RPM_540)
-assert(spec.aiOriginalMode==M.MODE.RPM_1000)
-assert(C.getPublicState(vehicle).mismatch==false)
-assert(C.getPublicState(vehicle).requiredShaftRpm==500)
-workerActive=false
-C.onAIJobFinished(vehicle)
 assert(spec.mode==M.MODE.RPM_1000)
 assert(spec.aiOriginalMode==nil)
-assert(C.getDiagnostics().aiModeSwitches==1)
-assert(C.getDiagnostics().aiRestores==1)
+assert(sent==before)
+workerActive=false
+C.onAIJobFinished(vehicle)
+
+-- A standard 540 native demand with mechanical input remains a real
+-- nominal family candidate: 1000 is incompatible, 540 compatible.
+sprayer.spec_powerConsumer.ptoRpm=540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==540)
+assert(C.getPublicState(vehicle).mismatch==true)
+spec.mode=M.MODE.RPM_540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).gearCompatibility=="COMPATIBLE")
+assert(C.getPublicState(vehicle).mismatch==false)
 
 print("pto_control_harness: OK")
