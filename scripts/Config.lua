@@ -2,6 +2,8 @@ RealismExtensionsConfig = {
     version = "0.0.1.0",
     diagnostics = {
         verbose = false,
+        -- One message per meaningful PTO worker decision/transition.
+        ptoWorkerEvents = true,
         expensiveGeometry = false,
         performanceTiming = false
     },
@@ -16,6 +18,10 @@ RealismExtensionsConfig = {
         iconHeightPx = 18.75,
         modeTextSizePx = 9,
         modeTextGapPx = 5,
+        showEstimatedRpm = true,
+        rpmTextSizePx = 8,
+        rpmTextGapPx = 3,
+        rpmSmoothingMs = 350,
 
         -- Advisory presentation only: no PTO physics or vehicle control is
         -- changed when this threshold is exceeded.

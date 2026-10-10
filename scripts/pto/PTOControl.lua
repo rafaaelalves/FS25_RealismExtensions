@@ -31,6 +31,7 @@ local function resetStats()
         aiRestores = 0,
         aiModeUnavailable = 0,
         aiUnsafeShiftSkipped = 0,
+        aiDiagnosticEvents = 0,
         actionEventsRegistered = 0,
         actionEventsFailed = 0,
         actionEventsCollisionBypass = 0,
@@ -138,9 +139,8 @@ local function logOperatorState(vehicle, spec, reason)
         handRpm > 0 and tostring(math.floor(handRpm + 0.5)) or "ROAD/",
         (tonumber(spec.handThrottlePercent) or 0) * 100,
         tostring(spec.requirements ~= nil and spec.requirements.requiredRpm or "-"),
-        tostring(spec.requirements ~= nil
-            and spec.requirements.requiredRpm ~= nil
-            and spec.requirements.requiredRpm ~= mode.shaftRpm)
+        tostring(spec.publicState ~= nil
+            and spec.publicState.mismatch == true)
     ))
 end
 
@@ -192,7 +192,8 @@ local function refreshPublicState(vehicle, spec)
         maxRpm
     )
     state.requiredShaftRpm = requirements.requiredRpm
-    state.requirementKnown = requirements.requiredRpm ~= nil
+    state.requiredGearboxFamilyRpm = requirements.requiredGearboxFamilyRpm
+    state.requirementKnown = requirements.requiredGearboxFamilyRpm ~= nil
     state.requirementConflict = requirements.conflict == true
     state.hasPtoConsumer = requirements.hasPtoConsumer == true
     state.knownRequirementCount = requirements.knownCount or 0
@@ -201,8 +202,13 @@ local function refreshPublicState(vehicle, spec)
         and requirements.primary.source or nil
     state.requirementProfileId = requirements.primary ~= nil
         and requirements.primary.profileId or nil
-    state.mismatch = requirements.requiredRpm ~= nil
-        and requirements.requiredRpm ~= modeDef.shaftRpm
+    state.gearCompatibility = requirements.conflict == true
+        and "INCOMPATIBLE"
+        or requirements.requiredGearboxFamilyRpm == nil
+            and "UNKNOWN"
+        or requirements.requiredGearboxFamilyRpm == modeDef.shaftRpm
+            and "COMPATIBLE" or "INCOMPATIBLE"
+    state.mismatch = state.gearCompatibility == "INCOMPATIBLE"
     state.capabilitySource = spec.capability ~= nil
         and spec.capability.source or "UNKNOWN"
     state.capabilityProfileId = spec.capability ~= nil
@@ -219,12 +225,13 @@ local function refreshRequirements(vehicle, spec)
         local req = spec.requirements or {}
         local primary = req.primary
         RealismExtensionsDiagnostics.verbose(string.format(
-            "PTO requirements | vehicle=%s consumers=%d known=%d unknown=%d required=%s conflict=%s source=%s profile=%s",
+            "PTO requirements | vehicle=%s consumers=%d known=%d unknown=%d required=%s gearFamily=%s conflict=%s source=%s profile=%s",
             vehicleLabel(vehicle),
             #(req.items or {}),
             tonumber(req.knownCount) or 0,
             tonumber(req.unknownCount) or 0,
             tostring(req.requiredRpm or "-"),
+            tostring(req.requiredGearboxFamilyRpm or "-"),
             tostring(req.conflict == true),
             tostring(primary ~= nil and primary.source or "-"),
             tostring(primary ~= nil and primary.profileId or "-")
@@ -232,6 +239,38 @@ local function refreshRequirements(vehicle, spec)
     end
 end
 
+
+-- One-shot AI decision logging; active independently of verbose frame tracing.
+-- The ordinary non-PTO workers must not flood the game log.
+local function logWorkerDecision(vehicle, spec, decision, reason)
+    if vehicle == nil or vehicle.isServer ~= true or spec == nil then
+        return
+    end
+    local key = tostring(decision)
+    if spec.aiLastDecision == key then return end
+    spec.aiLastDecision = key
+    local diagnostics = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.diagnostics or nil
+    if diagnostics ~= nil and diagnostics.ptoWorkerEvents == false then
+        return
+    end
+    if RealismExtensionsDiagnostics == nil
+        or type(RealismExtensionsDiagnostics.info) ~= "function" then
+        return
+    end
+    local req = spec.requirements or {}
+    local old = spec.aiOriginalMode
+    RealismExtensionsDiagnostics.info(string.format(
+        "PTO AI | vehicle=%s decision=%s reason=%s mode=%s original=%s required=%s gearFamily=%s handThrottle=%.1f%%",
+        vehicleLabel(vehicle), tostring(decision), tostring(reason or "-"),
+        Model.getModeToken(spec.mode),
+        old ~= nil and Model.getModeToken(old) or "-",
+        tostring(req.requiredRpm or "-"),
+        tostring(req.requiredGearboxFamilyRpm or "-"),
+        (tonumber(spec.handThrottlePercent) or 0) * 100
+    ))
+    count("aiDiagnosticEvents")
+end
 
 -- Only the worker's *effective gearbox mode* is temporary. Player mode and
 -- hand throttle survive the job, saves and ordinary operator action bindings.
@@ -260,13 +299,21 @@ local function restoreOperatorMode(vehicle, spec)
     -- without turning off the implement first.
     if Resolver.isPtoEngaged(vehicle) then
         spec.aiRestorePending = true
+        logWorkerDecision(vehicle, spec, "restore-deferred",
+            "shaft still engaged")
         return
     end
     local original = spec.aiOriginalMode
+    local from = spec.mode
     spec.aiOriginalMode = nil
     spec.aiRestorePending = false
     if isAvailable(spec, original) then
         applyServerMode(vehicle, spec, original)
+        logWorkerDecision(vehicle, spec, "restored",
+            Model.getModeToken(from) .. " -> " .. Model.getModeToken(spec.mode))
+    else
+        logWorkerDecision(vehicle, spec, "restore-unavailable",
+            "operator gear not fitted")
     end
     count("aiRestores")
 end
@@ -281,13 +328,19 @@ local function selectWorkerMode(vehicle, spec)
     -- gearbox, rather than replacing the saved player's original choice.
     refreshRequirements(vehicle, spec)
     local req = spec.requirements
-    if req == nil or req.hasPtoConsumer ~= true
-        or req.conflict == true
-        or (req.unknownCount or 0) > 0 then
+    if req == nil or req.hasPtoConsumer ~= true then return end
+    if req.conflict == true then
+        logWorkerDecision(vehicle, spec, "blocked-conflict",
+            "multiple incompatible PTO demands")
         return
     end
-    local rpm = req.requiredRpm
-    if rpm == nil then return end
+    if (req.unknownCount or 0) > 0
+        or req.requiredGearboxFamilyRpm == nil then
+        logWorkerDecision(vehicle, spec, "blocked-unknown",
+            "PTO nominal family not resolved")
+        return
+    end
+    local rpm = req.requiredGearboxFamilyRpm
 
     -- A conservative operator prefers ordinary gears to 540E/1000E:
     -- nominal RPM is known, but available engine power is not guaranteed.
@@ -298,22 +351,33 @@ local function selectWorkerMode(vehicle, spec)
     if desired == nil or not isAvailable(spec, desired)
         or spec.capability.modes[desired].effectiveMotorRatio == nil then
         count("aiModeUnavailable")
+        logWorkerDecision(vehicle, spec, "blocked-unavailable",
+            "required=" .. tostring(rpm) .. " no fitted gearbox ratio")
         return
     end
 
-    if desired == spec.mode then return end
+    if desired == spec.mode then
+        logWorkerDecision(vehicle, spec, "ready-" .. tostring(desired),
+            "gear already matches attached implement")
+        return
+    end
     -- The job must configure the mechanical gear *before* it drives
     -- the implement. Fieldworker-start is a backup for custom AI jobs;
     -- if the shaft is already engaged we do not force an unsafe shift.
     if Resolver.isPtoEngaged(vehicle) then
         count("aiUnsafeShiftSkipped")
+        logWorkerDecision(vehicle, spec, "blocked-engaged",
+            "shaft engaged, gear change rejected")
         return
     end
+    local previousMode = spec.mode
     if spec.aiOriginalMode == nil then
         spec.aiOriginalMode = spec.mode
     end
     applyServerMode(vehicle, spec, desired)
     count("aiModeSwitches")
+    logWorkerDecision(vehicle, spec, "ready-" .. tostring(desired),
+        Model.getModeToken(previousMode) .. " -> " .. Model.getModeToken(desired))
 end
 
 function Control:onAIJobStarted(job, helperIndex, farmId)
@@ -325,11 +389,19 @@ function Control:onAIFieldWorkerStart()
 end
 
 function Control:onAIJobFinished()
-    restoreOperatorMode(self, getSpec(self) or {})
+    local spec = getSpec(self)
+    if spec == nil then return end
+    restoreOperatorMode(self, spec)
+    -- A future job with the same settings must produce a fresh decision.
+    -- Keep the dedupe guard until deferred restoration is completed.
+    if spec.aiRestorePending ~= true then spec.aiLastDecision = nil end
 end
 
 function Control:onAIFieldWorkerEnd()
-    restoreOperatorMode(self, getSpec(self) or {})
+    local spec = getSpec(self)
+    if spec == nil then return end
+    restoreOperatorMode(self, spec)
+    if spec.aiRestorePending ~= true then spec.aiLastDecision = nil end
 end
 
 function Control:onUpdate(dt)
@@ -425,6 +497,7 @@ function Control:onLoad(savegame)
     spec.mode = firstAvailableMode(spec.capability)
     spec.aiOriginalMode = nil
     spec.aiRestorePending = false
+    spec.aiLastDecision = nil
     spec.handThrottlePercent = 0
     spec.requirements = {
         items = {},

@@ -125,7 +125,8 @@ fiat.getAttachedImplements=function()
 end
 req=R.collectRequirements(fiat)
 assert(req.hasPtoConsumer==true)
-assert(req.requiredRpm==1000)
+assert(req.requiredRpm==540) -- source raw value, not 1000 gear
+assert(req.requiredGearboxFamilyRpm==1000)
 assert(req.conflict==false)
 assert(req.primary.source=="PROFILE")
 
@@ -134,7 +135,8 @@ fiat.getAttachedImplements=function()
 end
 req=R.collectRequirements(fiat)
 assert(req.conflict==true)
-assert(req.requiredRpm==nil)
+assert(req.requiredRpm==540) -- raw native demand can coincide
+assert(req.requiredGearboxFamilyRpm==nil)
 
 -- Turned-on hydraulic/electrical tools with a generic PowerConsumer must not
 -- be mistaken for PTO engagement.
@@ -521,14 +523,22 @@ for _,rpm in ipairs({540, 750, 900, 1000, 1300, 1400}) do
     fiat.getAttachedImplements=function() return {{object=explicit}} end
     local requirement = R.collectRequirements(fiat)
     assert(requirement.hasPtoConsumer==true)
-    assert(requirement.knownCount==1)
+    assert(requirement.knownCount==
+        ((rpm==540 or rpm==1000) and 1 or 0))
+    assert(requirement.unknownCount==
+        ((rpm==540 or rpm==1000) and 0 or 1))
     assert(requirement.conflict==false)
     assert(requirement.requiredRpm==rpm,
         "PTO native rpm rounded incorrectly: "..tostring(rpm))
-    assert(requirement.primary.confidence=="NATIVE_EXPLICIT")
+    assert(requirement.primary.confidence ==
+        ((rpm==540 or rpm==1000)
+            and "NATIVE_NOMINAL_INFERRED" or "UNKNOWN_GEAR_FAMILY"))
+    assert(requirement.requiredGearboxFamilyRpm ==
+        ((rpm==540 or rpm==1000) and rpm or nil))
 end
--- 540 + 750 or 750 + 1000 are distinct demands and stay in conflict,
--- rather than silently accepting a 750 device on a 1000 gearbox.
+-- 540 + 750 have different raw demands but not necessarily different
+-- mechanical gearbox families. Unknown 750 must prevent auto-selection,
+-- not falsely declare a physical 540/1000 conflict.
 local devices={}
 for _,rpm in ipairs({540, 750}) do
     local obj={spec_powerConsumer={ptoRpm=rpm},
@@ -538,6 +548,67 @@ for _,rpm in ipairs({540, 750}) do
 end
 fiat.getAttachedImplements=function() return devices end
 local mixed=R.collectRequirements(fiat)
-assert(mixed.conflict==true and mixed.requiredRpm==nil)
+assert(mixed.conflict==false and mixed.requiredRpm==nil)
+assert(mixed.unknownCount==1 and mixed.knownCount==1)
+assert(mixed.requiredGearboxFamilyRpm==nil)
+
+
+-- Physical sprayer inputs with 340/400/500 load demands do not
+-- imply mechanical 340/400/500 gearbox selection, nor generic 540.
+for _,row in ipairs({
+    {"data/vehicles/hardi/aeon5200/aeon5200.xml",500},
+    {"data/vehicles/berthoud/vantage4300/vantage4300.xml",500},
+    {"data/vehicles/johnDeere/r732i/r732i.xml",340},
+    {"data/vehicles/johnDeere/r975i/r975i.xml",400}
+}) do
+    local sprayer={
+        configFileName=row[1],
+        spec_powerConsumer={ptoRpm=row[2]},
+        spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+        getAttachedImplements=function()return {} end
+    }
+    assert(RealismExtensionsPTOProfiles.findImplement(sprayer)==nil)
+    fiat.getAttachedImplements=function()return {{object=sprayer}} end
+    local req=R.collectRequirements(fiat)
+    assert(req.hasPtoConsumer==true)
+    assert(req.requiredRpm==row[2])
+    assert(req.requiredGearboxFamilyRpm==nil)
+    assert(req.unknownCount==1 and req.knownCount==0)
+    assert(req.conflict==false)
+    assert(req.primary.confidence=="UNKNOWN_GEAR_FAMILY")
+
+    -- Mixed raw consumer demands are not necessarily a mechanical conflict.
+    fiat.getAttachedImplements=function()
+        return {{object=sprayer},{object=mower}}
+    end
+    req=R.collectRequirements(fiat)
+    assert(req.conflict==false)
+    assert(req.requiredGearboxFamilyRpm==nil)
+    assert(req.knownCount==1 and req.unknownCount==1)
+end
+
+-- A generic PowerConsumer on a cultivator/soil implement, without a
+-- physical input shaft or a verified profile, is NOT a PTO consumer.
+for _,rpm in ipairs({340,400,500,540,1000}) do
+    local tool={
+        spec_powerConsumer={ptoRpm=rpm},
+        getAttachedImplements=function()return {} end
+    }
+    fiat.getAttachedImplements=function()return {{object=tool}} end
+    local req=R.collectRequirements(fiat)
+    assert(req.hasPtoConsumer==false)
+    assert(req.knownCount==0 and req.unknownCount==0)
+end
+
+-- A cyclic attachment tree must not count any consumer twice.
+local cyclic={
+    spec_powerConsumer={ptoRpm=540},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}}
+}
+cyclic.getAttachedImplements=function()return {{object=fiat}} end
+fiat.getAttachedImplements=function()return {{object=cyclic}} end
+local cycle=R.collectRequirements(fiat)
+assert(#cycle.items==1)
+assert(cycle.requiredGearboxFamilyRpm==540)
 
 print("pto_resolver_harness: OK")

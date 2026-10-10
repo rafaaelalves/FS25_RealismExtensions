@@ -158,8 +158,12 @@ missionHud.drawControlledEntityHUD()
 assert(order[1]=="base")
 assert(order[2]=="icon")
 assert(order[3]=="text")
-assert(#drawn==1)
+assert(order[4]=="text")
+assert(#drawn==2)
 assert(drawn[1].text=="1000")
+assert(drawn[2].text=="≈900")
+assert(drawn[2].y < drawn[1].y)
+assert(drawn[2].size < drawn[1].size)
 assert(textureConfigLoads==1)
 assert(overlayCreates==1)
 assert(icon.color[1]==H.COLOR_ACTIVE[1])
@@ -179,6 +183,8 @@ assert(d.lastMode=="1000")
 assert(d.lastEngaged==true)
 assert(d.lastEngagementSource=="IMPLEMENT_PTO_ACTIVE")
 assert(math.abs(d.lastActualRpm-900)<0.000001)
+assert(math.abs(d.lastEstimatedRpm-900)<0.000001)
+assert(math.abs(d.lastDisplayedRpm-900)<0.000001)
 assert(d.lastHandThrottleRpm==1500)
 assert(d.lastTransportWarning==false)
 
@@ -189,7 +195,10 @@ missionHud.drawControlledEntityHUD()
 d=H.getDiagnostics()
 assert(d.lastEngaged==false)
 assert(d.lastActualRpm==nil)
-assert(drawn[2].text=="1000")
+assert(d.lastEstimatedRpm==nil)
+assert(d.lastDisplayedRpm==nil)
+assert(drawn[3].text=="1000")
+assert(#drawn==3)
 assert(icon.color[1]==H.COLOR_OFF[1])
 
 -- A mismatch while disengaged keeps the icon off but makes the selector text
@@ -218,6 +227,55 @@ assert(icon.color[1]==H.COLOR_CRITICAL[1])
 g_currentMission.time=600
 missionHud.drawControlledEntityHUD()
 assert(icon.color[1]==H.COLOR_ACTIVE[1])
+
+-- Smooth a sharp engine speed change strictly in the HUD; physics is raw.
+motor.getLastRealMotorRpm=function() return 2000 end
+g_currentMission.time=700
+missionHud.drawControlledEntityHUD()
+d=H.getDiagnostics()
+assert(math.abs(d.lastEstimatedRpm-1000)<0.000001)
+assert(d.lastDisplayedRpm>800 and d.lastDisplayedRpm<1000)
+local smoothedLabel=drawn[#drawn].text
+assert(smoothedLabel:find("≈",1,true)==1)
+assert(smoothedLabel~="≈1000")
+-- No under-speed color/alarm: only the existing transport warning applies.
+assert(icon.color[1]==H.COLOR_ACTIVE[1] or icon.color[1]==H.COLOR_CRITICAL[1])
+
+-- Missing ratio means no guessed shaft RPM; restore immediate sample later.
+state.effectiveMotorRatio=nil
+state.revision=4
+g_currentMission.time=800
+missionHud.drawControlledEntityHUD()
+d=H.getDiagnostics()
+assert(d.lastEstimatedRpm==nil)
+assert(d.lastDisplayedRpm==nil)
+assert(drawn[#drawn].text=="1000")
+state.effectiveMotorRatio=2
+state.revision=5
+g_currentMission.time=900
+missionHud.drawControlledEntityHUD()
+assert(H.getDiagnostics().lastDisplayedRpm==1000)
+
+-- Disabling the supplemental readout never disables the nominal gear HUD.
+RealismExtensionsConfig.ptoHud={showEstimatedRpm=false}
+g_currentMission.time=1000
+local before= #drawn
+missionHud.drawControlledEntityHUD()
+assert(#drawn==before+1)
+assert(drawn[#drawn].text=="1000")
+
+-- A consumer with an unresolved physical gearbox family displays a neutral
+-- question mark rather than a fabricated mismatch or red alert.
+state.revision=6
+state.hasPtoConsumer=true
+state.gearCompatibility="UNKNOWN"
+state.mismatch=false
+speedKph=12
+engaged=false
+missionHud.drawControlledEntityHUD()
+assert(drawn[#drawn].text=="1000 ?")
+assert(H.getDiagnostics().lastMismatch==false)
+assert(H.getDiagnostics().lastGearCompatibility=="UNKNOWN")
 
 -- HUD visibility follows the mission HUD.
 missionHud.isVisible=false

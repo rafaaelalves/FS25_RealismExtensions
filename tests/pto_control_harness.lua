@@ -106,7 +106,8 @@ assert(spec.availableModes[M.MODE.RPM_1000]~=nil)
 
 local state=C.getPublicState(vehicle)
 assert(state~=nil)
-assert(state.requiredShaftRpm==1000)
+assert(state.requiredShaftRpm==540) -- raw native consumer demand
+assert(state.requiredGearboxFamilyRpm==1000) -- sourced chipper profile
 assert(state.mismatch==true)
 assert(state.capabilitySource=="PROFILE")
 
@@ -263,8 +264,15 @@ C.onPostLoad(vehicle,nil)
 spec.mode=M.MODE.RPM_540
 spec.handThrottlePercent=0.6
 C.refreshPowerTakeOffRequirements(vehicle)
-assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
+assert(C.getPublicState(vehicle).requiredShaftRpm==540)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==1000)
 local aiStartSent=sent
+local messages={}
+RealismExtensionsDiagnostics={
+    info=function(message) messages[#messages+1]=message end,
+    verbose=function() end
+}
+RealismExtensionsConfig.diagnostics={ptoWorkerEvents=true}
 workerActive=true
 C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_1000)
@@ -272,8 +280,14 @@ assert(spec.aiOriginalMode==M.MODE.RPM_540)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
 assert(C.getPublicState(vehicle).effectiveMotorRatio~=nil)
 assert(sent==aiStartSent+1)
+assert(#messages==1)
+assert(messages[1]:find("PTO AI",1,true)~=nil)
+assert(messages[1]:find("540 -> 1000",1,true)~=nil)
+assert(messages[1]:find("required=540",1,true)~=nil)
+assert(messages[1]:find("gearFamily=1000",1,true)~=nil)
 C.onAIFieldWorkerStart(vehicle)
 assert(sent==aiStartSent+1) -- duplicate callbacks do not resend
+assert(#messages==1) -- no duplicate diagnostic on same decision
 
 -- A save in the middle of a worker's job must persist the OPERATOR gear.
 local aiSave={}
@@ -291,6 +305,8 @@ workerActive=false
 C.onAIJobFinished(vehicle)
 assert(spec.aiRestorePending==true)
 assert(spec.mode==M.MODE.RPM_1000)
+assert(#messages==2)
+assert(messages[2]:find("restore-deferred",1,true)~=nil)
 C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_1000)
 engaged=false
@@ -298,10 +314,13 @@ C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_540)
 assert(spec.aiOriginalMode==nil and spec.aiRestorePending==false)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
+assert(#messages==3)
+assert(messages[3]:find("decision=restored",1,true)~=nil)
 
 -- AI must not round incompatible 750-rpm tools to 1000.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=750,
+        requiredGearboxFamilyRpm=750,
         conflict=false, unknownCount=0}
 end
 workerActive=true
@@ -318,6 +337,7 @@ C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_540)
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=1}
 end
 C.onAIJobStarted(vehicle)
@@ -326,6 +346,7 @@ assert(spec.mode==M.MODE.RPM_540)
 -- Active PTO can't be shifted, even when another worker/job starts.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=0}
 end
 engaged=true
@@ -349,5 +370,63 @@ assert(aiDiag.aiModeSwitches==1)
 assert(aiDiag.aiRestores==1)
 assert(aiDiag.aiModeUnavailable>=1)
 assert(aiDiag.aiUnsafeShiftSkipped>=1)
+assert(aiDiag.aiDiagnosticEvents>=6)
+-- A PTO-less operation and duplicate callbacks do not spam the log.
+assert(#messages==aiDiag.aiDiagnosticEvents)
+-- Tracing can be disabled without affecting automatic gear choice.
+RealismExtensionsConfig.diagnostics.ptoWorkerEvents=false
+local previouslyLogged=#messages
+spec.mode=M.MODE.RPM_540
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(#messages==previouslyLogged)
+workerActive=false
+C.onAIJobFinished(vehicle)
+
+
+-- Native MR load figure 500, with a genuine input PTO, does not
+-- prove any gearbox family. Manual choice stays operable in both gears;
+-- an AI worker must not guess 500->540 and alter the operator selection.
+RealismExtensionsPTOResolver.collectRequirements=originalCollect
+local sprayer={
+    configFileName="data/vehicles/hardi/aeon5200/aeon5200.xml",
+    spec_powerConsumer={ptoRpm=500, neededMaxPtoPower=7.5},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getAttachedImplements=function()return {} end
+}
+vehicle.getAttachedImplements=function()return {{object=sprayer}} end
+spec.mode=M.MODE.RPM_540
+workerActive=false
+C.refreshPowerTakeOffRequirements(vehicle)
+local pumpState=C.getPublicState(vehicle)
+assert(pumpState.requiredShaftRpm==500)
+assert(pumpState.requiredGearboxFamilyRpm==nil)
+assert(pumpState.requirementKnown==false)
+assert(pumpState.gearCompatibility=="UNKNOWN")
+assert(pumpState.requirementProfileId==nil)
+assert(pumpState.mismatch==false)
+spec.mode=M.MODE.RPM_1000
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).gearCompatibility=="UNKNOWN")
+assert(C.getPublicState(vehicle).mismatch==false)
+local before=sent
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(spec.aiOriginalMode==nil)
+assert(sent==before)
+workerActive=false
+C.onAIJobFinished(vehicle)
+
+-- A standard 540 native demand with mechanical input remains a real
+-- nominal family candidate: 1000 is incompatible, 540 compatible.
+sprayer.spec_powerConsumer.ptoRpm=540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==540)
+assert(C.getPublicState(vehicle).mismatch==true)
+spec.mode=M.MODE.RPM_540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).gearCompatibility=="COMPATIBLE")
+assert(C.getPublicState(vehicle).mismatch==false)
 
 print("pto_control_harness: OK")
