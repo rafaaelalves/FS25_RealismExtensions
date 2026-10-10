@@ -523,7 +523,10 @@ for _,rpm in ipairs({540, 750, 900, 1000, 1300, 1400}) do
     fiat.getAttachedImplements=function() return {{object=explicit}} end
     local requirement = R.collectRequirements(fiat)
     assert(requirement.hasPtoConsumer==true)
-    assert(requirement.knownCount==1)
+    assert(requirement.knownCount==
+        ((rpm==540 or rpm==1000) and 1 or 0))
+    assert(requirement.unknownCount==
+        ((rpm==540 or rpm==1000) and 0 or 1))
     assert(requirement.conflict==false)
     assert(requirement.requiredRpm==rpm,
         "PTO native rpm rounded incorrectly: "..tostring(rpm))
@@ -533,8 +536,9 @@ for _,rpm in ipairs({540, 750, 900, 1000, 1300, 1400}) do
     assert(requirement.requiredGearboxFamilyRpm ==
         ((rpm==540 or rpm==1000) and rpm or nil))
 end
--- 540 + 750 or 750 + 1000 are distinct demands and stay in conflict,
--- rather than silently accepting a 750 device on a 1000 gearbox.
+-- 540 + 750 have different raw demands but not necessarily different
+-- mechanical gearbox families. Unknown 750 must prevent auto-selection,
+-- not falsely declare a physical 540/1000 conflict.
 local devices={}
 for _,rpm in ipairs({540, 750}) do
     local obj={spec_powerConsumer={ptoRpm=rpm},
@@ -544,7 +548,9 @@ for _,rpm in ipairs({540, 750}) do
 end
 fiat.getAttachedImplements=function() return devices end
 local mixed=R.collectRequirements(fiat)
-assert(mixed.conflict==true and mixed.requiredRpm==nil)
+assert(mixed.conflict==false and mixed.requiredRpm==nil)
+assert(mixed.unknownCount==1 and mixed.knownCount==1)
+assert(mixed.requiredGearboxFamilyRpm==nil)
 
 
 -- Physical sprayer inputs with 340/400/500 load demands do not
