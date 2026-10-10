@@ -266,6 +266,10 @@ local function getDisplayState(vehicle)
         HUD._cacheModeText = tostring(
             state.modeToken or state.shaftRpm or "?"
         )
+        if state.hasPtoConsumer == true
+            and state.gearCompatibility == "UNKNOWN" then
+            HUD._cacheModeText = HUD._cacheModeText .. " ?"
+        end
         HUD._cacheMismatch = state.mismatch == true
             or state.requirementConflict == true
     end
@@ -475,6 +479,7 @@ function HUD:drawControlledVehicle()
     HUD._lastEngaged = engaged
     HUD._lastEngagementSource = engagementSource
     HUD._lastMismatch = mismatch
+    HUD._lastGearCompatibility = state.gearCompatibility
     HUD._lastTransportWarning = transportWarning
     HUD._lastSpeedKph = speedKph
     HUD._lastActualRpm = estimatedRpm -- legacy name, no shaft sensor
@@ -816,6 +821,7 @@ function HUD.getDiagnostics()
     out.lastEngaged = HUD._lastEngaged
     out.lastEngagementSource = HUD._lastEngagementSource
     out.lastMismatch = HUD._lastMismatch
+    out.lastGearCompatibility = HUD._lastGearCompatibility
     out.lastTransportWarning = HUD._lastTransportWarning
     out.lastSpeedKph = HUD._lastSpeedKph
     out.lastActualRpm = HUD._lastActualRpm -- deprecated alias
