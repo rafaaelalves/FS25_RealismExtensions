@@ -137,10 +137,13 @@ local function formatConsumers(vehicle, lines)
                 end
                 local liveRpm = safeCall(tool, "getPtoRpm")
                 local consumes = safeCall(tool, "getDoConsumePtoPower")
+                -- Diagnostic reads only: MR models generic auxiliary drives
+                -- through PowerConsumer even when no mechanical shaft exists.
+                local consumedTorque = safeCall(tool, "getConsumedPtoTorque")
                 local turnedOn = safeCall(tool, "getIsTurnedOn")
                 local active = safeCall(tool, "getIsPowerTakeOffActive")
                 add(lines, string.format(
-                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s consumePower=%s turnedOn=%s activePto=%s powerKW=%s",
+                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s mrLoadKW=%s mrTorqueKNm=%s consumePower=%s turnedOn=%s activePto=%s powerMinKW=%s powerMaxKW=%s",
                     count, depth, label(tool), value(tool.configFileName),
                     countTable(inputs), connected,
                     value(spec.ptoRpm), value(liveRpm),
@@ -148,7 +151,10 @@ local function formatConsumers(vehicle, lines)
                     value(tool.mrPtoCurrentRpmRatio),
                     value(tool.mrPowerConsumerForcePtoRpm),
                     value(tool.mrBalerLastNeededPower),
+                    value(tool.mrLastNeededPtoPower),
+                    value(consumedTorque),
                     value(consumes), value(turnedOn), value(active),
+                    value(spec.neededMinPtoPower),
                     value(spec.neededMaxPtoPower or spec.neededPtoPower)
                 ))
                 walk(tool, depth + 1)
