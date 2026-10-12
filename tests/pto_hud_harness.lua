@@ -12,11 +12,13 @@ local state={
 }
 local speedKph=12
 local engaged=true
+local motorRunning=true
 local motor={
     getLastRealMotorRpm=function() return 1800 end
 }
 local vehicle={
     getMotor=function() return motor end,
+    getIsMotorStarted=function() return motorRunning end,
     getLastSpeed=function() return speedKph end
 }
 RealismExtensionsPTOResolver={
@@ -255,6 +257,23 @@ state.revision=5
 g_currentMission.time=900
 missionHud.drawControlledEntityHUD()
 assert(H.getDiagnostics().lastDisplayedRpm==1000)
+
+-- Engine-off check: the GIANTS motor may keep its previous nonzero idle
+-- reading after being stopped. Do not render a false running PTO estimate.
+motorRunning=false
+g_currentMission.time=940
+local beforeStop=#drawn
+missionHud.drawControlledEntityHUD()
+d=H.getDiagnostics()
+assert(d.lastEstimatedRpm==nil and d.lastDisplayedRpm==nil)
+assert(#drawn==beforeStop+1)
+assert(drawn[#drawn].text=="1000")
+-- Restart resets display smoothing instead of carrying the stale sample.
+motorRunning=true
+g_currentMission.time=970
+missionHud.drawControlledEntityHUD()
+d=H.getDiagnostics()
+assert(d.lastEstimatedRpm==1000 and d.lastDisplayedRpm==1000)
 
 -- Disabling the supplemental readout never disables the nominal gear HUD.
 RealismExtensionsConfig.ptoHud={showEstimatedRpm=false}
