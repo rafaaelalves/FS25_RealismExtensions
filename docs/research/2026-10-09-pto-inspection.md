@@ -32,6 +32,10 @@ Relevant fields:
 - `mrPtoCurrentRPM`, `mrPtoRpmRatio`: MR's per-tool calculated kinematic speed and speed ratio; these are read-only internal values, not a sensor. Values may be stale or absent if MR is not installed or the tool is inactive.
 - `forcePtoRpm`: MR's per-implement explicit engine governor request flag (if present); do not confuse it with the tractor's physical PTO gear.
 - `mrBalerPowerKW`: MR's last modelled baler power consumption, if present, for comparing transient compressor loads to tractor response. No new load is added by the inspector.
+- `mrLoadKW`: MR `mrLastNeededPtoPower` for **any** implement, including non-cardan pneumatic/electric seeders; this can reveal the active operating load, not merely the XML maximum. A model using the PowerConsumer mechanism does not thereby establish a physical shaft.
+- `mrTorqueKNm`: read-only result of the MR/native `getConsumedPtoTorque()` getter if present, expressed in kN·m in MR 0.26.10.08; this is a modeled consumer torque and not a separately sensed PTO coupling.
+- `powerMinKW`, `powerMaxKW`: declared `spec_powerConsumer` limits; these are specifications, not proof that the engine paid that demand during the session.
+- HUD supplemental kinematic estimate uses a font-safe ASCII `~` rather than unsupported `≈` (observed missing-glyph warning in the user game log on 2026-10-12).
 - `mrMinPtoRot` and `mrMinPtoIdleRot`: **radians per second**, NOT RPM; do not compare to engine RPM without converting. Values are the last reported MR state, not an independent RPM control proof.
 - `maxPtoDemand`: aggregate `PowerConsumer.getMaxPtoRpm` result; it can differ from static raw XML and is for *active* consumers.
 
