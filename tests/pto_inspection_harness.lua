@@ -22,7 +22,9 @@ local engine = {
 local ptoActive = false
 local tool = {
     configFileName = "data/vehicles/johnDeere/r975i/r975i.xml",
-    spec_powerConsumer = { ptoRpm = 400, neededMaxPtoPower = 12 },
+    spec_powerConsumer = { ptoRpm = 400, neededMinPtoPower = 2, neededMaxPtoPower = 12 },
+    mrLastNeededPtoPower = 7.25,
+    getConsumedPtoTorque = function() return ptoActive and 0.12 or 0 end,
     mrPtoCurrentRpm = 296, mrPtoCurrentRpmRatio = 0.74,
     mrPowerConsumerForcePtoRpm = true, mrBalerLastNeededPower = 19,
     spec_powerTakeOffs = {
@@ -80,7 +82,10 @@ assert(report[3]:find("mrPtoRpmRatio=0.74",1,true))
 assert(report[3]:find("forcePtoRpm=true",1,true))
 assert(report[3]:find("mrBalerPowerKW=19",1,true))
 assert(report[3]:find("turnedOn=false",1,true))
-assert(report[3]:find("powerKW=12",1,true))
+assert(report[3]:find("powerMinKW=2",1,true))
+assert(report[3]:find("powerMaxKW=12",1,true))
+assert(report[3]:find("mrLoadKW=7.25",1,true))
+assert(report[3]:find("mrTorqueKNm=0",1,true))
 local response=I:consoleCommandInspect()
 assert(response:find("3 line",1,true))
 assert(#logs==3)
@@ -94,14 +99,29 @@ assert(report[1]:find("engaged=true",1,true))
 assert(report[3]:find("rawConsumerRPM=500",1,true))
 assert(report[3]:find("liveConsumerRPM=400",1,true))
 assert(report[3]:find("activePto=true",1,true))
+assert(report[3]:find("mrTorqueKNm=0.12",1,true))
 -- Optional MR fields absent on vanilla/mod equipment must not break read-only reports.
 tool.mrPtoCurrentRpm=nil
 tool.mrPtoCurrentRpmRatio=nil
 tool.mrPowerConsumerForcePtoRpm=nil
 tool.mrBalerLastNeededPower=nil
+tool.mrLastNeededPtoPower=nil
+tool.getConsumedPtoTorque=nil
 report=I.snapshot(vehicle)
 assert(report[3]:find("mrPtoRpmRatio=-",1,true))
 assert(report[3]:find("mrBalerPowerKW=-",1,true))
+assert(report[3]:find("mrLoadKW=-",1,true))
+assert(report[3]:find("mrTorqueKNm=-",1,true))
+-- Horsch-style non-mechanical auxiliary power is still visible to the
+-- inspector without classifying it as a physical PTO shaft.
+tool.configFileName="MoreRealistic/data/overriding/vehicles/horsch/avatar1225.xml"
+tool.spec_powerConsumer={ptoRpm=340,neededMaxPtoPower=22}
+tool.mrLastNeededPtoPower=13.5
+tool.getDoConsumePtoPower=function()return true end
+report=I.snapshot(vehicle)
+assert(report[3]:find("rawConsumerRPM=340",1,true))
+assert(report[3]:find("powerMaxKW=22",1,true))
+assert(report[3]:find("mrLoadKW=13.5",1,true))
 -- Generic power consumer has no physical input; output must expose that.
 tool.spec_powerTakeOffs.inputPowerTakeOffs={}
 report=I.snapshot(vehicle)
