@@ -429,4 +429,34 @@ C.refreshPowerTakeOffRequirements(vehicle)
 assert(C.getPublicState(vehicle).gearCompatibility=="COMPATIBLE")
 assert(C.getPublicState(vehicle).mismatch==false)
 
+-- Log 2026-10-12: HORSCH Avatar 12.25 SD (MR 340rpm/22kW) without
+-- a mechanical input PTO must not paint either 540 or 1000 red.
+-- Its electrical/hydraulic/engine load remains owned by MR, not RE.
+local avatar={
+    configFileName="MoreRealistic/data/overriding/vehicles/horsch/avatar1225.xml",
+    spec_powerConsumer={ptoRpm=340, neededMaxPtoPower=22},
+    spec_powerTakeOffs={inputPowerTakeOffs={}},
+    spec_sowingMachine={},
+    getInputPowerTakeOffs=function() return {} end,
+    getAttachedImplements=function() return {} end
+}
+vehicle.getAttachedImplements=function()return {{object=avatar}} end
+for _,mode in ipairs({M.MODE.RPM_540,M.MODE.RPM_1000}) do
+    spec.mode=mode
+    C.refreshPowerTakeOffRequirements(vehicle)
+    local sowingState=C.getPublicState(vehicle)
+    assert(sowingState.hasPtoConsumer==false)
+    assert(sowingState.requiredShaftRpm==nil)
+    assert(sowingState.requiredGearboxFamilyRpm==nil)
+    assert(sowingState.requirementConflict==false)
+    assert(sowingState.mismatch==false)
+    local beforeAiMode=spec.mode
+    workerActive=true
+    C.onAIJobStarted(vehicle)
+    assert(spec.mode==beforeAiMode)
+    assert(spec.aiOriginalMode==nil)
+    workerActive=false
+    C.onAIJobFinished(vehicle)
+end
+
 print("pto_control_harness: OK")
