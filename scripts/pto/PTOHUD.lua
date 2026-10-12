@@ -245,7 +245,7 @@ end
 
 local function estimatedRpmLabel(value)
     if value == nil then return nil end
-    return string.format("≈%d", math.floor(value + 0.5))
+    return string.format("~%d", math.floor(value + 0.5))
 end
 
 local function getDisplayState(vehicle)
