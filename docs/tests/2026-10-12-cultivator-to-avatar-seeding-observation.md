@@ -31,6 +31,18 @@ A Avatar 12.25 SD é uma semeadora de plantio direto por descrição do fabrican
 - `TerrainPlasticYield supported=2432 yielded=1441` amostras classificadas. O gate não imuniza semeadoras, corretamente. **Ainda não há teste de aceitação comparável em solo normal/portante**, e tampouco vídeo/foto visual desse local. Não aumentar nem reduzir envelopes de bearing sem separar umidade, carga/pressão, estado prévio e confirmação de trabalho de semeadura.
 - 23:48:16: `cells=12946 retired=174`, `brushesAccepted=1431 enqueued=3205 coalesced=96 submittedBrushes=3109 submittedJobs=2045 failedJobs=0`. A soma inclui writes de rut e R1: não subtrair diretamente `submittedBrushes` de `brushesAccepted`.
 
+
+## Inspeção de código adicional: a transferência de sink domina certas amostras
+
+Revisão de `RE/scripts/terrain/TerrainResponseModel.lua` na mesma base que gerou o ZIP e `RC/scripts/api/ExtensionsStateProvider.lua` em `ad7461f`.
+
+- Snapshot 23:48:11: `wet=0.71 slip=0.028 instantSink=0.358m transfer=0.47 persistentSink=0.158m staticCap=0.073m slipCap=0.073m rut=0.158m`.
+- `persistentSinkM = min(observedSinkM * transfer * plasticYield01, maxSlipCapacity)`; `rutCapacityM = max(staticRutCapacityM, slipRutCapacityM, persistentSinkM)` e `modeledBaseM = persistentSinkM`. **`maxSlipCapacity` absoluto pode ser maior que `slipRutCapacityM` reportado no snapshot**. Logo a amplitude persistente pode exceder a capacidade progressiva de estático+patinagem, como ocorreu aqui, sem violar o limite absoluto da superfície.
+- Sob tão pouca patinagem (2,8%) e `sink=35.8cm`, a magnitude do sulco de 15,8cm provém sobretudo do **acoplamento de sink momentâneo Mud → heightmap**, e não do shear da roda.
+- RC `ExtensionsStateProvider.getSinkDepth()` usa `__fgOrigRadius - __fgDesiredRadius` e `__mpOrigRadius - __mpDesiredRadius` quando disponíveis, caindo em `__fgMudCurExtra` / `__mpMudCurExtra` somente se não houver raio aplicado; seleciona máximo dos dois canais. Foi desenhado para evitar transferência do sink bruto pré-caps. **Não prova** que 0.358m é geomorfologicamente correto ou que os canais nunca reproduzam histórico de altura preexistente.
+- Hipótese independente: o controlador de `sinkPlasticTransfer` talvez amplifique dano permanente de uma combinação em solo úmido mesmo com slip baixo. Não corrigir cortando o sink sem verificar (i) a semântica de redução de raio Mud e (ii) o contato/carga e a geometria já deformada. Em primeiro lugar, derivar harness com baixa patinagem/alto sink e comportamento A/B por umidade/pressão.
+- Não atribuir o snapshot necessariamente à Avatar: a telemetria `TerrainPlasticity sample` não traz veículo, roda e coordenada ao lado. Os contadores de writers são atribuídos por veículo, mas não correlacionam cada snapshot à mesma roda.
+
 ## Mudanças na stack e compatibilidade
 
 - TerraFarm passou de `1.6.3.0` da coleta anterior para `1.6.5.0`. Release upstream oficial https://github.com/scfmod/FS25_TerraFarm/releases : atualizações entre elas orientadas a lógica de descarga e escavação, não há declaração de alteração do `setHeightTarget` RE; **não** afirmar paridade de implementação sem diff exato de código e build instalada.
