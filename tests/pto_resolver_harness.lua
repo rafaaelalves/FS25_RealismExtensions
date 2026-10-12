@@ -600,6 +600,40 @@ for _,rpm in ipairs({340,400,500,540,1000}) do
     assert(req.knownCount==0 and req.unknownCount==0)
 end
 
+-- 2026-10-12 field-log regression: Fiat 180-90 DT + MR HORSCH Avatar 12.25 SD.
+-- MR 0.26.10.08 declares 340rpm and 22kW for seed/fertilizer
+-- turbine + electrical distribution via PowerConsumer. No native shaft
+-- input is evidenced by this fixture; load does NOT specify PTO gear.
+-- Old RE logged required=340, known=1, mismatch=true on BOTH 540/1000.
+local avatar={
+    configFileName="MoreRealistic/data/overriding/vehicles/horsch/avatar1225.xml",
+    spec_powerConsumer={ptoRpm=340, neededMaxPtoPower=22},
+    spec_powerTakeOffs={inputPowerTakeOffs={}},
+    spec_sowingMachine={},
+    spec_sprayer={},
+    getInputPowerTakeOffs=function() return {} end,
+    getAttachedImplements=function() return {} end
+}
+assert(P.findImplement(avatar)==nil)
+fiat.getAttachedImplements=function() return {{object=avatar}} end
+local avatarReq=R.collectRequirements(fiat)
+assert(avatarReq.hasPtoConsumer==false)
+assert(avatarReq.requiredRpm==nil)
+assert(avatarReq.requiredGearboxFamilyRpm==nil)
+assert(avatarReq.knownCount==0 and avatarReq.unknownCount==0)
+assert(avatarReq.conflict==false)
+-- Ignore a non-PTO implement without hiding a real shaft-driven tool
+-- attached in the same vehicle attachment tree.
+fiat.getAttachedImplements=function()
+    return {{object=avatar},{object=mower}}
+end
+avatarReq=R.collectRequirements(fiat)
+assert(avatarReq.hasPtoConsumer==true)
+assert(avatarReq.requiredRpm==540)
+assert(avatarReq.requiredGearboxFamilyRpm==540)
+assert(avatarReq.knownCount==1 and avatarReq.unknownCount==0)
+assert(avatarReq.conflict==false)
+
 -- A cyclic attachment tree must not count any consumer twice.
 local cyclic={
     spec_powerConsumer={ptoRpm=540},
