@@ -199,6 +199,14 @@ end
 
 local function getKinematicPtoRpm(vehicle, state, engaged)
     if not engaged then return nil end
+    -- GIANTS/MR can retain the last idle RPM after engine stop. This HUD
+    -- estimates shaft speed, it must not display stale nonzero output
+    -- from an engine which is explicitly stopped. A missing runtime API
+    -- remains unknown rather than guessing the engine state.
+    if vehicle ~= nil and type(vehicle.getIsMotorStarted) == "function" then
+        local ok, running = pcall(vehicle.getIsMotorStarted, vehicle)
+        if ok and running == false then return nil end
+    end
     local ratio = tonumber(state ~= nil and state.effectiveMotorRatio or nil)
     if ratio == nil or ratio <= 0 or ratio == math.huge then return nil end
 
