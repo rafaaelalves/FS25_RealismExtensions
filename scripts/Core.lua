@@ -379,6 +379,24 @@ function RealismExtensionsCore:update(dt)
                         writerStats.recoverySmoothJobs or 0
                     ))
 
+                    -- Read-only outcome split: distinguish a wrong reference
+                    -- from a native TARGET center that did not physically move.
+                    if (r.targetOutcomeCount or 0) > 0 then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainTargetOutcome | total=%d unchanged=%d reached=%d toward=%d away=%d movedNoGain=%d unmeasured=%d refDriftGt2cm=%d queueDriftGt2cm=%d samples=%d",
+                            r.targetOutcomeCount or 0,
+                            r.targetOutcomeUnchanged or 0,
+                            r.targetOutcomeReached or 0,
+                            r.targetOutcomeToward or 0,
+                            r.targetOutcomeAway or 0,
+                            r.targetOutcomeNoGain or 0,
+                            r.targetOutcomeUnmeasured or 0,
+                            r.targetOutcomeReferenceDrift or 0,
+                            r.targetOutcomeQueueDrift or 0,
+                            r.targetOutcomeSamples or 0
+                        ))
+                    end
+
                     local toolParts = {}
                     local toolOrder = {
                         "CULTIVATOR",
