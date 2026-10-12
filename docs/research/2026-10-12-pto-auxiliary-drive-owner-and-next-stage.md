@@ -57,3 +57,11 @@ A single Fiat/Horsch `rePTOInspect` capture with the implement **off and then ac
 Then classify implement-specific gaps: baler PTO-driven feed/stroke speed vs existing MR stroke *load*, woodchipper feed cutoff already in MR, mowers/conveyors and any real hydraulic/electric accessory behavior. A category hook should be proposed only for a measured missing output semantic; no global work-speed multiplier, synthetic engine-load multiplier, always-stall or false generator penalty.
 
 Dynamic PTO 1.1.3.1 public claims were recorded in RC `docs/audits/2026-10-12-dynamic-pto-1.1.3.1-preliminary.md` as **non-source-verified**. Do not switch production PTO owners on release notes alone.
+
+## Follow-up after exact Dynamic PTO shadow-archive audit
+
+A fresh user-supplied Dynamic PTO ZIP (`FS25_DynamicPTO_FFM (2).zip`, SHA-256 `e79a4cadca224ec83ba982ab4d507a1e244fef64e93f87011dc383946f7be20a`) contains real panel, warning and network changes **despite declaring 1.1.3.0**. Comparison with the old ZIP verified that `PTODetector.lua` and `PTODynamics.lua` are byte-identical, so no new implement-physics or gearbox-evidence logic arrived. Exact RC audit: https://github.com/rafaaelalves/FS25_RealismCompatibility/blob/main/docs/audits/2026-10-12-dynamic-pto-shadow-update-exact-source.md.
+
+The one safe, minimal RE improvement identified was **engine-off HUD state**. Dynamic PTO now zeroes displayed RPM after motor stop; RE V1.5's kinematic estimator could otherwise use a stale cached motor RPM while native engagement flags lagged. The read-only RE HUD now checks `getIsMotorStarted()==false` and returns no estimated RPM; it does not override the motor, the real physical shaft, MR or RMS. Its harness covers an explicitly stopped engine retaining a nonzero last-RPM field and verifies the estimate resumes cleanly at restart. The selected 540/1000 gearbox label continues displaying normally.
+
+Further inspiration remains **design research**, not a reason to import synthetic `gruntLoadExtra` or blanket 85%/112% speed warnings. V1.6 should use measured/declared provenance, implement-specific operating envelope evidence, and MP authentication if expanded to network controls.
