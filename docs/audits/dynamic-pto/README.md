@@ -117,3 +117,11 @@ Proceed to design, but do **not** remove Dynamic PTO from the gameplay stack yet
 - attached implement detection is at least as reliable;
 - save/MP semantics are understood;
 - UX solves the current status contradiction.
+
+## Update 2026-10-12 — exact submitted shadow release
+
+The new `FS25_DynamicPTO_FFM (2).zip` has 31 entries and SHA-256 `e79a4cadca224ec83ba982ab4d507a1e244fef64e93f87011dc383946f7be20a`. Its **declared version remains 1.1.3.0**, while the byte diff from the prior 1.1.3.0 archive confirms real HUD, warnings and multiplayer additions matching the advertised 1.1.3.1 feature set. Crucially, `PTODetector.lua`, `PTODynamics.lua`, `PTOConfig.lua`, the gearbox heuristics and physical engine-output model are **unchanged**.
+
+Therefore the original `CANDIDATE_ABSORB` inventory above is **historical design input**; the project now has native PTO V1 merged on main and V1.5 under [draft PR #39](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/39). That native branch owns evidence-based gearbox family detection and narrow RC MR/RMS translation. This Dynamic PTO update does **not** justify reverting or switching PTO controllers for the production save. The exact audit and multiplayer/authority risk analysis is maintained in [RC's October 12 report](https://github.com/rafaaelalves/FS25_RealismCompatibility/blob/main/docs/audits/2026-10-12-dynamic-pto-shadow-update-exact-source.md).
+
+**Research opportunities without copying code:** informative status/alert UX with machine-specific uncertainty, engine-off 0 RPM display, per-vehicle throttled MP state with authorization/roundtrip acceptance tests, and separation of visual output scaling from genuine MR implement throughput. Do not import its global rpm heuristics or synthetic `gruntLoadExtra` as physical fact. Preserve one-owner-at-a-time runtime tests (RE or Dynamic PTO), not both.
