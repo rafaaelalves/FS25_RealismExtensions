@@ -397,6 +397,26 @@ function RealismExtensionsCore:update(dt)
                         ))
                     end
 
+                    if RealismExtensionsConfig.modules ~= nil
+                        and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainReferenceV2 | accepted=%d rejected=%d maxInnerOuterDrift=%.4fm",
+                            r.referenceV2Accepted or 0,
+                            r.referenceV2Rejected or 0,
+                            r.referenceV2MaxDriftM or 0
+                        ))
+                        local reasons = {}
+                        for reason, count in pairs(r.referenceV2RejectReasons or {}) do
+                            reasons[#reasons + 1] = tostring(reason) .. "=" .. tostring(count)
+                        end
+                        table.sort(reasons)
+                        if #reasons > 0 then
+                            RealismExtensionsDiagnostics.verbose(
+                                "TerrainReferenceV2Reject | " .. table.concat(reasons, " ")
+                            )
+                        end
+                    end
+
                     local toolParts = {}
                     local toolOrder = {
                         "CULTIVATOR",
