@@ -598,6 +598,9 @@ for _,rpm in ipairs({340,400,500,540,1000}) do
     local req=R.collectRequirements(fiat)
     assert(req.hasPtoConsumer==false)
     assert(req.knownCount==0 and req.unknownCount==0)
+    assert(req.driveEvidenceStatus=="POWER_CONSUMER_NO_INPUT")
+    assert(req.unlinkedPowerConsumerCount==1)
+    assert(req.nativeInputImplementCount==0)
 end
 
 -- 2026-10-12 field-log regression: Fiat 180-90 DT + MR HORSCH Avatar 12.25 SD.
@@ -618,6 +621,10 @@ assert(P.findImplement(avatar)==nil)
 fiat.getAttachedImplements=function() return {{object=avatar}} end
 local avatarReq=R.collectRequirements(fiat)
 assert(avatarReq.hasPtoConsumer==false)
+assert(avatarReq.driveEvidenceStatus=="POWER_CONSUMER_NO_INPUT")
+assert(avatarReq.attachedImplementCount==1)
+assert(avatarReq.unlinkedPowerConsumerCount==1)
+assert(avatarReq.nativeInputImplementCount==0)
 assert(avatarReq.requiredRpm==nil)
 assert(avatarReq.requiredGearboxFamilyRpm==nil)
 assert(avatarReq.knownCount==0 and avatarReq.unknownCount==0)
@@ -629,6 +636,10 @@ fiat.getAttachedImplements=function()
 end
 avatarReq=R.collectRequirements(fiat)
 assert(avatarReq.hasPtoConsumer==true)
+assert(avatarReq.driveEvidenceStatus=="NATIVE_PTO_INPUT")
+assert(avatarReq.attachedImplementCount==2)
+assert(avatarReq.unlinkedPowerConsumerCount==1)
+assert(avatarReq.nativeInputImplementCount==1)
 assert(avatarReq.requiredRpm==540)
 assert(avatarReq.requiredGearboxFamilyRpm==540)
 assert(avatarReq.knownCount==1 and avatarReq.unknownCount==0)
@@ -644,5 +655,15 @@ fiat.getAttachedImplements=function()return {{object=cyclic}} end
 local cycle=R.collectRequirements(fiat)
 assert(#cycle.items==1)
 assert(cycle.requiredGearboxFamilyRpm==540)
+assert(cycle.driveEvidenceStatus=="NATIVE_PTO_INPUT")
+-- Truly empty attachment list vs missing attachment API are distinct:
+-- absence of observable data must not be reported as evidence of no PTO.
+fiat.getAttachedImplements=function() return {} end
+local empty=R.collectRequirements(fiat)
+assert(empty.driveEvidenceStatus=="NO_ATTACHMENT")
+fiat.getAttachedImplements=nil
+local missing=R.collectRequirements(fiat)
+assert(missing.driveEvidenceStatus=="UNKNOWN")
+fiat.getAttachedImplements=function() return {{object=avatar}} end
 
 print("pto_resolver_harness: OK")
