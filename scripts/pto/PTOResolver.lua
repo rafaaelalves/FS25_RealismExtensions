@@ -304,6 +304,15 @@ end
 local function getObjectPtoActivity(object)
     if object == nil then return false, nil end
 
+    -- Native PowerTakeOffs activation can also be exposed by generic
+    -- TurnOnVehicle/PowerConsumer tools. Mechanical engagement requires
+    -- separate evidence of a shaft input or curated implement PTO profile.
+    -- Never display a working Horsch turbine as a connected cardan solely
+    -- because its generic getIsPowerTakeOffActive() returned true.
+    local usesPto = Profiles.findImplement(object) ~= nil
+        or hasInputPowerTakeOff(object)
+    if not usesPto then return false, nil end
+
     -- GIANTS' base PowerTakeOffs implementation on a tractor returns false.
     -- PTO-consuming implement specializations (TurnOnVehicle, Dischargeable,
     -- FillUnit, BaleLoader, etc.) overwrite this method with their real
@@ -321,9 +330,7 @@ local function getObjectPtoActivity(object)
     -- Defensive fallback for mod implements that consume PTO but implement only
     -- TurnOnVehicle semantics and do not participate correctly in the
     -- getIsPowerTakeOffActive overwrite chain.
-    local usesPto = Profiles.findImplement(object) ~= nil
-        or hasInputPowerTakeOff(object)
-    if usesPto and type(object.getIsTurnedOn) == "function" then
+    if type(object.getIsTurnedOn) == "function" then
         local ok, active = pcall(object.getIsTurnedOn, object)
         if ok and active == true then
             return true, "IMPLEMENT_TURNED_ON"
