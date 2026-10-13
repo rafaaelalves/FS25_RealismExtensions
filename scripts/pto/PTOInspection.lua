@@ -84,7 +84,7 @@ local function formatRoot(vehicle, lines)
     end
     local ai = safeCall(vehicle, "getIsAIActive")
     add(lines, string.format(
-        "ROOT name=%s ai=%s gear=%s selected=%s required=%s nominalFamily=%s gearCompatibility=%s known=%s unknown=%s conflict=%s hasConsumer=%s engaged=%s engagementSource=%s",
+        "ROOT name=%s ai=%s gear=%s selected=%s required=%s nominalFamily=%s gearCompatibility=%s known=%s unknown=%s conflict=%s hasConsumer=%s engaged=%s engagementSource=%s driveEvidence=%s attached=%s nativeInputs=%s profiles=%s unlinkedPower=%s",
         label(vehicle), value(ai),
         value(owner ~= nil and owner.modeToken),
         value(owner ~= nil and owner.shaftRpm),
@@ -95,7 +95,12 @@ local function formatRoot(vehicle, lines)
         value(owner ~= nil and owner.unknownRequirementCount),
         value(owner ~= nil and owner.requirementConflict),
         value(owner ~= nil and owner.hasPtoConsumer),
-        value(engaged), value(source)
+        value(engaged), value(source),
+        value(owner ~= nil and owner.driveEvidenceStatus),
+        value(owner ~= nil and owner.attachedImplementCount),
+        value(owner ~= nil and owner.nativeInputImplementCount),
+        value(owner ~= nil and owner.profiledImplementCount),
+        value(owner ~= nil and owner.unlinkedPowerConsumerCount)
     ))
     add(lines, string.format(
         "MOTOR engineRPM=%s effectiveRatio=%s handTargetRPM=%s maxPtoDemand=%s mrMinPtoRot=%s mrMinPtoIdleRot=%s",
