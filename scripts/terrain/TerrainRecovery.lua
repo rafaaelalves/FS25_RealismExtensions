@@ -164,6 +164,7 @@ local function newStats()
         targetPlaneLowConfidence = 0,
         referenceV2Accepted = 0,
         referenceV2Rejected = 0,
+        referenceV2RejectReasons = {},
         referenceV2MaxDriftM = 0,
         targetPlaneSignCrossings = 0,
         targetPlaneResidualReductionM = 0,
@@ -1070,19 +1071,24 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     end
     params.causalAuthorized = true
 
-    local beforeProbe = type(writer.measureRecoveryAt) == "function"
-        and writer:measureRecoveryAt(
+    local beforeProbe, referenceReason = nil, nil
+    if type(writer.measureRecoveryAt) == "function" then
+        beforeProbe, referenceReason = writer:measureRecoveryAt(
             point.x,
             point.z,
             probeRadius,
             history
-        ) or nil
+        )
+    end
     if beforeProbe == nil then
         if RealismExtensionsConfig ~= nil
             and RealismExtensionsConfig.modules ~= nil
             and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
             Recovery.stats.referenceV2Rejected =
                 Recovery.stats.referenceV2Rejected + 1
+            local reason = tostring(referenceReason or "UNKNOWN")
+            local counts = Recovery.stats.referenceV2RejectReasons
+            counts[reason] = (counts[reason] or 0) + 1
         end
         Recovery.pendingStamps[key] = nil
         Recovery.stats.structuralStalled =
