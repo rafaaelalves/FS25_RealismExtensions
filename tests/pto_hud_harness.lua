@@ -296,6 +296,44 @@ assert(drawn[#drawn].text=="1000 ?")
 assert(H.getDiagnostics().lastMismatch==false)
 assert(H.getDiagnostics().lastGearCompatibility=="UNKNOWN")
 
+-- Shaftless Horsch-like consumer: selected gear stays visible, but the
+-- second line explicitly marks declared power without a confirmed shaft.
+-- A neutral icon is retained; no artificial mismatch or kinematic RPM.
+RealismExtensionsConfig.ptoHud={
+    showEstimatedRpm=true, showUnlinkedPowerHint=true
+}
+state.revision=7
+state.hasPtoConsumer=false
+state.driveEvidenceStatus="POWER_CONSUMER_NO_INPUT"
+state.gearCompatibility="UNKNOWN"
+local beforePowerHint=#drawn
+missionHud.drawControlledEntityHUD()
+assert(#drawn==beforePowerHint+2)
+assert(drawn[#drawn-1].text=="1000")
+assert(drawn[#drawn].text=="PWR?")
+d=H.getDiagnostics()
+assert(d.lastDriveEvidenceStatus=="POWER_CONSUMER_NO_INPUT")
+assert(d.lastEngaged==false)
+assert(d.lastMismatch==false)
+assert(d.lastEstimatedRpm==nil)
+assert(icon.color[1]==H.COLOR_OFF[1])
+
+-- The hint is optional, not a mandatory new label.
+RealismExtensionsConfig.ptoHud.showUnlinkedPowerHint=false
+local beforeHiddenHint=#drawn
+missionHud.drawControlledEntityHUD()
+assert(#drawn==beforeHiddenHint+1)
+assert(drawn[#drawn].text=="1000")
+
+-- Presence of a real mechanical input never produces the load-only hint.
+RealismExtensionsConfig.ptoHud.showUnlinkedPowerHint=true
+state.revision=8
+state.driveEvidenceStatus="NATIVE_PTO_INPUT"
+local beforeNativeInput=#drawn
+missionHud.drawControlledEntityHUD()
+assert(#drawn==beforeNativeInput+1)
+assert(drawn[#drawn].text=="1000")
+
 -- HUD visibility follows the mission HUD.
 missionHud.isVisible=false
 missionHud.drawControlledEntityHUD()
