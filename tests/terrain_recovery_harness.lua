@@ -6,6 +6,8 @@ RealismExtensionsConfig = {
 local pending,cells,residuals = {},{},{}
 local targetFraction=0.80
 local forceTargetNoop=false
+local probeReferenceV2=false
+local forceMisleadingPostReference=false
 local targetCalls=0
 local seenTargetAmounts={}
 local expectedProfileId="CULTIVATOR"
@@ -74,6 +76,7 @@ function writer:measureRecoveryAt(x,z,probeRadius)
     return {
         centerY=10+residual,
         referenceCenterY=10,
+        referenceV2=probeReferenceV2,
         centerDeficitM=math.max(0,-residual),
         centerResidualM=residual,
         roughnessM=math.abs(residual)*0.25,
@@ -137,7 +140,8 @@ local function applyNext()
         centerDeficitBeforeM=math.max(0,-before),
         centerDeficitAfterM=math.max(0,-after),
         centerResidualBeforeM=before,
-        centerResidualAfterM=after,
+        centerResidualAfterM=forceMisleadingPostReference and
+            (after-.08) or after,
         centerBeforeY=10+before,centerAfterY=10+after,
         referenceBeforeY=10,referenceAfterY=10,
         reliefBeforeM=math.abs(before),reliefAfterM=math.abs(after),
@@ -328,7 +332,26 @@ assert(d.toolProfiles.SUBSOILER.targetApplied==targetCalls)
 vehicle.spec_cultivator.isSubsoiler=false
 expectedProfileId="CULTIVATOR"
 
--- 7. Inactive work area remains inert.
+-- 7. In V2, callback reports a drifting / misleading reference plane.
+-- Actual center moved toward the pre-command TARGET: do not label it worsened.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.090}})
+Recovery.resetRuntimeState()
+g_currentMission.time=g_currentMission.time+1000
+probeReferenceV2=true
+forceMisleadingPostReference=true
+targetFraction=0.90
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+pump()
+d=Recovery.getDiagnostics()
+assert(d.referenceV2Accepted>=1)
+assert(d.targetPlaneImproved>=1)
+assert(d.targetPlaneWorsened==0)
+assert(d.targetPlaneCompleted>=1)
+assert((historyApi:get(0.40,0.40).rutDepthM or 0)<0.003)
+probeReferenceV2=false
+forceMisleadingPostReference=false
+
+-- 8. Inactive work area remains inert.
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.020}})
 Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
