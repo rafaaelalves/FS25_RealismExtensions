@@ -615,6 +615,9 @@ local avatar={
     spec_sowingMachine={},
     spec_sprayer={},
     getInputPowerTakeOffs=function() return {} end,
+    -- Even a generic "active" API cannot establish shaft engagement.
+    getIsPowerTakeOffActive=function() return true end,
+    getIsTurnedOn=function() return true end,
     getAttachedImplements=function() return {} end
 }
 assert(P.findImplement(avatar)==nil)
@@ -629,6 +632,9 @@ assert(avatarReq.requiredRpm==nil)
 assert(avatarReq.requiredGearboxFamilyRpm==nil)
 assert(avatarReq.knownCount==0 and avatarReq.unknownCount==0)
 assert(avatarReq.conflict==false)
+local avatarEngaged, avatarSource=R.isPtoEngaged(fiat)
+assert(avatarEngaged==false)
+assert(avatarSource=="NO_ACTIVE_CONSUMER")
 -- Ignore a non-PTO implement without hiding a real shaft-driven tool
 -- attached in the same vehicle attachment tree.
 fiat.getAttachedImplements=function()
@@ -644,6 +650,12 @@ assert(avatarReq.requiredRpm==540)
 assert(avatarReq.requiredGearboxFamilyRpm==540)
 assert(avatarReq.knownCount==1 and avatarReq.unknownCount==0)
 assert(avatarReq.conflict==false)
+-- The real mower still controls native shaft engagement with the Horsch
+-- operating beside it: never suppress evidenced mechanical activity.
+mowerActive=true
+assert(R.isPtoEngaged(fiat)==true)
+mowerActive=false
+assert(R.isPtoEngaged(fiat)==false)
 
 -- A cyclic attachment tree must not count any consumer twice.
 local cyclic={
