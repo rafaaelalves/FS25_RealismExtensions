@@ -397,6 +397,16 @@ function RealismExtensionsCore:update(dt)
                         ))
                     end
 
+                    if RealismExtensionsConfig.modules ~= nil
+                        and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainReferenceV2 | accepted=%d rejected=%d maxInnerOuterDrift=%.4fm",
+                            r.referenceV2Accepted or 0,
+                            r.referenceV2Rejected or 0,
+                            r.referenceV2MaxDriftM or 0
+                        ))
+                    end
+
                     local toolParts = {}
                     local toolOrder = {
                         "CULTIVATOR",
