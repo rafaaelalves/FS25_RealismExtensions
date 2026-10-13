@@ -286,13 +286,30 @@ local function sampleRoughnessProbe(terrain, brush)
     -- Recovery is sparse/serialized, so spend a few extra height samples on a
     -- better local reference plane. A 16-point boundary ring is much harder
     -- for one old rut edge or small berm to bias than the previous 8 samples.
+    local v2 = brush.referenceV2 == true
+        and brush.recoveryHistory ~= nil
     for i = 0, 15 do
         local a = (math.pi * 2 * i) / 16
         offsets[#offsets + 1] = {
             math.cos(a) * r,
             math.sin(a) * r,
-            true
+            true,
+            "inner"
         }
+    end
+    if v2 then
+        -- Outer ring gives clean support around long parallel rut corridors.
+        -- No second radius is ever sampled on the hot wheel deformation path.
+        local outerR = r * 1.70
+        for i = 0, 15 do
+            local a = (math.pi * 2 * i) / 16
+            offsets[#offsets + 1] = {
+                math.cos(a) * outerR,
+                math.sin(a) * outerR,
+                true,
+                "outer"
+            }
+        end
     end
 
     local samples = {}
@@ -303,13 +320,42 @@ local function sampleRoughnessProbe(terrain, brush)
             brush.z + o[2]
         )
         if type(y) ~= "number" then return nil end
+        local debt = 0
+        if v2 and i > 1 then
+            local history = brush.recoveryHistory
+            if type(history.getRecoveryCellsCircle) == "function" then
+                local nearby = history:getRecoveryCellsCircle(
+                    brush.x + o[1],
+                    brush.z + o[2],
+                    0.23,
+                    { minRutM = 0.008, maxCells = 1 }
+                )
+                if nearby ~= nil and nearby[1] ~= nil then
+                    debt = tonumber(nearby[1].rutDepthM) or 0
+                end
+            elseif type(history.get) == "function" then
+                local cell = history:get(brush.x + o[1], brush.z + o[2])
+                debt = cell ~= nil
+                    and (tonumber(cell.rutDepthM) or 0) or 0
+            end
+        end
         samples[i] = {
             dx = o[1],
             dz = o[2],
             y = y,
             boundary = o[3] == true,
-            center = i == 1
+            center = i == 1,
+            ring = o[4],
+            rutDebtM = debt
         }
+    end
+
+    if v2 then
+        local selector = RealismExtensionsRecoveryReferenceV2
+        if selector == nil or type(selector.measure) ~= "function" then
+            return nil, "REFERENCE_V2_MISSING"
+        end
+        return selector.measure(samples, { innerRadiusM = r })
     end
 
     local estimator = RealismExtensionsRecoverySurfaceEstimator
@@ -356,7 +402,7 @@ function Writer:sampleHeightAt(x, z)
     return sampleTerrainHeight(terrain, x, z)
 end
 
-function Writer:measureRecoveryAt(x, z, probeRadiusM)
+function Writer:measureRecoveryAt(x, z, probeRadiusM, history)
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
     if terrain == nil or terrain == 0
@@ -372,7 +418,12 @@ function Writer:measureRecoveryAt(x, z, probeRadiusM)
         x = x,
         z = z,
         radiusM = r,
-        probeRadiusM = r
+        probeRadiusM = r,
+        recoveryHistory = history,
+        referenceV2 = history ~= nil
+            and RealismExtensionsConfig ~= nil
+            and RealismExtensionsConfig.modules ~= nil
+            and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true
     })
 end
 
