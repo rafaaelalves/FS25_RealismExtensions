@@ -19,6 +19,7 @@ RealismExtensionsConfig = {
         modeTextSizePx = 9,
         modeTextGapPx = 5,
         showEstimatedRpm = true,
+        showUnlinkedPowerHint = true,
         rpmTextSizePx = 8,
         rpmTextGapPx = 3,
         rpmSmoothingMs = 350,
