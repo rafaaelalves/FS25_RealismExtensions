@@ -498,6 +498,44 @@ function Engine.processSample(
             and workApi.getVehicleLabel(rootVehicle) or vehicleLabel
         diagCount("rutWriter_" .. vehicleLabel, 1)
         diagCount("rutWriterRoot_" .. rootLabel, 1)
+        -- Bounded causal samples pair spatial rut writes with R1 TARGET's
+        -- fixed-reference samples. These observations NEVER gate rut writing.
+        local diag = RealismExtensionsConfig ~= nil
+            and RealismExtensionsConfig.diagnostics or nil
+        if diag ~= nil and diag.verbose == true
+            and diag.rutCausalSamples ~= false
+            and (tonumber(response.rutDepthM) or 0) >= 0.04 then
+            local stats = RealismExtensionsTerrainRuntime.stats
+            stats.rutCausalSamplesByVehicle =
+                stats.rutCausalSamplesByVehicle or {}
+            local taken = stats.rutCausalSamplesByVehicle[vehicleLabel] or 0
+            local total = tonumber(stats.rutCausalSamplesCount) or 0
+            if taken < 3 and total < 18 then
+                stats.rutCausalSamplesByVehicle[vehicleLabel] = taken + 1
+                stats.rutCausalSamplesCount = total + 1
+                local height = type(writer.sampleHeightAt) == "function"
+                    and writer:sampleHeightAt(x, z) or nil
+                if RealismExtensionsDiagnostics ~= nil
+                    and type(RealismExtensionsDiagnostics.verbose) == "function" then
+                    RealismExtensionsDiagnostics.verbose(string.format(
+                        "TerrainRutSample | writer=%s root=%s actor=%s x=%.2f z=%.2f height=%s surface=%s wet=%.3f slip=%.3f sink=%.3f transfer=%.3f plasticYield=%.3f loadN=%.0f pressurePa=%.0f oldHistory=%.3f newModel=%.3f acceptedDelta=%.4f wheelspin=%s",
+                        tostring(vehicleLabel), tostring(rootLabel),
+                        tostring(actor ~= nil and actor.kind or "UNKNOWN"),
+                        x, z, tostring(height),
+                        tostring(surface.category or "UNKNOWN"),
+                        tonumber(context.physicalGroundWetness) or 0,
+                        tonumber(context.longitudinalSlip) or 0,
+                        tonumber(context.sinkDepthM) or 0,
+                        tonumber(response.sinkPlasticTransfer01) or 0,
+                        tonumber(response.plasticYield01) or -1,
+                        tonumber(footprint.wheelLoadN) or 0,
+                        tonumber(footprint.groundPressurePa) or 0,
+                        previousDepth, tonumber(response.rutDepthM) or 0,
+                        appliedDepth, tostring(stationaryWheelspin == true)
+                    ))
+                end
+            end
+        end
         diagCount("surfaceBrushes_" .. tostring(surface.category or "UNKNOWN"), 1)
         diagCount("surfaceAppliedDepth_" .. tostring(surface.category or "UNKNOWN"), appliedDepth)
         if stationaryWheelspin == true then

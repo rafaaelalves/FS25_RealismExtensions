@@ -176,6 +176,19 @@ local function newStats()
         targetPatchSampleFailures = 0,
         targetPatchRecoveredDepthM = 0,
         targetPatchMaxResidualM = 0,
+        -- Orthogonal diagnostic: native center movement vs fixed pre-command
+        -- TARGET and local reference-plane drift. No controller decisions.
+        targetOutcomeCount = 0,
+        targetOutcomeUnchanged = 0,
+        targetOutcomeReached = 0,
+        targetOutcomeToward = 0,
+        targetOutcomeAway = 0,
+        targetOutcomeNoGain = 0,
+        targetOutcomeUnmeasured = 0,
+        targetOutcomeReferenceDrift = 0,
+        targetOutcomeQueueDrift = 0,
+        targetOutcomeSamples = 0,
+        targetOutcomeSampleKinds = {},
         structuralOvershootCount = 0,
         structuralOvershootM = 0,
         structuralMaxOvershootM = 0,
@@ -1231,6 +1244,80 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 if post ~= nil then
                     afterResidual = tonumber(post.centerResidualM)
                     afterDeficit = tonumber(post.centerDeficitM)
+                end
+            end
+
+            -- Diagnose the native result against the ORIGINAL fixed target,
+            -- independently of the recovery controller's re-fitted plane.
+            -- Both center heights are already collected by TerrainWriter;
+            -- this introduces no new heightmap probe or physics mutation.
+            local outcomeApi = RealismExtensionsRecoveryTargetOutcome
+            if outcomeApi ~= nil and type(outcomeApi.classify) == "function" then
+                local outcome = outcomeApi.classify({
+                    beforeY = beforeY,
+                    afterY = afterY,
+                    targetY = targetY,
+                    queuedCenterY = beforeProbe.centerY,
+                    beforeReferenceY = beforeProbe.referenceCenterY,
+                    afterReferenceY = geometry ~= nil
+                        and geometry.referenceAfterY or nil,
+                    residualBeforeM = beforeResidual,
+                    residualAfterM = afterResidual
+                }, {
+                    targetToleranceM = tolerance,
+                    motionThresholdM = 0.00005,
+                    improvementThresholdM = Recovery.DEFAULTS.minCenterRecoveryM
+                })
+                Recovery.stats.targetOutcomeCount =
+                    Recovery.stats.targetOutcomeCount + 1
+                local field = ({
+                    CENTER_UNCHANGED = "targetOutcomeUnchanged",
+                    TARGET_REACHED = "targetOutcomeReached",
+                    TOWARD_TARGET = "targetOutcomeToward",
+                    AWAY_FROM_TARGET = "targetOutcomeAway",
+                    MOVED_WITHOUT_GAIN = "targetOutcomeNoGain",
+                    UNMEASURED = "targetOutcomeUnmeasured"
+                })[outcome.kind]
+                if field ~= nil then
+                    Recovery.stats[field] = (Recovery.stats[field] or 0) + 1
+                end
+                local refDrift = math.abs(outcome.referenceDriftM or 0)
+                local queueDrift = math.abs(outcome.queueDriftM or 0)
+                if refDrift > 0.02 then
+                    Recovery.stats.targetOutcomeReferenceDrift =
+                        Recovery.stats.targetOutcomeReferenceDrift + 1
+                end
+                if queueDrift > 0.02 then
+                    Recovery.stats.targetOutcomeQueueDrift =
+                        Recovery.stats.targetOutcomeQueueDrift + 1
+                end
+                local diag = RealismExtensionsConfig ~= nil
+                    and RealismExtensionsConfig.diagnostics or nil
+                if diag ~= nil and diag.verbose == true
+                    and diag.targetOutcomeSamples ~= false
+                    and Recovery.stats.targetOutcomeSamples < 12 then
+                    local sampleKey = refDrift > 0.02
+                        and "REFERENCE_DRIFT" or outcome.kind
+                    local count = Recovery.stats.targetOutcomeSampleKinds[sampleKey] or 0
+                    if count < 2 then
+                        Recovery.stats.targetOutcomeSampleKinds[sampleKey] = count + 1
+                        Recovery.stats.targetOutcomeSamples =
+                            Recovery.stats.targetOutcomeSamples + 1
+                        local info = string.format(
+                            "TerrainTargetSample | kind=%s profile=%s x=%.2f z=%.2f pulse=%d amount=%.3f target=%.4f before=%s after=%s fixedGain=%.4f queueDrift=%.4f refDrift=%.4f residual=%.4f->%s callback=%s",
+                            tostring(sampleKey), tostring(params.toolProfileId or "?"),
+                            point.x, point.z, pulseIndex, targetAmount,
+                            targetY, tostring(beforeY), tostring(afterY),
+                            outcome.fixedTargetGainM or 0,
+                            outcome.queueDriftM or 0,
+                            outcome.referenceDriftM or 0,
+                            beforeResidual, tostring(afterResidual), tostring(state)
+                        )
+                        if RealismExtensionsDiagnostics ~= nil
+                            and type(RealismExtensionsDiagnostics.verbose) == "function" then
+                            RealismExtensionsDiagnostics.verbose(info)
+                        end
+                    end
                 end
             end
 

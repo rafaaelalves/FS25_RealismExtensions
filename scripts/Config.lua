@@ -11,6 +11,9 @@ RealismExtensionsConfig = {
         windowMs = 5000,
         causalWindows = true,
         writerAttribution = true,
+        -- Bounded per-operation causal samples (12 TARGET, 18 rut max).
+        targetOutcomeSamples = true,
+        rutCausalSamples = true,
         expensiveGeometry = false,
         performanceTiming = true
     },
