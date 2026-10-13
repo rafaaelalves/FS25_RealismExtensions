@@ -38,6 +38,9 @@ RealismExtensionsConfig = {
         PTOControl = true,
         TerrainDeformation = true,
         TerrainRecovery = true,
+        -- Experimental correction: refuse unsupported terrain reference planes.
+        -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
+        TerrainRecoveryReferenceV2 = true,
         -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
         -- toggle false to compare original R6 behavior on the same backup save.
         TerrainPlasticYield = true,
