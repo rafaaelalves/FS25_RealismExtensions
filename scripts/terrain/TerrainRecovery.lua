@@ -162,6 +162,9 @@ local function newStats()
         targetPlaneWorsened = 0,
         targetPlaneInitialPositiveSkips = 0,
         targetPlaneLowConfidence = 0,
+        referenceV2Accepted = 0,
+        referenceV2Rejected = 0,
+        referenceV2MaxDriftM = 0,
         targetPlaneSignCrossings = 0,
         targetPlaneResidualReductionM = 0,
         targetPlaneResidualWorseningM = 0,
@@ -1071,13 +1074,29 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         and writer:measureRecoveryAt(
             point.x,
             point.z,
-            probeRadius
+            probeRadius,
+            history
         ) or nil
     if beforeProbe == nil then
+        if RealismExtensionsConfig ~= nil
+            and RealismExtensionsConfig.modules ~= nil
+            and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
+            Recovery.stats.referenceV2Rejected =
+                Recovery.stats.referenceV2Rejected + 1
+        end
         Recovery.pendingStamps[key] = nil
         Recovery.stats.structuralStalled =
             Recovery.stats.structuralStalled + 1
         return false
+    end
+
+    if beforeProbe.referenceV2 == true then
+        Recovery.stats.referenceV2Accepted =
+            Recovery.stats.referenceV2Accepted + 1
+        Recovery.stats.referenceV2MaxDriftM = math.max(
+            Recovery.stats.referenceV2MaxDriftM,
+            tonumber(beforeProbe.referenceInterRingDriftM) or 0
+        )
     end
 
     local beforeDeficit = math.max(
@@ -1217,6 +1236,8 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
         source = "RECOVERY",
         probeRadiusM = probeRadius,
         recoveryPreProbe = beforeProbe,
+        recoveryHistory = beforeProbe.referenceV2 == true and history or nil,
+        referenceV2 = beforeProbe.referenceV2 == true,
         onApplied = function(state, deltaY, beforeY, afterY, callbackVolume, geometry)
             Recovery.pendingStamps[key] = nil
             if Recovery.structuralInFlightKey == key then
@@ -1234,12 +1255,22 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
             local afterDeficit = geometry ~= nil
                 and tonumber(geometry.centerDeficitAfterM) or nil
 
+            -- Never grade against a plane that has shifted after the job.
+            -- The original, history-screened TARGET is fixed for this pulse.
+            if beforeProbe.referenceV2 == true
+                and type(afterY) == "number"
+                and afterY == afterY then
+                afterResidual = afterY - targetY
+                afterDeficit = math.max(0, -afterResidual)
+            end
+
             if afterResidual == nil
                 and type(writer.measureRecoveryAt) == "function" then
                 local post = writer:measureRecoveryAt(
                     point.x,
                     point.z,
-                    probeRadius
+                    probeRadius,
+                    beforeProbe.referenceV2 == true and history or nil
                 )
                 if post ~= nil then
                     afterResidual = tonumber(post.centerResidualM)
