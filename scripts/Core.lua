@@ -405,6 +405,16 @@ function RealismExtensionsCore:update(dt)
                             r.referenceV2Rejected or 0,
                             r.referenceV2MaxDriftM or 0
                         ))
+                        local reasons = {}
+                        for reason, count in pairs(r.referenceV2RejectReasons or {}) do
+                            reasons[#reasons + 1] = tostring(reason) .. "=" .. tostring(count)
+                        end
+                        table.sort(reasons)
+                        if #reasons > 0 then
+                            RealismExtensionsDiagnostics.verbose(
+                                "TerrainReferenceV2Reject | " .. table.concat(reasons, " ")
+                            )
+                        end
                     end
 
                     local toolParts = {}
