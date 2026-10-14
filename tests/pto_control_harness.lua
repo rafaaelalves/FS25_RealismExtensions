@@ -106,7 +106,8 @@ assert(spec.availableModes[M.MODE.RPM_1000]~=nil)
 
 local state=C.getPublicState(vehicle)
 assert(state~=nil)
-assert(state.requiredShaftRpm==1000)
+assert(state.requiredShaftRpm==540) -- raw native consumer demand
+assert(state.requiredGearboxFamilyRpm==1000) -- sourced chipper profile
 assert(state.mismatch==true)
 assert(state.capabilitySource=="PROFILE")
 
@@ -263,8 +264,15 @@ C.onPostLoad(vehicle,nil)
 spec.mode=M.MODE.RPM_540
 spec.handThrottlePercent=0.6
 C.refreshPowerTakeOffRequirements(vehicle)
-assert(C.getPublicState(vehicle).requiredShaftRpm==1000)
+assert(C.getPublicState(vehicle).requiredShaftRpm==540)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==1000)
 local aiStartSent=sent
+local messages={}
+RealismExtensionsDiagnostics={
+    info=function(message) messages[#messages+1]=message end,
+    verbose=function() end
+}
+RealismExtensionsConfig.diagnostics={ptoWorkerEvents=true}
 workerActive=true
 C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_1000)
@@ -272,8 +280,14 @@ assert(spec.aiOriginalMode==M.MODE.RPM_540)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
 assert(C.getPublicState(vehicle).effectiveMotorRatio~=nil)
 assert(sent==aiStartSent+1)
+assert(#messages==1)
+assert(messages[1]:find("PTO AI",1,true)~=nil)
+assert(messages[1]:find("540 -> 1000",1,true)~=nil)
+assert(messages[1]:find("required=540",1,true)~=nil)
+assert(messages[1]:find("gearFamily=1000",1,true)~=nil)
 C.onAIFieldWorkerStart(vehicle)
 assert(sent==aiStartSent+1) -- duplicate callbacks do not resend
+assert(#messages==1) -- no duplicate diagnostic on same decision
 
 -- A save in the middle of a worker's job must persist the OPERATOR gear.
 local aiSave={}
@@ -291,6 +305,8 @@ workerActive=false
 C.onAIJobFinished(vehicle)
 assert(spec.aiRestorePending==true)
 assert(spec.mode==M.MODE.RPM_1000)
+assert(#messages==2)
+assert(messages[2]:find("restore-deferred",1,true)~=nil)
 C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_1000)
 engaged=false
@@ -298,10 +314,13 @@ C.onUpdate(vehicle,16)
 assert(spec.mode==M.MODE.RPM_540)
 assert(spec.aiOriginalMode==nil and spec.aiRestorePending==false)
 assert(math.abs(spec.handThrottlePercent-0.6)<0.000001)
+assert(#messages==3)
+assert(messages[3]:find("decision=restored",1,true)~=nil)
 
 -- AI must not round incompatible 750-rpm tools to 1000.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=750,
+        requiredGearboxFamilyRpm=750,
         conflict=false, unknownCount=0}
 end
 workerActive=true
@@ -318,6 +337,7 @@ C.onAIJobStarted(vehicle)
 assert(spec.mode==M.MODE.RPM_540)
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=1}
 end
 C.onAIJobStarted(vehicle)
@@ -326,6 +346,7 @@ assert(spec.mode==M.MODE.RPM_540)
 -- Active PTO can't be shifted, even when another worker/job starts.
 RealismExtensionsPTOResolver.collectRequirements=function()
     return {hasPtoConsumer=true, requiredRpm=1000,
+        requiredGearboxFamilyRpm=1000,
         conflict=false, unknownCount=0}
 end
 engaged=true
@@ -349,5 +370,157 @@ assert(aiDiag.aiModeSwitches==1)
 assert(aiDiag.aiRestores==1)
 assert(aiDiag.aiModeUnavailable>=1)
 assert(aiDiag.aiUnsafeShiftSkipped>=1)
+assert(aiDiag.aiDiagnosticEvents>=6)
+-- A PTO-less operation and duplicate callbacks do not spam the log.
+assert(#messages==aiDiag.aiDiagnosticEvents)
+-- Tracing can be disabled without affecting automatic gear choice.
+RealismExtensionsConfig.diagnostics.ptoWorkerEvents=false
+local previouslyLogged=#messages
+spec.mode=M.MODE.RPM_540
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(#messages==previouslyLogged)
+workerActive=false
+C.onAIJobFinished(vehicle)
+
+
+-- Native MR load figure 500, with a genuine input PTO, does not
+-- prove any gearbox family. Manual choice stays operable in both gears;
+-- an AI worker must not guess 500->540 and alter the operator selection.
+RealismExtensionsPTOResolver.collectRequirements=originalCollect
+local sprayer={
+    configFileName="data/vehicles/hardi/aeon5200/aeon5200.xml",
+    spec_powerConsumer={ptoRpm=500, neededMaxPtoPower=7.5},
+    spec_powerTakeOffs={inputPowerTakeOffs={{}}},
+    getAttachedImplements=function()return {} end
+}
+vehicle.getAttachedImplements=function()return {{object=sprayer}} end
+spec.mode=M.MODE.RPM_540
+workerActive=false
+C.refreshPowerTakeOffRequirements(vehicle)
+local pumpState=C.getPublicState(vehicle)
+assert(pumpState.requiredShaftRpm==500)
+assert(pumpState.requiredGearboxFamilyRpm==nil)
+assert(pumpState.requirementKnown==false)
+assert(pumpState.gearCompatibility=="UNKNOWN")
+assert(pumpState.requirementProfileId==nil)
+assert(pumpState.mismatch==false)
+spec.mode=M.MODE.RPM_1000
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).gearCompatibility=="UNKNOWN")
+assert(C.getPublicState(vehicle).mismatch==false)
+local before=sent
+workerActive=true
+C.onAIJobStarted(vehicle)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(spec.aiOriginalMode==nil)
+assert(sent==before)
+workerActive=false
+C.onAIJobFinished(vehicle)
+
+-- A standard 540 native demand with mechanical input remains a real
+-- nominal family candidate: 1000 is incompatible, 540 compatible.
+sprayer.spec_powerConsumer.ptoRpm=540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).requiredGearboxFamilyRpm==540)
+assert(C.getPublicState(vehicle).mismatch==true)
+spec.mode=M.MODE.RPM_540
+C.refreshPowerTakeOffRequirements(vehicle)
+assert(C.getPublicState(vehicle).gearCompatibility=="COMPATIBLE")
+assert(C.getPublicState(vehicle).mismatch==false)
+
+-- Log 2026-10-12: HORSCH Avatar 12.25 SD (MR 340rpm/22kW) without
+-- a mechanical input PTO must not paint either 540 or 1000 red.
+-- Its electrical/hydraulic/engine load remains owned by MR, not RE.
+local avatar={
+    configFileName="MoreRealistic/data/overriding/vehicles/horsch/avatar1225.xml",
+    spec_powerConsumer={ptoRpm=340, neededMaxPtoPower=22},
+    spec_powerTakeOffs={inputPowerTakeOffs={}},
+    spec_sowingMachine={},
+    getInputPowerTakeOffs=function() return {} end,
+    getAttachedImplements=function() return {} end
+}
+vehicle.getAttachedImplements=function()return {{object=avatar}} end
+for _,mode in ipairs({M.MODE.RPM_540,M.MODE.RPM_1000}) do
+    spec.mode=mode
+    C.refreshPowerTakeOffRequirements(vehicle)
+    local sowingState=C.getPublicState(vehicle)
+    assert(sowingState.hasPtoConsumer==false)
+    assert(sowingState.requiredShaftRpm==nil)
+    assert(sowingState.requiredGearboxFamilyRpm==nil)
+    assert(sowingState.requirementConflict==false)
+    assert(sowingState.mismatch==false)
+    local beforeAiMode=spec.mode
+    workerActive=true
+    C.onAIJobStarted(vehicle)
+    assert(spec.mode==beforeAiMode)
+    assert(spec.aiOriginalMode==nil)
+    workerActive=false
+    C.onAIJobFinished(vehicle)
+end
+
+
+-- Multiplayer stream provenance: PTO state streams are authoritative
+-- server -> client only. A client's replicated=true packet must not bypass
+-- the PTOStateEvent controller/identity check on the game server.
+-- Real GIANTS registerFunctions injects this specialization function into the
+-- vehicle type; our plain-table harness has to attach it explicitly.
+vehicle.setPowerTakeOffState=C.setPowerTakeOffState
+local wireMode=M.MODE.RPM_540
+local wireThrottle=0.9
+streamReadUIntN=function() return wireMode end
+streamReadFloat32=function() return wireThrottle end
+local readPresenceCount=0
+streamReadBool=function()
+    readPresenceCount=readPresenceCount+1
+    return true
+end
+local fromClient={getIsServer=function() return false end}
+local fromServer={getIsServer=function() return true end}
+local originalMode=spec.mode
+local originalThrottle=spec.handThrottlePercent
+local originalRevision=C.getPublicState(vehicle).revision
+C.onReadStream(vehicle,0,fromClient)
+assert(spec.mode==originalMode)
+assert(spec.handThrottlePercent==originalThrottle)
+C.onReadUpdateStream(vehicle,0,0,fromClient)
+assert(readPresenceCount==0) -- no incoming client update segment
+assert(spec.mode==originalMode)
+assert(spec.handThrottlePercent==originalThrottle)
+assert(C.getPublicState(vehicle).revision==originalRevision)
+
+-- A remote client must emit no PTO dirty state in the update stream.
+local streamBools,streamModeWrites,streamThrottleWrites={},{},{}
+streamWriteBool=function(_,flag)
+    streamBools[#streamBools+1]=flag
+    return flag
+end
+streamWriteUIntN=function(_,value,bits)
+    streamModeWrites[#streamModeWrites+1]=value
+end
+streamWriteFloat32=function(_,value)
+    streamThrottleWrites[#streamThrottleWrites+1]=value
+end
+C.onWriteUpdateStream(vehicle,0,fromServer,spec.dirtyFlag)
+assert(#streamBools==0) -- no outgoing client segment
+assert(#streamModeWrites==0 and #streamThrottleWrites==0)
+
+-- Server replication continues to update clients, and an authoritative
+-- server sends the complete matching presence-bit + mode + throttle packet.
+C.onReadUpdateStream(vehicle,0,0,fromServer)
+assert(readPresenceCount==1)
+assert(spec.mode==M.MODE.RPM_540)
+assert(math.abs(spec.handThrottlePercent-0.9)<0.000001)
+wireMode=M.MODE.RPM_1000
+wireThrottle=0.35
+C.onReadStream(vehicle,0,fromServer)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(math.abs(spec.handThrottlePercent-0.35)<0.000001)
+streamBools,streamModeWrites,streamThrottleWrites={},{},{}
+C.onWriteUpdateStream(vehicle,0,fromClient,spec.dirtyFlag)
+assert(#streamBools==1 and streamBools[1]==true)
+assert(#streamModeWrites==1 and streamModeWrites[1]==M.MODE.RPM_1000)
+assert(#streamThrottleWrites==1)
+assert(math.abs(streamThrottleWrites[1]-0.35)<0.000001)
 
 print("pto_control_harness: OK")

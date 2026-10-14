@@ -46,6 +46,7 @@
         <sourceFile filename="scripts/pto/PTOResolver.lua"/>
         <sourceFile filename="scripts/pto/PTOStateEvent.lua"/>
         <sourceFile filename="scripts/pto/PTOPhysics.lua"/>
+        <sourceFile filename="scripts/pto/PTOInspection.lua"/>
         <sourceFile filename="scripts/pto/PTOHUD.lua"/>
         <sourceFile filename="scripts/pto/PTOBootstrap.lua"/>
         <sourceFile filename="scripts/terrain/FootprintModel.lua"/>

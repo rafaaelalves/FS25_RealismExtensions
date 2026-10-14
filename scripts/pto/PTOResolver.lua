@@ -166,117 +166,96 @@ end
 
 local function detectImplement(object)
     if object == nil then return nil end
-
     local profile = Profiles.findImplement(object)
     local hasInput = hasInputPowerTakeOff(object)
     local rpm = readPtoRpm(object)
 
-    -- A generic PowerConsumer is NOT evidence of a mechanical PTO.
-    -- Draft/traction/hydraulic/electrical implements can legitimately expose
-    -- spec_powerConsumer while having no PTO shaft at all. Connection hoses or
-    -- electrical cables are likewise independent of PTO. Keep classification
-    -- conservative and require one of:
-    --   1. evidence-backed implement profile;
-    --   2. an actual input PowerTakeOff;
-    --   3. an explicit powerConsumer.ptoRpm.
-    --
-    -- This deliberately fails closed for unusual mod implements. If a real PTO
-    -- machine exposes none of those contracts it belongs in Profiles rather
-    -- than being guessed from generic power consumption.
-    local usesPto = profile ~= nil or hasInput or rpm ~= nil
-    if not usesPto then return nil end
-
+    -- Generic PowerConsumer is insufficient to prove mechanical PTO.
+    -- Soil-draft tools can consume power without any driven shaft.
+    if profile == nil and not hasInput then return nil end
     if profile ~= nil then
         return {
             object = object,
             usesPto = true,
-            shaftRpm = tonumber(profile.shaftRpm),
+            shaftRpm = rpm or tonumber(profile.shaftRpm),
+            gearboxFamilyRpm = tonumber(profile.gearboxFamilyRpm
+                or profile.shaftRpm),
             source = "PROFILE",
             profileId = profile.id,
             confidence = "EVIDENCE"
         }
     end
 
-    if rpm ~= nil and rpm > 0 then
-        return {
-            object = object,
-            usesPto = true,
-            -- Preserve the *actual* manufacturer's explicit shaft demand.
-            -- Treating every rpm >= 750 as 1000 would falsely accept 750,
-            -- 900, 1300 and 1400 PTO tools. Unsupported modes must remain
-            -- visible as an honest mismatch, not silently rounded to 1000.
-            shaftRpm = rpm,
-            source = "POWER_CONSUMER_PTO_RPM",
-            confidence = "NATIVE_EXPLICIT"
-        }
-    end
-
-    -- An input PTO with no explicit RPM is still a real PTO connection, but
-    -- its family is unknown until evidence is available.
+    -- ptoRpm encodes a native load/governor demand. Only exact 540/1000
+    -- values WITH actual PTO input can provisionally identify a nominal
+    -- family; 340/400/500 and unusual speeds must never be rounded.
+    local nominal = rpm == 540 and 540
+        or rpm == 1000 and 1000 or nil
     return {
         object = object,
         usesPto = true,
-        shaftRpm = nil,
-        source = "INPUT_PTO",
-        confidence = "NATIVE_CONNECTION"
+        shaftRpm = rpm,
+        gearboxFamilyRpm = nominal,
+        source = rpm ~= nil and "POWER_CONSUMER_PTO_RPM" or "INPUT_PTO",
+        confidence = nominal ~= nil and "NATIVE_NOMINAL_INFERRED"
+            or "UNKNOWN_GEAR_FAMILY"
     }
 end
 
 function Resolver.collectRequirements(vehicle)
-    local items = {}
-
-    local function walk(attacher)
-        if attacher == nil or type(attacher.getAttachedImplements) ~= "function" then
+    local items, visited = {}, {}
+    local function walk(attacher, depth)
+        if attacher == nil or visited[attacher] or depth > 12
+            or type(attacher.getAttachedImplements) ~= "function" then
             return
         end
-
-        local ok, implements = pcall(attacher.getAttachedImplements, attacher)
-        if not ok or type(implements) ~= "table" then return end
-
-        for _, implement in pairs(implements) do
+        visited[attacher] = true
+        local ok, attached = pcall(attacher.getAttachedImplements, attacher)
+        if not ok or type(attached) ~= "table" then return end
+        for _, implement in pairs(attached) do
             local object = implement ~= nil and implement.object or nil
-            if object ~= nil then
+            if object ~= nil and not visited[object] then
                 local item = detectImplement(object)
                 if item ~= nil then items[#items + 1] = item end
-                walk(object)
+                walk(object, depth + 1)
             end
         end
     end
+    walk(vehicle, 0)
 
-    walk(vehicle)
-
-    local families = {}
-    local knownCount = 0
-    local unknownCount = 0
-    local primary = nil
-
+    local families, demands = {}, {}
+    local knownCount, unknownCount = 0, 0
     for _, item in ipairs(items) do
-        if item.shaftRpm ~= nil then
-            families[item.shaftRpm] = true
+        if item.shaftRpm ~= nil then demands[item.shaftRpm] = true end
+        if item.gearboxFamilyRpm ~= nil then
+            families[item.gearboxFamilyRpm] = true
             knownCount = knownCount + 1
-            primary = primary or item
         else
             unknownCount = unknownCount + 1
         end
     end
-
-    local familyCount = 0
-    local requiredRpm = nil
+    local familyCount, familyRpm = 0, nil
     for family in pairs(families) do
         familyCount = familyCount + 1
-        requiredRpm = family
+        familyRpm = family
     end
-
-    if familyCount ~= 1 then requiredRpm = nil end
-
+    local demandCount, rawRpm = 0, nil
+    for rpm in pairs(demands) do
+        demandCount = demandCount + 1
+        rawRpm = rpm
+    end
     return {
         items = items,
-        primary = primary,
+        primary = items[1],
         hasPtoConsumer = #items > 0,
         knownCount = knownCount,
         unknownCount = unknownCount,
         conflict = familyCount > 1,
-        requiredRpm = requiredRpm
+        requiredRpm = demandCount == 1 and rawRpm or nil,
+        -- Unknown family with another attached tool cannot authorize AI.
+        requiredGearboxFamilyRpm =
+            familyCount == 1 and unknownCount == 0
+                and familyRpm or nil
     }
 end
 
@@ -302,7 +281,6 @@ local function getObjectPtoActivity(object)
     -- getIsPowerTakeOffActive overwrite chain.
     local usesPto = Profiles.findImplement(object) ~= nil
         or hasInputPowerTakeOff(object)
-        or readPtoRpm(object) ~= nil
     if usesPto and type(object.getIsTurnedOn) == "function" then
         local ok, active = pcall(object.getIsTurnedOn, object)
         if ok and active == true then
