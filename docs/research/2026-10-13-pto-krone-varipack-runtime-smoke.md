@@ -35,6 +35,19 @@ Pinned MR source `quadural/MoreRealistic_FS25@b38d5667e073505255cd7ce170ab568616
 
 Thus 14.0929 kW at idle is near the MR **14 kW no-material drive consumption**; 46.8705 kW is 32.87 kW above idle, compatible with **feed throughput and/or accumulated bale mass** in `MR_Baler.lua`. The log lacks fill-level, bale mass, feed rate, tons/hr, and actual travel speed at the sample times; it does **not** prove that the kW reduction was caused by PTO RPM or that MR's calculated speed limit had been applied during a dense windrow.
 
+### Important MR torque conversion at low shaft RPM (source-derived)
+
+Pinned `MoreRealistic/scripts/MR_PowerConsumer.lua:526-559` declares:
+```lua
+if self.rootVehicle ~= nil and self.rootVehicle.getMotor ~= nil then
+    rpm = math.max(0.85, self.mrPtoCurrentRpmRatio)*rpm
+end
+return neededPtoPower / (rpm*0.10472), spec.virtualPowerMultiplicator * turnOnPeakPowerMultiplier
+```
+At the 800-engine-RPM observation, the logged shaft-ratio is `251.748/540 = 0.4662`, but MR's conversion clamps the RPM factor to 0.85, using `540*0.85 = 459 RPM` as the denominator. This **exactly explains** `mrTorqueKNm=14.0929/(459*0.10472)=0.293196`. On this raw torque at the RE-calculated 251.748 physical RPM, the `torque*actualRPM*0.10472` product is ~**7.73 kW**, below the `mrLoadKW=14.09` nominal modeled demand. This is **not independent proof of actual engine power** because the second return value includes a virtual multiplier; it is evidence that the raw torque no longer corresponds to the full requested power at extremely low PTO RPM. At ~606 RPM (>540), the conversion is *not* clamped: `0.738477*606.084*0.10472=46.8705` kW.
+
+Consequence: beware treating `mrLoadKW` as actual shaft power when the shaft is far below nominal. This clamp may be a deliberate bounded-torque safeguard; do **not** delete or circumvent MR's clamp without torque-stall and safety analysis. It reinforces why staged V2 must analyze low-RPM torque/throughput, not stack a flat RE 'grunt load' or forcibly stall vehicles.
+
 The `powerMinKW=30 powerMaxKW=30` in the inspector reflects the GIANTS powerConsumer configuration. For an MR-specific `mrIsMrBaler` implementation, `MR_PowerConsumer.mrUpdatePtoPower` uses `Baler.mrGetActiveConsumedPtoPower` instead of that constant generic 30 kW. A real active **46.87 kW** is therefore expected, not a power accounting error. After shutdown `mrBalerPowerKW=14.0206` is a **stale or smoothed MR field**, while the operative demand `mrLoadKW=0`, `consumePower=false`, `mrTorqueKNm=0` verifies zero consumption. Do not mistake cached `mrBalerPowerKW` for live load.
 
 Importantly, the upstream MR XML itself comments that `maxPickupLitersPerSecond=300` "doesn't seem to be useful except for visual fillEffect". This is a **distinct variable** from MR's true `mrBalerMaxTonsPerHour=60` throughput model. Dynamic PTO's synthetic baler pickup-loading based on `maxPickupLitersPerSecond` is therefore not obviously equivalent to MR's tons-per-hour capacity, and stacking two penalties would require an owner-safe conceptual proof first.
