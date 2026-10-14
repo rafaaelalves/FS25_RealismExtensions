@@ -220,3 +220,18 @@ local capped = Model.compute(stuck, footprint, nil, 100, {
 assert(capped.staticRutCapacityM <= 0.0600001)
 assert(capped.slipRutCapacityM <= 0.1500001)
 assert(capped.rutCapacityM <= 0.1500001)
+
+-- The surface cap must also bound plasticized instantaneous Mud sink. Previously
+-- persistentSinkM could bypass absoluteMaxSlipRutDepthM and permanently write
+-- geometry deeper than the surface profile allowed.
+local cappedDeepSink = clone(deepWetSink)
+cappedDeepSink.sinkDepthM = 0.40
+local cappedSinkResult = Model.compute(cappedDeepSink, footprint, nil, 16, {
+    absoluteMaxStaticRutDepthM = 0.06,
+    absoluteMaxSlipRutDepthM = 0.15
+})
+assert(cappedSinkResult.persistentSinkRawDepthM > 0.15)
+assert(cappedSinkResult.persistentSinkDepthM <= 0.1500001)
+assert(cappedSinkResult.rutCapacityM <= 0.1500001)
+assert(cappedSinkResult.rutDepthM <= 0.1500001)
+

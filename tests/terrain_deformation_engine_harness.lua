@@ -22,9 +22,10 @@ Utils = {
 
 RealismExtensionsConfig = {
     diagnostics = { verbose = true },
-    modules = { TerrainDeformation = true }
+    modules = { TerrainDeformation = true, TerrainRecovery = true, TerrainPlasticYield = true }
 }
 
+g_currentMission = { time = 1000 }
 local contexts = 0
 RealismExtensionsState = {
     getWheelContext = function(vehicle, wheel)
@@ -65,8 +66,10 @@ RealismExtensionsFootprintModel = {
     end
 }
 
+local lastModelOptions=nil
 RealismExtensionsTerrainResponseModel = {
-    compute = function(context, footprint, history, dt)
+    compute = function(context, footprint, history, dt, options)
+        lastModelOptions=options
         local previous = history and history.rutDepthM or 0
         return {
             available=true,
@@ -82,6 +85,8 @@ RealismExtensionsTerrainResponseModel = {
     end
 }
 
+dofile("scripts/terrain/LoadedContactRegistry.lua")
+dofile("scripts/terrain/TerrainActorPolicy.lua")
 dofile("scripts/terrain/SurfaceResponse.lua")
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
@@ -96,6 +101,17 @@ RealismExtensionsTerrainRuntime = {
             return true
         end
     }
+}
+
+RealismExtensionsTerrainRecovery = {
+    protected = false,
+    active = false,
+    isRecentlyCultivated = function(x,z,nowMs)
+        return RealismExtensionsTerrainRecovery.protected == true
+    end,
+    isRutGenerationSuppressed = function(vehicle,nowMs)
+        return RealismExtensionsTerrainRecovery.active == true
+    end
 }
 
 dofile("scripts/terrain/TerrainDeformationEngine.lua")
@@ -139,6 +155,9 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == 2)
 assert(enqueued == 2)
 assert(RealismExtensionsTerrainRuntime.history.count == 2)
+local contactStats=RealismExtensionsLoadedContactRegistry.getStats(0)
+assert(contactStats.activeContacts==2)
+assert(contactStats.maxLoadN>=20000)
 
 -- Move each wheel forward: only this vehicle's two wheels are processed.
 wheelA.testX = 0.4
@@ -158,15 +177,121 @@ assert(contexts == beforeStationary + 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryWheelspinCandidates or 0) >= 2)
 assert((RealismExtensionsTerrainRuntime.stats.stationaryContactSamples or 0) >= 2)
 
+-- A stationary, non-spinning but still loaded wheel must remain in the
+-- recovery safety registry. Only the low-cadence contact refresh should query
+-- the provider; ordinary rut processing remains activity-gated.
+wheelA.physics.mrLastWheelSpeed = 0
+wheelB.physics.mrLastWheelSpeed = 0
+local beforeGuardRefresh = contexts
+local beforeGuardRefreshWrites = enqueued
+for _ = 1, 3 do
+    g_currentMission.time = g_currentMission.time + 250
+    RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
+end
+assert(contexts == beforeGuardRefresh)
+g_currentMission.time = g_currentMission.time + 250
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
+assert(contexts == beforeGuardRefresh + 2)
+assert(enqueued == beforeGuardRefreshWrites)
+assert((RealismExtensionsTerrainRuntime.stats.loadedContactRefreshes or 0) >= 2)
+assert((RealismExtensionsTerrainRuntime.stats.loadedContactRefreshOnly or 0) >= 2)
+assert(RealismExtensionsLoadedContactRegistry.getStats(g_currentMission.time).activeContacts == 2)
+
+-- An actively working repair implement suppresses RE rut writing for the whole
+-- combination before spatial protection is even needed.
+bodySpeedKph = 5
+RealismExtensionsTerrainRecovery.active = true
+wheelA.testX = 1.0
+wheelB.testX = 1.5
+local beforeActiveContexts = contexts
+local beforeActiveEnqueued = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeActiveContexts + 2)
+assert(enqueued == beforeActiveEnqueued)
+assert((RealismExtensionsTerrainRuntime.stats.activeCultivatorRutSkips or 0) >= 2)
+RealismExtensionsTerrainRecovery.active = false
+
+-- A freshly cultivated strip owns its final geometry. Wheel/Mud physics may
+-- continue upstream, but RE must not write a new persistent rut in that patch.
+bodySpeedKph = 5
+RealismExtensionsTerrainRecovery.protected = true
+wheelA.testX = 1.2
+wheelB.testX = 1.7
+local beforeProtectedContexts = contexts
+local beforeProtectedEnqueued = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeProtectedContexts + 2)
+assert(enqueued == beforeProtectedEnqueued)
+assert((RealismExtensionsTerrainRuntime.stats.cultivationProtectionSkips or 0) >= 2)
+RealismExtensionsTerrainRecovery.protected = false
+
+-- AI field work keeps normal load-driven terrain consequences while
+-- receiving only the anti-pathology model overrides for steering/slip.
+RealismExtensionsTerrainRecovery.active = false
+RealismExtensionsTerrainRecovery.protected = false
+bodySpeedKph = 5
+vehicle.getIsAIActive = function() return true end
+vehicle.getIsFieldWorkActive = function() return true end
+vehicle.getAIFieldWorkerIsTurning = function() return false end
+wheelA.testX = 1.6
+wheelB.testX = 2.1
+local beforeAIStraight = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(enqueued > beforeAIStraight)
+assert(lastModelOptions ~= nil)
+assert(lastModelOptions.plasticYieldEnabled == true)
+assert(lastModelOptions.surfaceCategory == "FIELD")
+assert(lastModelOptions.longitudinalPassWeight==nil)
+assert(lastModelOptions.lateralPassWeight==nil)
+assert(lastModelOptions.plasticSinkSlipBoost==nil)
+assert((RealismExtensionsTerrainRuntime.stats.actorBrushes_AI_FIELD or 0)>=2)
+
+-- A GIANTS field-worker turn is navigation geometry, not player-authored
+-- driving. Context/footprint remain alive but no persistent rut is written.
+vehicle.getAIFieldWorkerIsTurning = function() return true end
+wheelA.testX = 2.0
+wheelB.testX = 2.5
+local beforeAITurnContexts = contexts
+local beforeAITurn = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeAITurnContexts + 2)
+assert(enqueued == beforeAITurn)
+assert((RealismExtensionsTerrainRuntime.stats.actorSuppressed_AI_TURN or 0)>=2)
+
+-- A blocked AI worker may spin while its drive strategy recovers. Do not turn
+-- that waiting time into permanent excavation.
+vehicle.getAIFieldWorkerIsTurning = function() return false end
+bodySpeedKph = 0
+wheelA.physics.mrLastWheelSpeed = 2.5
+wheelB.physics.mrLastWheelSpeed = 2.5
+local beforeAISpinContexts = contexts
+local beforeAISpin = enqueued
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(contexts == beforeAISpinContexts + 2)
+assert(enqueued == beforeAISpin)
+assert((RealismExtensionsTerrainRuntime.stats.actorSuppressed_AI_STATIONARY_SPIN or 0)>=2)
+
+-- Return to player semantics for the remaining module/client gates.
+vehicle.getIsAIActive = nil
+vehicle.getIsFieldWorkActive = nil
+vehicle.getAIFieldWorkerIsTurning = nil
+bodySpeedKph = 5
+wheelA.physics.mrLastWheelSpeed = 0
+wheelB.physics.mrLastWheelSpeed = 0
+local afterActorPolicyContexts = contexts
+
 -- Disabled module means zero further provider calls.
 RealismExtensionsConfig.modules.TerrainDeformation = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
-assert(contexts == beforeStationary + 2)
+assert(contexts == afterActorPolicyContexts)
 
 -- Client vehicles never write terrain.
 RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
-assert(contexts == beforeStationary + 2)
+assert(contexts == afterActorPolicyContexts)
+
+RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
+assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
 print("terrain_deformation_engine_harness: OK")

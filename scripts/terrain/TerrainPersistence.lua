@@ -68,6 +68,12 @@ function Persistence.save(missionInfo, history)
         if h.slipExcavationDistanceM ~= nil then xmlFile:setFloat(key .. "#slipExcavationDistanceM", h.slipExcavationDistanceM) end
         if h.deformationExposure ~= nil then xmlFile:setFloat(key .. "#deformationExposure", h.deformationExposure) end
         if h.passCount ~= nil then xmlFile:setInt(key .. "#passCount", h.passCount) end
+        if h.maintenanceAgePeriods ~= nil then
+            xmlFile:setInt(
+                key .. "#maintenanceAgePeriods",
+                math.max(0, math.floor(h.maintenanceAgePeriods))
+            )
+        end
 
         local worldX = cell.ix * snapshot.cellSizeM
         local worldZ = cell.iz * snapshot.cellSizeM
@@ -132,6 +138,8 @@ function Persistence.load(missionInfo, history)
         h.slipExcavationDistanceM = xmlFile:getFloat(key .. "#slipExcavationDistanceM")
         h.deformationExposure = xmlFile:getFloat(key .. "#deformationExposure")
         h.passCount = xmlFile:getInt(key .. "#passCount")
+        h.maintenanceAgePeriods =
+            xmlFile:getInt(key .. "#maintenanceAgePeriods", 0)
         snapshot.cells[#snapshot.cells + 1] = cell
     end)
 

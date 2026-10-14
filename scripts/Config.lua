@@ -1,11 +1,22 @@
 RealismExtensionsConfig = {
     version = "0.0.1.0",
+    -- Explicitly NOT the production main release profile.
+    releaseChannel = "experimental-terrain-pto",
     diagnostics = {
-        verbose = false,
-        -- One message per meaningful PTO worker decision/transition.
+        -- development: causal runtime telemetry enabled for active research.
+        -- stabilization: retain cheap health/perf telemetry, reduce research noise.
+        -- minimal: errors/startup identity only.
+        profile = "development",
+        verbose = true,
         ptoWorkerEvents = true,
+        windowMs = 5000,
+        causalWindows = true,
+        writerAttribution = true,
+        -- Bounded per-operation causal samples (12 TARGET, 18 rut max).
+        targetOutcomeSamples = true,
+        rutCausalSamples = true,
         expensiveGeometry = false,
-        performanceTiming = false
+        performanceTiming = true
     },
     ptoHud = {
         enabled = true,
@@ -30,7 +41,19 @@ RealismExtensionsConfig = {
         warningBlinkIntervalMs = 600
     },
     modules = {
-        TerrainDeformation = false,
-        PTOControl = true
+        PTOControl = true,
+        TerrainDeformation = true,
+        TerrainRecovery = true,
+        -- Experimental correction: refuse unsupported terrain reference planes.
+        -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
+        TerrainRecoveryReferenceV2 = true,
+        -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
+        -- toggle false to compare original R6 behavior on the same backup save.
+        TerrainPlasticYield = true,
+        TerrainMaintenance = true,
+        SoilMassTransport = false,
+        NativeTireTrackProbe = true,
+        AIVisualTireTracks = true,
+        VisualTrackCapture = true
     }
 }
