@@ -1009,12 +1009,15 @@ end
 
 function Control:onWriteUpdateStream(streamId, connection, dirtyMask)
     local spec = getSpec(self)
-    -- PTO update streams are authoritative server -> client. The client
-    -- sends operator commands via PTOStateEvent instead. Write the presence
-    -- bit even when suppressed so the network stream remains aligned.
-    if spec == nil or (connection ~= nil
-        and type(connection.getIsServer) == "function"
-        and connection:getIsServer()) then
+    -- GIANTS specializations write their *whole* update segment only
+    -- server -> client. Never write a stray presence bit toward the server:
+    -- the matching onReadUpdateStream must read no bits in that direction.
+    if connection == nil
+        or type(connection.getIsServer) ~= "function" then
+        return
+    end
+    if connection:getIsServer() then return end
+    if spec == nil then
         streamWriteBool(streamId, false)
         return
     end
@@ -1031,19 +1034,20 @@ function Control:onWriteUpdateStream(streamId, connection, dirtyMask)
 end
 
 function Control:onReadUpdateStream(streamId, timestamp, connection)
-    local spec = getSpec(self)
-    if not streamReadBool(streamId) then return end
-
-    local mode = streamReadUIntN(streamId, 3)
-    local throttle = streamReadFloat32(streamId)
-    -- Client -> server updates must never bypass the event's driver
-    -- authorization by calling the replicated=true setter directly.
-    -- Consume both values before returning to preserve stream alignment.
-    if spec == nil or connection == nil
+    -- No PTO stream segment exists client -> server. This matches the
+    -- GIANTS ForageWagon/Tedder server-authoritative specialization
+    -- convention: no read and no write for this network direction.
+    if connection == nil
         or type(connection.getIsServer) ~= "function"
         or not connection:getIsServer() then
         return
     end
+    if not streamReadBool(streamId) then return end
+
+    local mode = streamReadUIntN(streamId, 3)
+    local throttle = streamReadFloat32(streamId)
+    local spec = getSpec(self)
+    if spec == nil then return end
 
     self:setPowerTakeOffState(mode, throttle, true, true)
 end
