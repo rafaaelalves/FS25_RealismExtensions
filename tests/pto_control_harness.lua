@@ -459,4 +459,59 @@ for _,mode in ipairs({M.MODE.RPM_540,M.MODE.RPM_1000}) do
     C.onAIJobFinished(vehicle)
 end
 
+
+-- Multiplayer stream provenance: PTO state streams are authoritative
+-- server -> client only. A client's replicated=true packet must not bypass
+-- the PTOStateEvent controller/identity check on the game server.
+local wireMode=M.MODE.RPM_540
+local wireThrottle=0.9
+streamReadUIntN=function() return wireMode end
+streamReadFloat32=function() return wireThrottle end
+streamReadBool=function() return true end
+local fromClient={getIsServer=function() return false end}
+local fromServer={getIsServer=function() return true end}
+local originalMode=spec.mode
+local originalThrottle=spec.handThrottlePercent
+local originalRevision=C.getPublicState(vehicle).revision
+C.onReadStream(vehicle,0,fromClient)
+assert(spec.mode==originalMode)
+assert(spec.handThrottlePercent==originalThrottle)
+C.onReadUpdateStream(vehicle,0,0,fromClient)
+assert(spec.mode==originalMode)
+assert(spec.handThrottlePercent==originalThrottle)
+assert(C.getPublicState(vehicle).revision==originalRevision)
+
+-- A remote client must emit no PTO dirty state in the update stream.
+local streamBools,streamModeWrites,streamThrottleWrites={},{},{}
+streamWriteBool=function(_,flag)
+    streamBools[#streamBools+1]=flag
+    return flag
+end
+streamWriteUIntN=function(_,value,bits)
+    streamModeWrites[#streamModeWrites+1]=value
+end
+streamWriteFloat32=function(_,value)
+    streamThrottleWrites[#streamThrottleWrites+1]=value
+end
+C.onWriteUpdateStream(vehicle,fromServer,spec.dirtyFlag)
+assert(#streamBools==1 and streamBools[1]==false)
+assert(#streamModeWrites==0 and #streamThrottleWrites==0)
+
+-- Server replication continues to update clients, and an authoritative
+-- server sends the complete matching presence-bit + mode + throttle packet.
+C.onReadUpdateStream(vehicle,0,0,fromServer)
+assert(spec.mode==M.MODE.RPM_540)
+assert(math.abs(spec.handThrottlePercent-0.9)<0.000001)
+wireMode=M.MODE.RPM_1000
+wireThrottle=0.35
+C.onReadStream(vehicle,0,fromServer)
+assert(spec.mode==M.MODE.RPM_1000)
+assert(math.abs(spec.handThrottlePercent-0.35)<0.000001)
+streamBools,streamModeWrites,streamThrottleWrites={},{},{}
+C.onWriteUpdateStream(vehicle,fromClient,spec.dirtyFlag)
+assert(#streamBools==1 and streamBools[1]==true)
+assert(#streamModeWrites==1 and streamModeWrites[1]==M.MODE.RPM_1000)
+assert(#streamThrottleWrites==1)
+assert(math.abs(streamThrottleWrites[1]-0.35)<0.000001)
+
 print("pto_control_harness: OK")
