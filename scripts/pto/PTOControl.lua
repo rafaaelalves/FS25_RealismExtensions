@@ -987,7 +987,13 @@ function Control:onReadStream(streamId, connection)
     local spec = getSpec(self)
     local mode = streamReadUIntN(streamId, 3)
     local throttle = streamReadFloat32(streamId)
-    if spec == nil then return end
+    -- Initial PTO state is server -> client only. Read the payload to keep
+    -- the stream aligned, but never trust values sent towards the server.
+    if spec == nil or connection == nil
+        or type(connection.getIsServer) ~= "function"
+        or not connection:getIsServer() then
+        return
+    end
 
     if isAvailable(spec, mode) then spec.mode = Model.normalizeMode(mode) end
     spec.handThrottlePercent = Model.clampThrottle(throttle)
@@ -996,7 +1002,12 @@ end
 
 function Control:onWriteUpdateStream(streamId, connection, dirtyMask)
     local spec = getSpec(self)
-    if spec == nil then
+    -- PTO update streams are authoritative server -> client. The client
+    -- sends operator commands via PTOStateEvent instead. Write the presence
+    -- bit even when suppressed so the network stream remains aligned.
+    if spec == nil or (connection ~= nil
+        and type(connection.getIsServer) == "function"
+        and connection:getIsServer()) then
         streamWriteBool(streamId, false)
         return
     end
@@ -1018,7 +1029,14 @@ function Control:onReadUpdateStream(streamId, timestamp, connection)
 
     local mode = streamReadUIntN(streamId, 3)
     local throttle = streamReadFloat32(streamId)
-    if spec == nil then return end
+    -- Client -> server updates must never bypass the event's driver
+    -- authorization by calling the replicated=true setter directly.
+    -- Consume both values before returning to preserve stream alignment.
+    if spec == nil or connection == nil
+        or type(connection.getIsServer) ~= "function"
+        or not connection:getIsServer() then
+        return
+    end
 
     self:setPowerTakeOffState(mode, throttle, true, true)
 end
