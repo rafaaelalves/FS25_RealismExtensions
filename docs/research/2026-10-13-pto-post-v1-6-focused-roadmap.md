@@ -74,4 +74,4 @@ Modelo por saída `ptoOutputId`, razão/marcha selecionada, engatamento, cardãs
 5. Perfis e curvas são dados com origem e versão; modelos precisos somente quando o jogo representa equipamento compatível. Nunca copiar código/ativos externos sem direito e revisão.
 6. Perfis desconhecidos continuam `UNKNOWN` sem imposição de alerta vermelho, exclusão de implemento ou alteração de torque.
 
-**A pesquisa funcional V2 já é rastreada na [issue #48](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/48).**
+**A revisão de estado/performance V1.7 está na [issue #50](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/50); a pesquisa funcional V2 está na [issue #48](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/48).**
