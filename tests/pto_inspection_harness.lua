@@ -27,6 +27,9 @@ local tool = {
     getConsumedPtoTorque = function() return ptoActive and 0.12 or 0 end,
     mrPtoCurrentRpm = 296, mrPtoCurrentRpmRatio = 0.74,
     mrPowerConsumerForcePtoRpm = true, mrBalerLastNeededPower = 19,
+    mrBalerLastTonsPerHour=18.5, mrBalerSpeedLimit=12.5,
+    spec_woodCrusher={mrFeedingActive=false, mrWaitingForFillLevel=true,
+        mrCrushingPowerWanted=24},
     spec_powerTakeOffs = {
         inputPowerTakeOffs = { {connectedVehicle = {}} }
     },
@@ -112,6 +115,11 @@ assert(report[3]:find("mrPtoCurrentRPM=296",1,true))
 assert(report[3]:find("mrPtoRpmRatio=0.74",1,true))
 assert(report[3]:find("forcePtoRpm=true",1,true))
 assert(report[3]:find("mrBalerPowerKW=19",1,true))
+assert(report[3]:find("mrBalerTonsPerHour=18.5",1,true))
+assert(report[3]:find("mrBalerSpeedLimit=12.5",1,true))
+assert(report[3]:find("mrFeedingActive=false",1,true))
+assert(report[3]:find("mrFeedingWaiting=true",1,true))
+assert(report[3]:find("mrCrusherPowerWanted=24",1,true))
 assert(report[3]:find("turnedOn=false",1,true))
 assert(report[3]:find("powerMinKW=2",1,true))
 assert(report[3]:find("powerMaxKW=12",1,true))
@@ -136,11 +144,16 @@ tool.mrPtoCurrentRpm=nil
 tool.mrPtoCurrentRpmRatio=nil
 tool.mrPowerConsumerForcePtoRpm=nil
 tool.mrBalerLastNeededPower=nil
+tool.mrBalerLastTonsPerHour=nil
+tool.mrBalerSpeedLimit=nil
+tool.spec_woodCrusher=nil
 tool.mrLastNeededPtoPower=nil
 tool.getConsumedPtoTorque=nil
 report=I.snapshot(vehicle)
 assert(report[3]:find("mrPtoRpmRatio=-",1,true))
 assert(report[3]:find("mrBalerPowerKW=-",1,true))
+assert(report[3]:find("mrBalerTonsPerHour=-",1,true))
+assert(report[3]:find("mrFeedingActive=-",1,true))
 assert(report[3]:find("mrLoadKW=-",1,true))
 assert(report[3]:find("mrTorqueKNm=-",1,true))
 -- Horsch-style non-mechanical auxiliary power is still visible to the
