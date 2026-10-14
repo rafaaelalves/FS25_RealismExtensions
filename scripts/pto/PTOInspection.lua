@@ -131,6 +131,10 @@ local function formatConsumers(vehicle, lines)
                 local pto = tool.spec_powerTakeOffs or {}
                 local inputs = safeCall(tool, "getInputPowerTakeOffs")
                     or pto.inputPowerTakeOffs
+                -- Keep the legacy connectedInput count to preserve log
+                -- comparability; it only means a connectedVehicle reference
+                -- was observed. The new fields require reciprocal native
+                -- input/output pointers to call a shaft LINKED.
                 local connected = 0
                 if type(inputs) == "table" then
                     for _, input in pairs(inputs) do
@@ -138,6 +142,18 @@ local function formatConsumers(vehicle, lines)
                             and input.connectedVehicle ~= nil then
                             connected = connected + 1
                         end
+                    end
+                end
+                local link = nil
+                if RealismExtensionsPTOResolver ~= nil
+                    and type(RealismExtensionsPTOResolver.getInputConnectionEvidence)
+                        == "function" then
+                    local ok, evidence = pcall(
+                        RealismExtensionsPTOResolver.getInputConnectionEvidence,
+                        tool
+                    )
+                    if ok and type(evidence) == "table" then
+                        link = evidence
                     end
                 end
                 local liveRpm = safeCall(tool, "getPtoRpm")
@@ -148,9 +164,13 @@ local function formatConsumers(vehicle, lines)
                 local turnedOn = safeCall(tool, "getIsTurnedOn")
                 local active = safeCall(tool, "getIsPowerTakeOffActive")
                 add(lines, string.format(
-                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s mrLoadKW=%s mrTorqueKNm=%s consumePower=%s turnedOn=%s activePto=%s powerMinKW=%s powerMaxKW=%s",
+                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d ptoLink=%s verifiedLinks=%s unlinkedInputs=%s uncertainLinks=%s rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s mrLoadKW=%s mrTorqueKNm=%s consumePower=%s turnedOn=%s activePto=%s powerMinKW=%s powerMaxKW=%s",
                     count, depth, label(tool), value(tool.configFileName),
                     countTable(inputs), connected,
+                    value(link ~= nil and link.status),
+                    value(link ~= nil and link.linked),
+                    value(link ~= nil and link.unlinked),
+                    value(link ~= nil and link.uncertain),
                     value(spec.ptoRpm), value(liveRpm),
                     value(tool.mrPtoCurrentRpm),
                     value(tool.mrPtoCurrentRpmRatio),
