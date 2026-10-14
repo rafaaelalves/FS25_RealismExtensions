@@ -128,6 +128,7 @@ local function formatConsumers(vehicle, lines)
             if tool ~= nil and not visited[tool] then
                 count = count + 1
                 local spec = tool.spec_powerConsumer or {}
+                local crusher = tool.spec_woodCrusher or {}
                 local pto = tool.spec_powerTakeOffs or {}
                 local inputs = safeCall(tool, "getInputPowerTakeOffs")
                     or pto.inputPowerTakeOffs
@@ -164,7 +165,7 @@ local function formatConsumers(vehicle, lines)
                 local turnedOn = safeCall(tool, "getIsTurnedOn")
                 local active = safeCall(tool, "getIsPowerTakeOffActive")
                 add(lines, string.format(
-                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d ptoLink=%s verifiedLinks=%s unlinkedInputs=%s uncertainLinks=%s rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s mrLoadKW=%s mrTorqueKNm=%s consumePower=%s turnedOn=%s activePto=%s powerMinKW=%s powerMaxKW=%s",
+                    "TOOL[%d] depth=%d name=%s path=%s inputPto=%d connectedInput=%d ptoLink=%s verifiedLinks=%s unlinkedInputs=%s uncertainLinks=%s rawConsumerRPM=%s liveConsumerRPM=%s mrPtoCurrentRPM=%s mrPtoRpmRatio=%s forcePtoRpm=%s mrBalerPowerKW=%s mrLoadKW=%s mrBalerTonsPerHour=%s mrBalerSpeedLimit=%s mrFeedingActive=%s mrFeedingWaiting=%s mrCrusherPowerWanted=%s mrTorqueKNm=%s consumePower=%s turnedOn=%s activePto=%s powerMinKW=%s powerMaxKW=%s",
                     count, depth, label(tool), value(tool.configFileName),
                     countTable(inputs), connected,
                     value(link ~= nil and link.status),
@@ -177,6 +178,11 @@ local function formatConsumers(vehicle, lines)
                     value(tool.mrPowerConsumerForcePtoRpm),
                     value(tool.mrBalerLastNeededPower),
                     value(tool.mrLastNeededPtoPower),
+                    value(tool.mrBalerLastTonsPerHour),
+                    value(tool.mrBalerSpeedLimit),
+                    value(crusher.mrFeedingActive),
+                    value(crusher.mrWaitingForFillLevel),
+                    value(crusher.mrCrushingPowerWanted),
                     value(consumedTorque),
                     value(consumes), value(turnedOn), value(active),
                     value(spec.neededMinPtoPower),
