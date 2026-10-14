@@ -137,15 +137,24 @@ end
 -- guarantee that the shaft is transmitting torque right now.
 local function getNativeInputPowerTakeOffs(object)
     if object == nil then return nil end
+    local methodInputs = nil
     if type(object.getInputPowerTakeOffs) == "function" then
         local ok, inputs = pcall(object.getInputPowerTakeOffs, object)
-        if ok and type(inputs) == "table" then return inputs end
+        if ok and type(inputs) == "table" then
+            methodInputs = inputs
+            if tableHasEntries(inputs) then return inputs end
+        end
     end
     local spec = object.spec_powerTakeOffs
     if spec ~= nil and type(spec.inputPowerTakeOffs) == "table" then
-        return spec.inputPowerTakeOffs
+        -- Preserve the v1.6 classification fallback: some mod methods
+        -- expose an empty list even when the native spec has PTO inputs.
+        if tableHasEntries(spec.inputPowerTakeOffs)
+            or methodInputs == nil then
+            return spec.inputPowerTakeOffs
+        end
     end
-    return nil
+    return methodInputs
 end
 
 local function hasInputPowerTakeOff(object)
