@@ -496,7 +496,7 @@ end
 streamWriteFloat32=function(_,value)
     streamThrottleWrites[#streamThrottleWrites+1]=value
 end
-C.onWriteUpdateStream(vehicle,fromServer,spec.dirtyFlag)
+C.onWriteUpdateStream(vehicle,0,fromServer,spec.dirtyFlag)
 assert(#streamBools==1 and streamBools[1]==false)
 assert(#streamModeWrites==0 and #streamThrottleWrites==0)
 
@@ -511,7 +511,7 @@ C.onReadStream(vehicle,0,fromServer)
 assert(spec.mode==M.MODE.RPM_1000)
 assert(math.abs(spec.handThrottlePercent-0.35)<0.000001)
 streamBools,streamModeWrites,streamThrottleWrites={},{},{}
-C.onWriteUpdateStream(vehicle,fromClient,spec.dirtyFlag)
+C.onWriteUpdateStream(vehicle,0,fromClient,spec.dirtyFlag)
 assert(#streamBools==1 and streamBools[1]==true)
 assert(#streamModeWrites==1 and streamModeWrites[1]==M.MODE.RPM_1000)
 assert(#streamThrottleWrites==1)
