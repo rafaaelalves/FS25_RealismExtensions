@@ -1,6 +1,20 @@
 # Current development handoff
 
-Updated: 2026-09-30
+Updated: 2026-10-13 — supersedes the September 30 branch/current-task notes below. Earlier content is retained as a dated engineering log, not an instruction to check out or ship the v7 ZIP.
+
+## Current handoff (after PTO V1.6 merge)
+
+**Production heads:** RE `main@5c6d51cbddab7ffe9ddde1289b7f80e88b18ecd3` (PRs #39/#45 merged), RC `main@e55dd9e141c7b536b63da799677c02d14c8a3efc` (PR #25 merged, then source/log documentation). Successful CI on both main branches; `PTOControl=true`, `TerrainDeformation=false` on production RE.
+
+**Next experimental terrain handoff:** highest-priority candidate [PR #44](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/44) `fix/terrain-recovery-reference-v2-2026-10-13`, stacked on PR #43 and old `feat/terrain-pto-integration-2026-10-09` (PR #38). **Do not merge this stacked branch into current main** until reconciling code/CI with newest PTO and reproducing successful multi-pass recovery + seedbed traversal on a cloned save. Separate reference-contamination errors from GIANTS TARGET no-ops; reject unsupported additive raise fallbacks.
+
+**Next PTO handoff:** V1.6 release is closed for singleplayer; research V2 real implement throughput (baler, chipper, hydraulic auxiliary) without duplicate MR load. The normalized HM10 ratio was proven in game, but actual low-rpm feeding state wasn't; see RC issue #26. MP remains untested and unscheduled; RE issue #46.
+
+**Other candidates:** real interchangeable wheel/ballast inventory + workshop, tire-wear service boundaries (Reifen/RMS), RHM 1.6.2 with WA Clogging, FarmKit surface/crop features and optional mining/TerraFarm coexistence; keep all independent from the terrain release chain.
+
+**Normative next-step reference:** [ROADMAP.md](ROADMAP.md) and [Post-PTO-V1.6 review](2026-10-13-POST-PTO-V16-ROADMAP-REVIEW.md).
+
+## Historical September 30 terrain v7 handoff (not the current branch)
 
 ## Active work
 
