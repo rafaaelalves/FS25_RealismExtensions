@@ -11,7 +11,9 @@ The FS25 `PowerTakeOffs.lua` script (inspected from [FS25 Lua API mirror](https:
 - On detach, both ends are cleared.
 - For rendering, `input.connectedOutput.isActive` can track the implement's **active animation**, not a measured transfer of torque.
 
-The [official GIANTS PowerTakeOffs implementation for FS22](https://gdn.giants-software.com/documentation_scripting_fs22.php?category=48&class=534&version=script) shows the same reciprocal structure. The mirror is not an OEM FS25 v1.24 runtime proof, and custom mods including Manual Attach may use a different lifecycle. **Unknown must remain an explicit possible outcome**.
+The [official GIANTS PowerTakeOffs implementation for FS22](https://gdn.giants-software.com/documentation_scripting_fs22.php?category=48&class=534&version=script) shows the same reciprocal structure. The mirror is not an OEM FS25 v1.24 runtime proof.
+
+**Manual Attach compatibility review (source verified, game test pending):** inspected [`stijnwop/manualAttach`](https://github.com/stijnwop/manualAttach) `master` source, in `src/attachments/PowerTakeOffAttachment.lua`, `src/vehicle/specializations/ManualAttachPowerTakeOff.lua`, and `src/extensions/PowerTakeOffExtension.lua`. Manual Attach **calls the native** `vehicle:attachPowerTakeOff(object,...)` and `vehicle:detachPowerTakeOff(vehicle,implement)` when the user manually connects/disconnects the cardan. Its own `hasAttachedPowerTakeOffs` tests whether `input.connectedVehicle == attacherVehicle`. Thus **the same native connection pointers are its current authority**, and our read-only reciprocal-link report is meaningfully aligned with the current upstream design. This does not certify every archived/older Manual Attach build used in a save. Partial third-party states still return UNKNOWN, and an in-game manual-disconnect test remains useful.
 
 ## Implemented now (safe read-only stage)
 
