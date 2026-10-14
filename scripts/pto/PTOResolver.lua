@@ -204,6 +204,10 @@ end
 
 function Resolver.collectRequirements(vehicle)
     local items, visited = {}, {}
+    -- Observed evidence only; declared PowerConsumer demand is NOT proof of
+    -- mechanical PTO input or of the actual operating power drawn.
+    local attachedCount, inputCount, profileCount, unlinkedPowerCount = 0, 0, 0, 0
+    local rootAttachmentListObserved = false
     local function walk(attacher, depth)
         if attacher == nil or visited[attacher] or depth > 12
             or type(attacher.getAttachedImplements) ~= "function" then
@@ -211,12 +215,33 @@ function Resolver.collectRequirements(vehicle)
         end
         visited[attacher] = true
         local ok, attached = pcall(attacher.getAttachedImplements, attacher)
+        if depth == 0 then
+            rootAttachmentListObserved = ok and type(attached) == "table"
+        end
         if not ok or type(attached) ~= "table" then return end
         for _, implement in pairs(attached) do
             local object = implement ~= nil and implement.object or nil
             if object ~= nil and not visited[object] then
+                attachedCount = attachedCount + 1
                 local item = detectImplement(object)
-                if item ~= nil then items[#items + 1] = item end
+                if item ~= nil then
+                    items[#items + 1] = item
+                    if hasInputPowerTakeOff(object) then
+                        inputCount = inputCount + 1
+                    else
+                        -- Only an explicit, separately curated profile
+                        -- authorizes mechanical classification here.
+                        profileCount = profileCount + 1
+                    end
+                else
+                    local consumer = object.spec_powerConsumer or {}
+                    local rpm = readPtoRpm(object)
+                    local declaredPower = tonumber(consumer.neededMaxPtoPower)
+                        or tonumber(consumer.neededMinPtoPower) or 0
+                    if (rpm ~= nil and rpm > 0) or declaredPower > 0 then
+                        unlinkedPowerCount = unlinkedPowerCount + 1
+                    end
+                end
                 walk(object, depth + 1)
             end
         end
@@ -244,9 +269,26 @@ function Resolver.collectRequirements(vehicle)
         demandCount = demandCount + 1
         rawRpm = rpm
     end
+    local driveEvidenceStatus = "UNKNOWN"
+    if inputCount > 0 then
+        driveEvidenceStatus = "NATIVE_PTO_INPUT"
+    elseif profileCount > 0 then
+        driveEvidenceStatus = "PROFILED_PTO"
+    elseif unlinkedPowerCount > 0 then
+        driveEvidenceStatus = "POWER_CONSUMER_NO_INPUT"
+    elseif attachedCount > 0 then
+        driveEvidenceStatus = "NO_PTO_INPUT_DETECTED"
+    elseif rootAttachmentListObserved then
+        driveEvidenceStatus = "NO_ATTACHMENT"
+    end
     return {
         items = items,
         primary = items[1],
+        driveEvidenceStatus = driveEvidenceStatus,
+        attachedImplementCount = attachedCount,
+        nativeInputImplementCount = inputCount,
+        profiledImplementCount = profileCount,
+        unlinkedPowerConsumerCount = unlinkedPowerCount,
         hasPtoConsumer = #items > 0,
         knownCount = knownCount,
         unknownCount = unknownCount,
@@ -261,6 +303,15 @@ end
 
 local function getObjectPtoActivity(object)
     if object == nil then return false, nil end
+
+    -- Native PowerTakeOffs activation can also be exposed by generic
+    -- TurnOnVehicle/PowerConsumer tools. Mechanical engagement requires
+    -- separate evidence of a shaft input or curated implement PTO profile.
+    -- Never display a working Horsch turbine as a connected cardan solely
+    -- because its generic getIsPowerTakeOffActive() returned true.
+    local usesPto = Profiles.findImplement(object) ~= nil
+        or hasInputPowerTakeOff(object)
+    if not usesPto then return false, nil end
 
     -- GIANTS' base PowerTakeOffs implementation on a tractor returns false.
     -- PTO-consuming implement specializations (TurnOnVehicle, Dischargeable,
@@ -279,9 +330,7 @@ local function getObjectPtoActivity(object)
     -- Defensive fallback for mod implements that consume PTO but implement only
     -- TurnOnVehicle semantics and do not participate correctly in the
     -- getIsPowerTakeOffActive overwrite chain.
-    local usesPto = Profiles.findImplement(object) ~= nil
-        or hasInputPowerTakeOff(object)
-    if usesPto and type(object.getIsTurnedOn) == "function" then
+    if type(object.getIsTurnedOn) == "function" then
         local ok, active = pcall(object.getIsTurnedOn, object)
         if ok and active == true then
             return true, "IMPLEMENT_TURNED_ON"

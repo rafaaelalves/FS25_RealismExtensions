@@ -196,6 +196,13 @@ local function refreshPublicState(vehicle, spec)
     state.requirementKnown = requirements.requiredGearboxFamilyRpm ~= nil
     state.requirementConflict = requirements.conflict == true
     state.hasPtoConsumer = requirements.hasPtoConsumer == true
+    -- Read-only connection/load evidence; these are NOT shaft connection
+    -- confirmations and do not participate in compatibility or MR/RMS load.
+    state.driveEvidenceStatus = requirements.driveEvidenceStatus or "UNKNOWN"
+    state.attachedImplementCount = requirements.attachedImplementCount or 0
+    state.nativeInputImplementCount = requirements.nativeInputImplementCount or 0
+    state.profiledImplementCount = requirements.profiledImplementCount or 0
+    state.unlinkedPowerConsumerCount = requirements.unlinkedPowerConsumerCount or 0
     state.knownRequirementCount = requirements.knownCount or 0
     state.unknownRequirementCount = requirements.unknownCount or 0
     state.requirementSource = requirements.primary ~= nil

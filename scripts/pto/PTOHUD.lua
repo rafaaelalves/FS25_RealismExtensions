@@ -34,6 +34,9 @@ local DEFAULT_LAYOUT = {
     modeTextSizePx = 9,
     modeTextGapPx = 5,
     showEstimatedRpm = true,
+    -- Show a neutral hint for a declared PowerConsumer without detected
+    -- native shaft input. '?' explicitly means source is not proven.
+    showUnlinkedPowerHint = true,
     rpmTextSizePx = 8,
     rpmTextGapPx = 3,
     -- Screen-only time constant: never alters the engine, shaft or MR load.
@@ -74,6 +77,7 @@ local function resetStats()
     HUD._smoothedRpm = nil
     HUD._smoothTimeMs = nil
     HUD._lastHandThrottleRpm = 0
+    HUD._lastDriveEvidenceStatus = "UNKNOWN"
     HUD._lastAvailableModeMask = 0
     HUD._lastProfileId = nil
     HUD._lastEngagementSource = nil
@@ -482,6 +486,14 @@ function HUD:drawControlledVehicle()
     local rpmLabel = cfgNumber("rpmTextSizePx") > 0
         and getHudConfig().showEstimatedRpm ~= false
         and estimatedRpmLabel(displayedRpm) or nil
+    -- A load-only MR/GIANTS PowerConsumer is NOT proof of a cardan. This
+    -- advisory is shown only while no mechanical PTO activity is detected,
+    -- and intentionally makes no claim about current kW or shaft coupling.
+    if rpmLabel == nil and not engaged
+        and getHudConfig().showUnlinkedPowerHint ~= false
+        and state.driveEvidenceStatus == "POWER_CONSUMER_NO_INPUT" then
+        rpmLabel = "PWR?"
+    end
 
     HUD._lastMode = modeText
     HUD._lastEngaged = engaged
@@ -494,6 +506,7 @@ function HUD:drawControlledVehicle()
     HUD._lastEstimatedRpm = estimatedRpm
     HUD._lastDisplayedRpm = displayedRpm
     HUD._lastHandThrottleRpm = tonumber(state.handThrottleRpm) or 0
+    HUD._lastDriveEvidenceStatus = state.driveEvidenceStatus or "UNKNOWN"
     HUD._lastAvailableModeMask = tonumber(state.availableModeMask) or 0
     HUD._lastProfileId = state.capabilityProfileId
         or state.capabilitySource
@@ -836,6 +849,7 @@ function HUD.getDiagnostics()
     out.lastEstimatedRpm = HUD._lastEstimatedRpm
     out.lastDisplayedRpm = HUD._lastDisplayedRpm
     out.lastHandThrottleRpm = HUD._lastHandThrottleRpm
+    out.lastDriveEvidenceStatus = HUD._lastDriveEvidenceStatus
     out.lastAvailableModeMask = HUD._lastAvailableModeMask
     out.lastProfileId = HUD._lastProfileId
     return out

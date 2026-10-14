@@ -49,7 +49,12 @@ local state = {
     requirementConflict = false, hasPtoConsumer = true,
     requiredGearboxFamilyRpm = nil, gearCompatibility = "UNKNOWN",
     knownRequirementCount = 0, unknownRequirementCount = 1,
-    handThrottleRpm = 0, effectiveMotorRatio = 4
+    handThrottleRpm = 0, effectiveMotorRatio = 4,
+    driveEvidenceStatus = "NATIVE_PTO_INPUT",
+    attachedImplementCount = 1,
+    nativeInputImplementCount = 1,
+    profiledImplementCount = 0,
+    unlinkedPowerConsumerCount = 0
 }
 RealismExtensionsPTO = {
     getVehicleState = function(v) assert(v==vehicle); return state end
@@ -71,6 +76,9 @@ assert(report[1]:find("required=400",1,true))
 assert(report[1]:find("nominalFamily=-",1,true))
 assert(report[1]:find("gearCompatibility=UNKNOWN",1,true))
 assert(report[1]:find("known=0 unknown=1",1,true))
+assert(report[1]:find("driveEvidence=NATIVE_PTO_INPUT",1,true))
+assert(report[1]:find("nativeInputs=1",1,true))
+assert(report[1]:find("unlinkedPower=0",1,true))
 assert(report[2]:find("maxPtoDemand=400",1,true))
 assert(report[2]:find("mrMinPtoRot=125",1,true))
 assert(report[3]:find("inputPto=1",1,true))
@@ -122,6 +130,12 @@ report=I.snapshot(vehicle)
 assert(report[3]:find("rawConsumerRPM=340",1,true))
 assert(report[3]:find("powerMaxKW=22",1,true))
 assert(report[3]:find("mrLoadKW=13.5",1,true))
+state.driveEvidenceStatus="POWER_CONSUMER_NO_INPUT"
+state.nativeInputImplementCount=0
+state.unlinkedPowerConsumerCount=1
+report=I.snapshot(vehicle)
+assert(report[1]:find("driveEvidence=POWER_CONSUMER_NO_INPUT",1,true))
+assert(report[1]:find("unlinkedPower=1",1,true))
 -- Generic power consumer has no physical input; output must expose that.
 tool.spec_powerTakeOffs.inputPowerTakeOffs={}
 report=I.snapshot(vehicle)
