@@ -470,7 +470,11 @@ local wireMode=M.MODE.RPM_540
 local wireThrottle=0.9
 streamReadUIntN=function() return wireMode end
 streamReadFloat32=function() return wireThrottle end
-streamReadBool=function() return true end
+local readPresenceCount=0
+streamReadBool=function()
+    readPresenceCount=readPresenceCount+1
+    return true
+end
 local fromClient={getIsServer=function() return false end}
 local fromServer={getIsServer=function() return true end}
 local originalMode=spec.mode
@@ -480,6 +484,7 @@ C.onReadStream(vehicle,0,fromClient)
 assert(spec.mode==originalMode)
 assert(spec.handThrottlePercent==originalThrottle)
 C.onReadUpdateStream(vehicle,0,0,fromClient)
+assert(readPresenceCount==0) -- no incoming client update segment
 assert(spec.mode==originalMode)
 assert(spec.handThrottlePercent==originalThrottle)
 assert(C.getPublicState(vehicle).revision==originalRevision)
@@ -497,12 +502,13 @@ streamWriteFloat32=function(_,value)
     streamThrottleWrites[#streamThrottleWrites+1]=value
 end
 C.onWriteUpdateStream(vehicle,0,fromServer,spec.dirtyFlag)
-assert(#streamBools==1 and streamBools[1]==false)
+assert(#streamBools==0) -- no outgoing client segment
 assert(#streamModeWrites==0 and #streamThrottleWrites==0)
 
 -- Server replication continues to update clients, and an authoritative
 -- server sends the complete matching presence-bit + mode + throttle packet.
 C.onReadUpdateStream(vehicle,0,0,fromServer)
+assert(readPresenceCount==1)
 assert(spec.mode==M.MODE.RPM_540)
 assert(math.abs(spec.handThrottlePercent-0.9)<0.000001)
 wireMode=M.MODE.RPM_1000
