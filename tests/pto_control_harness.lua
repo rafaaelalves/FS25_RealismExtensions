@@ -466,6 +466,9 @@ end
 -- Multiplayer stream provenance: PTO state streams are authoritative
 -- server -> client only. A client's replicated=true packet must not bypass
 -- the PTOStateEvent controller/identity check on the game server.
+-- Real GIANTS registerFunctions injects this specialization function into the
+-- vehicle type; our plain-table harness has to attach it explicitly.
+vehicle.setPowerTakeOffState=C.setPowerTakeOffState
 local wireMode=M.MODE.RPM_540
 local wireThrottle=0.9
 streamReadUIntN=function() return wireMode end
