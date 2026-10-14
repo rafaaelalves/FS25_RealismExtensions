@@ -4,25 +4,15 @@ A modular Farming Simulator 25 project for realism phenomena that are **missing*
 
 RealismExtensions does not try to replace mature systems merely to reduce the mod count. It consumes authoritative state and adds or absorbs missing consequences only where ownership is genuinely missing.
 
-## Current state
+## Current state (2026-10-13)
 
-**Default behavior on `main`: foundation-only.** TerrainDeformation is
-explicitly disabled by default, including verbose/performance diagnostics. The
-registration bootstrap is inert while disabled: it does not wrap GIANTS
-`TypeManager.validateTypes` or add a specialization to vehicle types. The
-experimental `feat/terrain-recovery` branch enables its gameplay modules
-intentionally for controlled tests; installing a ZIP built from `main` does
-not activate the research feature.
+**Production `main` includes native PTO V1.6**, merged in PRs [#39](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/39) and [#45](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/45). The companion [RealismCompatibility](https://github.com/rafaaelalves/FS25_RealismCompatibility) `main` contains the MR/RMS bridge and the HM10-500 PROFILE 1000 vs MR raw 540 normalization fix ([RC #25](https://github.com/rafaaelalves/FS25_RealismCompatibility/pull/25)). Source/CI and selected singleplayer scenarios were validated; a real multiplayer session is **not validated**.
 
-**PTO candidate branch:** this branch opts into `PTOControl=true` while keeping
-`TerrainDeformation=false` and disabling terrain diagnostics. PTO can be tested
-without creating additional persistent ruts; the separate terrain research
-branches retain their explicit opt-in settings.
+**Current normal-play module settings:** `PTOControl=true`, `TerrainDeformation=false`, verbose/performance diagnostics disabled. Terrain's registration/bootstrap is inert while disabled, so the stable PTO build cannot create new research ruts. Experimental terrain branches require separate explicit opt-in and should not be used as the everyday `main` ZIP.
 
+The repository mod version remains `0.0.1.0` (active development); PTO `V1.6` is a functional milestone. The validated wheel-based terrain baseline exists in the repository, **not a completed production deformation/recovery module**. Its next acceptance gate is repeated-pass rut recovery followed by a traversable seedbed and ordinary soil-yield restraint.
 
-Version `0.0.1.0` is an active development line.
-
-`TerrainDeformation` has a validated wheel-based baseline in `main`, but the module is intentionally still open while low-speed invariance, dual/twin behavior, crawler support and AI/implement parity are completed.
+**What's next:** [current roadmap and ownership](docs/project/ROADMAP.md), [post-PTO-V1.6 priority review](docs/project/2026-10-13-POST-PTO-V16-ROADMAP-REVIEW.md) and [current handoff](docs/project/CURRENT_HANDOFF.md). The old `feat/terrain-distance-response-v7` instructions farther below are historical research checkout examples, **not the present active development branch**.
 
 Start here:
 1. `docs/project/CURRENT_HANDOFF.md` — exact active development handoff.
@@ -43,7 +33,8 @@ FS25_RealismCompatibility
         v
 FS25_RealismExtensions
         |
-        +--> TerrainDeformation
+        +--> native PTOControl (main, enabled)
+        +--> TerrainDeformation (main code, disabled)
         +--> future CropInteraction
         +--> future SurfaceEffects
 ```
@@ -121,7 +112,7 @@ git switch <branch-name>
 git pull --ff-only origin <branch-name>
 ```
 
-For the current v7 test:
+For an **older archived v7 terrain experiment (not current release)**:
 
 ```bash
 git fetch origin --prune

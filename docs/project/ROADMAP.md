@@ -2,6 +2,19 @@
 
 The roadmap is intentionally capability-driven, not version-date driven.
 
+## Current priority and state (2026-10-13, after PTO V1.6)
+
+**PTO V1.5/V1.6 is integrated in `main`**, with a tested subset of real implements and RC/MR/RMS compatibility; `TerrainDeformation=false` remains the safe mainline default. The PTO label **V1.6** names a functional milestone, not the FS25 mod's `modDesc` version (`0.0.1.0`).
+
+**Next most urgent gameplay risk:** make RE's experimental terrain ruts recoverable by real cultivation/tillage without immediate reseeding collapse. Experimental [PR #44](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/44) addresses reference contamination, but repeated native GIANTS TARGET no-ops and field acceptance remain release blockers. Never merge these experimental terrain branches just because PTO is integrated or CI passed.
+
+**Next PTO research milestone ([issue #48](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/48); V2 not implemented):** find one *measurable, absent* implement-specific shaft-RPM/throughput consequence without duplicating MoreRealistic baler capacity/load or wood-crusher feed gates. Start with upstream source matrix, provider ownership and on-demand instrumentation; only then test an isolated behavior. The user cannot plan an MP session: [issue #46](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/46) remains deferred. The HM10 post-merge normalized RPM is confirmed in game; actual log-feeding crossover still [RC issue #26](https://github.com/rafaaelalves/FS25_RealismCompatibility/issues/26).
+
+**Additional independent exploration:** interchangeable rodados/dual-wheel sets and weights with reusable stored inventory; vehicle workshop/motor/gearbox configuration constrained by real MR/RMS ownership; RHM+WA clogging and CropInteraction; FarmKit bridges and surface contamination; mining/roadwork stack as external owners rather than cloning.
+
+**Maintained detailed work order:** [Post-PTO V1.6 roadmap review](2026-10-13-POST-PTO-V16-ROADMAP-REVIEW.md). Earlier version-based sections below are long-term candidate streams; they are **not** evidence that all listed capabilities were built.
+
+
 ## 0.0.x — Foundation and research
 
 - establish repository/CI/contracts;
