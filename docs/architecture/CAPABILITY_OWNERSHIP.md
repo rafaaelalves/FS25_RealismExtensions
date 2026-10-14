@@ -1,6 +1,6 @@
 # Capability ownership model
 
-Updated: 2026-09-29
+Updated: 2026-10-13 (PTO ownership reconciled after V1.6 merge; historical terrain/farmkit candidates retained)
 
 This file records the intended owner of each realism phenomenon relevant to Realism Extensions.
 
@@ -16,8 +16,11 @@ The decision unit is a **capability**, not a mod.
 | sink / terrain resistance / stuck | MudSystemPhysics | read-only input |
 | permanent tire wear / worn structural radius | Reifenverschleiss + RC composition | read-only input |
 | persistent soil compaction | SoilCompaction | no duplicate model |
-| PTO operating mode / effective ratio | Dynamic PTO + RC composition | consume only |
+| PTO selected mode / physical effective ratio / hand-throttle target | **RE native PTO V1.6** | **own mode/operator state** and expose source-backed state |
+| MR/RMS physical PTO ratio translation | RC scoped MR/RMS bridges | provider only; never permanently rewrite specialist motor fields |
+| engine torque, power, fuel and generic implement PowerConsumer | MR (GIANTS fallback) | no second load/engine solver |
 | mechanical subsystem / PTO stress | RMS where active | no duplicate model |
+| external Dynamic PTO owner | alternative, mutually exclusive with RE native PTO | disabled for RE target stack; retain only optional RC legacy support |
 
 ## Moisture domains
 
@@ -91,7 +94,7 @@ Initial RE policy:
 
 ## FarmKit residual ownership
 
-Under the current RC conservative profile, FarmKit remains useful for several unique systems.
+Under the current RC conservative profile, FarmKit remains useful for several unique systems. The following FarmKit items remain tentative until actual owner/runtime parity is established; the safe `main` has TerrainDeformation disabled.
 
 RE should replace them only module-by-module, after parity/runtime evidence:
 
@@ -123,3 +126,7 @@ REState.getMaterialMoisture(source)
 These names are conceptual, not an API commitment.
 
 Implementation should first reuse an RC-normalized state surface if one is introduced. If no such surface exists, adapters remain narrow and owner-specific rather than creating a new global physics layer.
+
+## Current PTO/terrain status reference
+
+The normative short-form matrix is [`docs/project/OWNERSHIP.md`](../project/OWNERSHIP.md). [Current roadmap](../project/ROADMAP.md) supersedes historical PTO study descriptions where Dynamic PTO was the initial owner. PTO V1.6 has been merged (#39/#45); terrain recovery PRs #36/#38/#40/#42/#43/#44 remain experimental. MP issue #46 is deferred, not certified.
