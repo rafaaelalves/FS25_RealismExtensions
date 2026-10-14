@@ -1,6 +1,17 @@
 # Project status
 
-Updated: 2026-10-09
+Updated: 2026-10-13 — current release checkpoint; prior dated sections below are historical and may describe already-merged draft PRs.
+
+## Current mainline — PTO V1.6 accepted for personal singleplayer (2026-10-13)
+
+- **RE main:** `5c6d51cbddab7ffe9ddde1289b7f80e88b18ecd3` (V1.5 PR #39, V1.6 PR #45 **MERGED**); **RC main:** `e55dd9e141c7b536b63da799677c02d14c8a3efc` after profile bridge PR #25 merge at `f04d28c` and subsequent documentation. Both main CI workflows succeeded.
+- **Config:** `PTOControl=true`, `TerrainDeformation=false`. Current mod `version=0.0.1.0`; PTO `V1.6` is a feature milestone and not a mod semantic-version bump.
+- **Game evidence:** Fiat/Heizohack 1000 RPM normalization: MR normalized ratio matches physical shaft/1000 across ~723 and ~820 RPM; Horsch shaftless PowerConsumer, Berthoud inputPto 500 raw, Krone 540E/540 connected input and MR active kW vary as designed in observed snapshots.
+- **Remaining PTO evidence limits:** HM10 feed rollers/written woodchips not observed across MR cutoff `0.78` [RC #26](https://github.com/rafaaelalves/FS25_RealismCompatibility/issues/26); dedicated multiplayer control/sync not available [RE #46](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/46); no universal implement support assertion.
+- **Terrain:** baseline `TerrainDeformation` remains intentionally disabled in production. Latest corrective proposal PR #44 is **not** gameplay-validated; historical references are contaminated by other ruts and native `TARGET` callbacks often yield zero physical center movement. The crop harvest→recovery→seeding acceptance failure remains the main open gameplay blocker, not the PTO.
+- **Next:** [Roadmap review after PTO V1.6](2026-10-13-POST-PTO-V16-ROADMAP-REVIEW.md): evaluate repair physics + native TARGET no-ops, research PTO V2 implement-specific behavior, and keep wheel/ballast/parts inventory/workshop as separate viable-capability research. Do not merge the experimental terrain chain on CI alone.
+
+## Historical snapshots retained below
 
 ## Native PTO consolidation checkpoint (2026-10-09)
 
