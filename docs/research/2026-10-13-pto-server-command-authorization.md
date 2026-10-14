@@ -23,6 +23,12 @@ If any of these authoritative checks fails or throws, the request is rejected wi
 
 **Unchanged paths:** Host/AI changes use `PTOStateEvent.send` directly from the server, and trusted server-to-client replication continues without subjecting the server to remote-driver checks. The existing saved hand-throttle/gear fields and RC/MR/RMS motor owner boundaries are untouched.
 
+## Separate specialization stream entry points
+
+A follow-up review identified another untrusted path: `Control:onReadUpdateStream` previously called `self:setPowerTakeOffState(...,true,true)` regardless of connection direction, bypassing the authorization in `PTOStateEvent`. Initial `onReadStream` also directly accepted network fields without a source check. **Both are now server-to-client only**: the handlers always consume exactly the existing stream fields first, then apply state only when `connection:getIsServer()` is true. `onWriteUpdateStream` emits `false` instead of PTO data toward the server, retaining the protocol's boolean-presence framing. The PTOStateEvent remains the **only** accepted client-to-server operator state mutation path. No event schema or field order changed.
+
+The `tests/pto_control_harness.lua` suite now verifies all of these cases using engine-shaped stubs, including stream alignment, client injection refusal, authoritative server replication and correct presence-bit writes. Source precedent: the GIANTS FS25 `ForageWagon:onReadUpdateStream` / `Vehicle:readUpdateStream` use `connection:getIsServer()` to distinguish the authoritative network direction. (https://gdn.giants-software.com/documentation_scripting_fs25.php?category=78&class=676&version=script; https://gdn.giants-software.com/documentation_scripting_fs25.php?category=91&class=888&version=script).
+
 ## Testing performed
 
 Automated regression in `tests/pto_state_event_harness.lua` covers:
