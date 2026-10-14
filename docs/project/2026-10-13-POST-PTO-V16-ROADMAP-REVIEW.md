@@ -48,6 +48,8 @@ Pesquisas e branches já existentes:
 
 ### P1 — PTO V2: consequências operacionais específicas, e não mais uma fórmula global
 
+[Issue de pesquisa PTO V2 #48](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/48) — não criar patch de gameplay até aparecer lacuna medível e proprietário definido.
+
 A V1.6 resolve estado/engrenagem/interface; **não** resolve toda hidráulica e toda cinemática dos implementos. Caminho:
 1. **Inventário de proprietários e variáveis disponíveis (pesquisa):** estudar fluxo `engineRPM → shaftRPM → available torque → MR PowerConsumer/load → implementação de trabalho`. Usar `MR_Baler.lua`, `MR_WoodCrusher.lua`, GIANTS `Baler`, `Mower`, `PowerConsumer`, `Sprayer`, `TurnOnVehicle`, implementos com entrada PTO e eventuais transmissões hidráulicas/elétricas.
 2. **Matriz de lacunas comprovadas:** para cada tipo verificar se GIANTS/MR já reduz produtividade, enche mais lentamente, interrompe rolos ou limita velocidade. Separar `RPM calculada`, `vazão de material`, `massa de fardo`, `carga kW` e `velocidade de trabalho`. Uma máquina ligada com eixo lento não prova que processou palha normalmente.
