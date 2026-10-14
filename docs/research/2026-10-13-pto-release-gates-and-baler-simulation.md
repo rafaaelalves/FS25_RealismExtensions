@@ -42,6 +42,18 @@ Source ZIP `FS25_DynamicPTO_FFM (2).zip` (SHA-256 `e79a4cadca224ec83ba982ab4d507
 
 Applying fertilizer once per field does not justify boosting crop-treatment passes or liters delivered by choosing 1000 PTO. Correct regulated-sprayer behavior may target constant volume/area via increased pump output and pressure regulation. The only useful new effect would be evidence of **inadequate** pump flow at too-low actual shaft RPM, where target application rate may fail and slower ground speed could compensate. Do not implement anything before establishing the exact in-game pump drive and GIANTS/MR application behavior.
 
+## Release-scope decision update — singleplayer independent of multiplayer
+
+This section **supersedes the earlier MP-as-merge-blocker wording elsewhere in this historical document**. Following the user confirming that a two-client session is unavailable for the foreseeable future, a release targeting personal **singleplayer / local-host play** may be integrated into `main` after code review, CI, and existing in-game singleplayer evidence **without claiming MP validation**.
+
+- **Existing runtime evidence:** Berthoud Vantage, Horsch Avatar, Krone VariPack cases pass their stated native input, workload, engine-load, and engagement/classifier smoke checks; they are not generic coverage for every implement.
+- **Automated security work:** client `PTOStateEvent` authorization and server-only `PTOControl` snapshot/update streams, exercised in harnesses. A simulated connection is not a live multiplayer test.
+- **Deferred, no planned date:** real MP permissions, handoff, late join, client/server reconciliation and server timing. [Tracking issue #46](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/46). MP must be described as **unverified**, not certified/known working.
+- **Still relevant for the singleplayer merge:** final source-level review of chipper/MR governor cases and branch interaction (#39 parent, #45 child), successful CI on proposed heads, and clear scope notes. A genuine regression in an ordinary solo PTO workflow remains a release blocker. Future throughput-physics V2 is not required.
+- **No new user-side gameplay test requested at this stage.** Do not merge solely on a CI badge, but do not require an unavailable multiplayer test to decide whether the singleplayer functionality is ready.
+
+No code/runtime behavior is changed by this scope decision. Current `main` has not been modified.
+
 ## Three stages — status and merge decision
 
 | Stage | Scope | Status as of 2026-10-13 |
