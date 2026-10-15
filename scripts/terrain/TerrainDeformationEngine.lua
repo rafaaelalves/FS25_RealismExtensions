@@ -44,7 +44,7 @@ local function resolveInnerBermSide(vehicle, x, z, travelDirX, travelDirZ)
     return dot > 0 and 1 or -1
 end
 
-local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
+local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth, previousHistory, preDeformReferenceY)
     local h = {}
     for k, v in pairs(response.nextHistory or {}) do h[k] = v end
     h.rutDepthM = math.max(previousDepth or 0, (previousDepth or 0) + appliedDepth)
@@ -53,6 +53,19 @@ local function copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
     -- event-driven neighbor/municipal maintenance. The counter advances only
     -- on PERIOD_CHANGED and is persisted with SpatialHistory.
     h.maintenanceAgePeriods = 0
+
+    -- EXPERIMENTAL / OBSERVATION ONLY. Capture an actual pre-write terrain
+    -- height for newly formed RE ruts. This value MUST NOT command geometry
+    -- until native brush effects, overlap and persistence have been validated.
+    local previousReference = previousHistory ~= nil
+        and tonumber(previousHistory.preDeformHeightM) or nil
+    if previousReference ~= nil then
+        h.preDeformHeightM = previousReference
+    elseif (previousDepth or 0) <= 0 and type(preDeformReferenceY) == "number"
+        and preDeformReferenceY == preDeformReferenceY
+        and math.abs(preDeformReferenceY) < math.huge then
+        h.preDeformHeightM = preDeformReferenceY
+    end
     return h
 end
 
@@ -447,7 +460,7 @@ function Engine.processSample(
     if appliedDepth <= writer.options.minDepthM then
         -- Preserve shear/pass history even when the geometric delta is too
         -- small to justify a brush.
-        historyStore:commit(x, z, copyHistoryForAppliedDepth(response, previousDepth, 0))
+        historyStore:commit(x, z, copyHistoryForAppliedDepth(response, previousDepth, 0, history))
         diagCount("belowBrushThreshold", 1)
         return false
     end
@@ -467,6 +480,22 @@ function Engine.processSample(
         }
     end
 
+    -- First-touch reference is taken from the snapped SpatialHistory cell,
+    -- NOT from the arbitrary wheel/brush centre. Later brushes preserve the
+    -- first value rather than measuring terrain that RE has already lowered.
+    -- Never retroactively "recover" an existing legacy rut from current height.
+    local preDeformReferenceY = nil
+    if previousDepth <= 0
+        and (history == nil or history.preDeformHeightM == nil)
+        and type(historyStore.getCellCoordinates) == "function" then
+        local ix, iz = historyStore:getCellCoordinates(x, z)
+        local unit = tonumber(historyStore.cellSizeM) or 0.20
+        preDeformReferenceY = sampleTerrainHeight(ix * unit, iz * unit)
+        if preDeformReferenceY == nil then
+            diagCount("preDeformReferenceUnavailable", 1)
+        end
+    end
+
     local accepted = writer:enqueue({
         x = x,
         z = z,
@@ -480,8 +509,18 @@ function Engine.processSample(
         historyStore:commit(
             x,
             z,
-            copyHistoryForAppliedDepth(response, previousDepth, appliedDepth)
+            copyHistoryForAppliedDepth(
+                response, previousDepth, appliedDepth, history,
+                preDeformReferenceY
+            )
         )
+        if preDeformReferenceY ~= nil then
+            diagCount("preDeformReferenceCaptured", 1)
+        elseif history ~= nil and history.preDeformHeightM ~= nil then
+            diagCount("preDeformReferencePreserved", 1)
+        else
+            diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+        end
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
         if actor ~= nil then
