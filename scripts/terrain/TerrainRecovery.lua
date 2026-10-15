@@ -166,6 +166,10 @@ local function newStats()
         referenceV2Rejected = 0,
         referenceV2RejectReasons = {},
         referenceV2MaxDriftM = 0,
+        referenceV2RejectedMaxDriftM = 0,
+        referenceV2RejectedDriftSumM = 0,
+        referenceV2RejectedDriftCount = 0,
+        referenceV2RejectedDriftAbove100mm = 0,
         targetPlaneSignCrossings = 0,
         targetPlaneResidualReductionM = 0,
         targetPlaneResidualWorseningM = 0,
@@ -1071,9 +1075,9 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
     end
     params.causalAuthorized = true
 
-    local beforeProbe, referenceReason = nil, nil
+    local beforeProbe, referenceReason, referenceDrift = nil, nil, nil
     if type(writer.measureRecoveryAt) == "function" then
-        beforeProbe, referenceReason = writer:measureRecoveryAt(
+        beforeProbe, referenceReason, referenceDrift = writer:measureRecoveryAt(
             point.x,
             point.z,
             probeRadius,
@@ -1089,6 +1093,21 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
             local reason = tostring(referenceReason or "UNKNOWN")
             local counts = Recovery.stats.referenceV2RejectReasons
             counts[reason] = (counts[reason] or 0) + 1
+            if reason == "CURVED_OR_INCONSISTENT"
+                and type(referenceDrift) == "number" then
+                Recovery.stats.referenceV2RejectedDriftCount =
+                    Recovery.stats.referenceV2RejectedDriftCount + 1
+                Recovery.stats.referenceV2RejectedDriftSumM =
+                    Recovery.stats.referenceV2RejectedDriftSumM + referenceDrift
+                Recovery.stats.referenceV2RejectedMaxDriftM = math.max(
+                    Recovery.stats.referenceV2RejectedMaxDriftM,
+                    referenceDrift
+                )
+                if referenceDrift > 0.10 then
+                    Recovery.stats.referenceV2RejectedDriftAbove100mm =
+                        Recovery.stats.referenceV2RejectedDriftAbove100mm + 1
+                end
+            end
         end
         Recovery.pendingStamps[key] = nil
         Recovery.stats.structuralStalled =

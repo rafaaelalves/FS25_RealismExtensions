@@ -400,10 +400,14 @@ function RealismExtensionsCore:update(dt)
                     if RealismExtensionsConfig.modules ~= nil
                         and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
                         RealismExtensionsDiagnostics.verbose(string.format(
-                            "TerrainReferenceV2 | accepted=%d rejected=%d maxInnerOuterDrift=%.4fm",
+                            "TerrainReferenceV2 | accepted=%d rejected=%d acceptedMaxDrift=%.4fm rejectedMeanDrift=%.4fm rejectedMaxDrift=%.4fm rejectedAbove100mm=%d",
                             r.referenceV2Accepted or 0,
                             r.referenceV2Rejected or 0,
-                            r.referenceV2MaxDriftM or 0
+                            r.referenceV2MaxDriftM or 0,
+                            (r.referenceV2RejectedDriftSumM or 0)
+                                / math.max(1, r.referenceV2RejectedDriftCount or 0),
+                            r.referenceV2RejectedMaxDriftM or 0,
+                            r.referenceV2RejectedDriftAbove100mm or 0
                         ))
                         local reasons = {}
                         for reason, count in pairs(r.referenceV2RejectReasons or {}) do
@@ -540,6 +544,27 @@ function RealismExtensionsCore:update(dt)
                     d.stationaryMaxRutCapacityM or 0,
                     brushes or 0,
                     jobs or 0
+                ))
+
+                -- Experimental future-only original-height observation. This
+                -- data is intentionally NOT used to control terrain recovery.
+                local heightmapUnitM = -1
+                local terrainNode = g_currentMission ~= nil
+                    and g_currentMission.terrainRootNode or g_terrainNode
+                if type(getTerrainHeightmapUnitSize) == "function"
+                    and terrainNode ~= nil and terrainNode ~= 0 then
+                    local ok, unit = pcall(getTerrainHeightmapUnitSize, terrainNode)
+                    if ok and type(unit) == "number" then
+                        heightmapUnitM = unit
+                    end
+                end
+                RealismExtensionsDiagnostics.verbose(string.format(
+                    "TerrainPreDeformReference | captured=%d preserved=%d legacyOrUnavailable=%d sampleUnavailable=%d terrainUnit=%.4fm (observationOnly=true)",
+                    d.preDeformReferenceCaptured or 0,
+                    d.preDeformReferencePreserved or 0,
+                    d.preDeformReferenceLegacyOrUnavailable or 0,
+                    d.preDeformReferenceUnavailable or 0,
+                    heightmapUnitM
                 ))
 
                 local actorKinds = {

@@ -62,6 +62,11 @@ function Persistence.save(missionInfo, history)
         xmlFile:setInt(key .. "#iz", cell.iz)
 
         local h = cell.history or {}
+        -- Optional v3 observation; do not interpret legacy #surfaceHeightM
+        -- (post-save geometry consistency check) as a pre-deformation target.
+        if h.preDeformHeightM ~= nil then
+            xmlFile:setFloat(key .. "#preDeformHeightM", h.preDeformHeightM)
+        end
         if h.rutDepthM ~= nil then xmlFile:setFloat(key .. "#rutDepthM", h.rutDepthM) end
         if h.longitudinalShearDistanceM ~= nil then xmlFile:setFloat(key .. "#longitudinalShearDistanceM", h.longitudinalShearDistanceM) end
         if h.lateralShearDistanceM ~= nil then xmlFile:setFloat(key .. "#lateralShearDistanceM", h.lateralShearDistanceM) end
@@ -132,6 +137,7 @@ function Persistence.load(missionInfo, history)
         if cell.ix == nil or cell.iz == nil then return end
 
         local h = cell.history
+        h.preDeformHeightM = xmlFile:getFloat(key .. "#preDeformHeightM")
         h.rutDepthM = xmlFile:getFloat(key .. "#rutDepthM")
         h.longitudinalShearDistanceM = xmlFile:getFloat(key .. "#longitudinalShearDistanceM")
         h.lateralShearDistanceM = xmlFile:getFloat(key .. "#lateralShearDistanceM")

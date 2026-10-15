@@ -1,7 +1,7 @@
 RealismExtensionsSpatialHistory = RealismExtensionsSpatialHistory or {}
 local History = RealismExtensionsSpatialHistory
 
-History.VERSION = 6
+History.VERSION = 7
 
 local ACTIVE_DEBT_FIELDS = {
     "rutDepthM",
@@ -501,6 +501,9 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
 end
 
 local PERSISTED_FIELDS = {
+    -- Optional, future-only first-touch candidate from the original heightmap.
+    -- Existing/legacy cells without this field must never synthesize one.
+    "preDeformHeightM",
     "rutDepthM",
     "longitudinalShearDistanceM",
     "lateralShearDistanceM",
