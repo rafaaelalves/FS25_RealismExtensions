@@ -44,9 +44,13 @@ RealismExtensionsConfig = {
         PTOControl = true,
         TerrainDeformation = true,
         TerrainRecovery = true,
-        -- Experimental correction: refuse unsupported terrain reference planes.
-        -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
-        TerrainRecoveryReferenceV2 = true,
+        -- A/B experiment: replay field-proven R5 single-ring target reference.
+        -- Only on disposable save copies; the strict two-ring V2 reference
+        -- rejected ~99.7% of evaluations on the 15 Oct field dataset.
+        -- DO NOT interpret this as approval to remove V2 safety long-term.
+        -- TARGET actuator, rut ownership, amount, radius and all tool profiles
+        -- remain unchanged. Re-enable V2 on the control build for comparison.
+        TerrainRecoveryReferenceV2 = false,
         -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
         -- toggle false to compare original R6 behavior on the same backup save.
         TerrainPlasticYield = true,
