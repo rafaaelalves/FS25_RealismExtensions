@@ -94,7 +94,9 @@ function V2.measure(samples, options)
     local maxDrift = tonumber(options.maxRingReferenceDriftM)
         or V2.DEFAULTS.maxRingReferenceDriftM
     if driftM > maxDrift then
-        return nil, "CURVED_OR_INCONSISTENT"
+        -- Third return is observational evidence only. Do not silently relax
+        -- the rejection threshold until the cause is identified.
+        return nil, "CURVED_OR_INCONSISTENT", driftM
     end
 
     local measureInput = { {
