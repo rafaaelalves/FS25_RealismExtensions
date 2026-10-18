@@ -1,7 +1,7 @@
 # AutoSwitch 1.0.0.58 — RE research: wheel-set inventory, RMS AUTO policy and surface actions
 
 **Date:** 2026-10-18. **Mode:** DESIGN-ONLY, not a feature, no code or version change.  
-**Primary source:** exact uploaded `FS25_AutoSwitch.zip`, SHA-256 `ee20772aeddde5c567d99f004f9282541b7d50a634c7146fc21ac7cf38ce3c25`, modDesc v1.0.0.58. [Companion RC full-source audit](https://github.com/rafaaelalves/FS25_RealismCompatibility/blob/docs/audit-autoswitch-1.0.0.58-2026-10-18/docs/audits/2026-10-18-autoswitch-1.0.0.58-full-stack-and-architecture-audit.md). Source author `Fabien`; public [KingMods v1.0.0.5](https://www.kingmods.net/en/fs25/mods/82844/autoswitch) attributed to `bibifr`. Version/public ZIP equivalence not verified.
+**Primary source:** exact uploaded `FS25_AutoSwitch.zip`, SHA-256 `ee20772aeddde5c567d99f004f9282541b7d50a634c7146fc21ac7cf38ce3c25`, modDesc v1.0.0.58. [Companion RC full-source audit](https://github.com/rafaaelalves/FS25_RealismCompatibility/blob/main/docs/audits/2026-10-18-autoswitch-1.0.0.58-full-stack-and-architecture-audit.md). Source author `Fabien`; public [KingMods v1.0.0.5](https://www.kingmods.net/en/fs25/mods/82844/autoswitch) attributed to `bibifr`. Version/public ZIP equivalence not verified.
 
 ## Decision
 
