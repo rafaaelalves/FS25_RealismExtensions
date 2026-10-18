@@ -72,3 +72,14 @@ Parallel research, not a separate physics owner:
 - unified state-driven HUD.
 
 These are candidates, not promises. Every module must justify ownership and maintenance cost.
+
+
+## Supporting research (after current terrain recovery blocker) — TTD 3.7 source lessons
+
+- [x] Source study completed: TTD 1.0.3.7 `FS25_TTD_v3_7_BETA.zip` is a **reference specimen, not an RE/RC dependency**. Its wheel-radius and slip/grip/engine writers overlap Mud/MR/Reifen/RMS. It does not provide pre-rut heightmap restoration.
+- [ ] **P1, alongside V3 recovery tests:** introduce adverse reference-estimator fixtures (natural slope, curvature, TerraFarm pits, fresh RE rut, old-save unknown anchors, native heightmap vertex unit and tracked wheelspin). This is a testing extension of current reconstruction V3, not a new mechanic.
+- [ ] **P1, only if needed after auditing existing state interfaces:** define read-only per-wheel SurfaceContext, provenance/epoch/units, meaningful enter/exit hysteresis for field/road/natural/object; consume Mud wetness and MR/RC slip, never write their physics.
+- [ ] **P2 parked:** per-vehicle *RE-owned* calibration/test-lab profiles with server validation, stable vehicle IDs and reset, after geometry model is validated in-game.
+- [ ] **P3 parked:** tractor/trailer measurable hitch/drawbar force and wheelshape displacement comparison. TTD scalar trailer slip is not an actual force; don't introduce a new engine load writer.
+
+[TTD research memo](../research/2026-10-18-ttd-v3.7-terrain-response-lessons.md). Existing RE PTO V1.6/terrain defaults and normative [ownership](OWNERSHIP.md) unchanged.
