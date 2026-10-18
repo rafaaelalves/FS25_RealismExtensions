@@ -12,3 +12,7 @@ Use documents by purpose instead of reading everything.
 - `research/`: unresolved technical exploration.
 
 Do not duplicate current status into audit/research notes. Link to the canonical file instead.
+
+## Recent external-mod lessons
+
+- [`research/2026-10-18-ttd-v3.7-terrain-response-lessons.md`](research/2026-10-18-ttd-v3.7-terrain-response-lessons.md): **research-only TTD v3.7** — surface classification and bounded per-machine calibration ideas, height-reference false-positive test cases, no radius/friction/terrain physics copy.
