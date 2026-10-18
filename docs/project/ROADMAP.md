@@ -93,3 +93,13 @@ These are candidates, not promises. Every module must justify ownership and main
 - [ ] **P2 parked:** measurable load-transfer and hitch/brake/roll comparison, not arbitrary rootNode roll angle or synthetic torque division.
 
 [DDP terrain safety memo](../research/2026-10-18-dynamicdrivepro-terrain-writer-safety-lessons.md). Existing RE terrain production toggle remains OFF and V3 actuator/provenance evidence is not upgraded by this audit.
+
+
+## Supporting research — AutoSwitch 1.0.0.58 wheel exchange / RMS AUTO (2026-10-18)
+- [x] Audit exact `FS25_AutoSwitch.zip` SHA256 `ee20772aeddde5c567d99f004f9282541b7d50a634c7146fc21ac7cf38ce3c25`. Mixed RC-like global arbiter/physics controller requires TTD+DDP; no source support for adding to active MR/Mud/Reifen/RMS stack.
+- [ ] **P1 after current Terrain V3 acceptance:** refine previously parked interchangeable-parts vision with a safe wheel-set inventory/transaction model (actual stored front/rear wheels, wear/pressure, 15-minute service step per tire, cancel/rollback and stable vehicle identity). Study native GIANTS reconfiguration before adopting vehicle-XML reload workaround; no external assets.
+- [ ] **P1 parallel source research, not implementation:** review RMS 0.12's public differential/park command authority and Realistic 4x4 audit for AUTO recommendation when axle slip > threshold; support manual/AI takeover, steering safety and fail-closed unknown drivetrain.
+- [ ] **P2:** off-field grass/crop trampling and re-sowing semantics through native GIANTS density map, respecting SoilCompaction and FarmKit; distinct from terrain geometry.
+- [ ] **P3:** tire track **visual** save/replay and unbraked trailer mud drag as isolated measurement tasks, not presumed physics gaps.
+
+[AutoSwitch RE research memo](../research/2026-10-18-autoswitch-decision-policy-and-wheel-racks.md). Current RE PTO V1.6, RC per-bridge arbitration and `TerrainDeformation=false` in main remain unchanged.
