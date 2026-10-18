@@ -83,3 +83,13 @@ These are candidates, not promises. Every module must justify ownership and main
 - [ ] **P3 parked:** tractor/trailer measurable hitch/drawbar force and wheelshape displacement comparison. TTD scalar trailer slip is not an actual force; don't introduce a new engine load writer.
 
 [TTD research memo](../research/2026-10-18-ttd-v3.7-terrain-response-lessons.md). Existing RE PTO V1.6/terrain defaults and normative [ownership](OWNERSHIP.md) unchanged.
+
+
+## Supporting research — DynamicDrive Pro terrain-write safety (2026-10-18)
+
+- [x] Source inspect exact DynamicDrive Pro 1.0.1.0 ZIP `bf7fff1f1167dcf6c28a877da08ae1a2a8c3e5382407e0b4cde64457f632c52f`; it *attempts* native world-height writes and absolute post-height replay but contains nil scoped wheel hook, uninitialized `trackCells`, undefined `finalSink` and unused/unregistered modules. **No runtime adoption or RE port**.
+- [ ] **P0 during V3 safety work:** add constructor/history/hook reachability tests, vertex actor ownership, native brush/height API existence checks, per-vertex max depression, repeated stationary-wheel callback frame-rate invariance, and mixed TerraFarm/RE save-reload identity tests.
+- [ ] **P1 optional:** read-only per-wheel surface/tyre category metadata using Mud/RC/RE authoritative providers; no direct friction or torque write.
+- [ ] **P2 parked:** measurable load-transfer and hitch/brake/roll comparison, not arbitrary rootNode roll angle or synthetic torque division.
+
+[DDP terrain safety memo](../research/2026-10-18-dynamicdrivepro-terrain-writer-safety-lessons.md). Existing RE terrain production toggle remains OFF and V3 actuator/provenance evidence is not upgraded by this audit.
