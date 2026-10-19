@@ -376,4 +376,52 @@ assert(Recovery.getDiagnostics().passActive==0)
 assert(Recovery.getDiagnostics().passCompleted==1)
 assert(perfBegins==perfFinishes)
 
+-- 9. New R1 real-game evidence: RE-owned candidates can repeatedly fail
+-- Reference V2 even while the implement keeps authorizing the same footprint.
+-- Avoid probing the same untrusted plane every 80ms, including when a new
+-- work-area callback coalesces the deferred request under the same key.
+seedHistory({{x=0.40,z=0.40,rutDepthM=0.050}})
+Recovery.resetRuntimeState()
+g_currentMission.time=g_currentMission.time+2000
+local oldMeasure=writer.measureRecoveryAt
+local rejectedProbes=0
+writer.measureRecoveryAt=function(self,x,z,radius)
+    rejectedProbes=rejectedProbes+1
+    return nil,"CURVED_OR_INCONSISTENT",0.120
+end
+
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+g_currentMission.time=g_currentMission.time+100
+Recovery.update(16)
+assert(rejectedProbes==1,"first scheduled V2 probe is attempted")
+local firstRejectedMs=g_currentMission.time
+local rejectBackoffMs=Recovery.DEFAULTS.structuralReferenceRejectedRetryMs
+assert(Recovery.getDiagnostics().referenceV2Backoffs==1)
+
+-- A fresh real work-area callback must not erase the short reference wait.
+g_currentMission.time=firstRejectedMs+200
+Recovery.processCultivatorArea(vehicle,repeatSuper,workArea,16)
+g_currentMission.time=firstRejectedMs+rejectBackoffMs-100
+for i=1,8 do Recovery.update(16) end
+assert(rejectedProbes==1,"work-area refresh must preserve V2 backoff")
+assert(#pending==0,"reference rejection never schedules TARGET")
+
+g_currentMission.time=firstRejectedMs+rejectBackoffMs+100
+Recovery.update(16)
+assert(rejectedProbes==2,"V2 retry resumes after bounded backoff")
+assert(Recovery.getDiagnostics().referenceV2Backoffs==2)
+assert(Recovery.getDiagnostics().targetPlaneApplied==0)
+
+-- No new physically working area: the original V2 refusal deadline must
+-- expire even if several false retries refreshed deferred-entry TTL.
+g_currentMission.time=firstRejectedMs+Recovery.DEFAULTS.structuralTtlMs+200
+Recovery.update(16)
+local expired=Recovery.getDiagnostics()
+assert(expired.deferredCount==0,"expired invalid reference must leave queue")
+assert(expired.referenceV2RetryDeadlineExpiries==1)
+assert(rejectedProbes==2,"deadline must prevent further native probes")
+
+writer.measureRecoveryAt=oldMeasure
+Recovery.resetRuntimeState()
+
 print("terrain_recovery_r7_tillage_profiles_harness: OK")

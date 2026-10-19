@@ -49,6 +49,10 @@ Recovery.DEFAULTS = {
     structuralPatchMaxCells = 64,
 
     structuralRetryMs = 80,
+    -- A rejected V2 local plane cannot become trustworthy merely by running
+    -- the same probes again next frame. Back off expensive reference probes
+    -- without dropping the authorized rut or weakening curvature rejection.
+    structuralReferenceRejectedRetryMs = 1200,
     structuralTtlMs = 8000,
     structuralInFlightTimeoutMs = 2000,
     maxStructuralPulses = 6,
@@ -180,6 +184,8 @@ local function newStats()
         targetPlaneLowConfidence = 0,
         referenceV2Accepted = 0,
         referenceV2Rejected = 0,
+        referenceV2Backoffs = 0,
+        referenceV2RetryDeadlineExpiries = 0,
         referenceV2RejectReasons = {},
         referenceV2MaxDriftM = 0,
         referenceV2RejectedMaxDriftM = 0,
@@ -1183,6 +1189,23 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 end
             end
         end
+        if referenceReason == "CURVED_OR_INCONSISTENT" then
+            -- The existing queue TTL resets whenever an invalid reference
+            -- is retried, so absent an absolute deadline V2 can poll forever
+            -- long after the implement stopped its physical work.
+            params.referenceRetryDeadlineMs =
+                tonumber(params.referenceRetryDeadlineMs)
+                or (nowMs + Recovery.DEFAULTS.structuralTtlMs)
+            -- A fresh *work area* can keep authorizing this spatial key, but
+            -- the deferred queue must not undo this minimum retry interval.
+            -- A small bounded wait does not claim that old geometry is valid.
+            params.referenceRetryUntilMs = math.max(
+                tonumber(params.referenceRetryUntilMs) or 0,
+                nowMs + Recovery.DEFAULTS.structuralReferenceRejectedRetryMs
+            )
+            Recovery.stats.referenceV2Backoffs =
+                Recovery.stats.referenceV2Backoffs + 1
+        end
         Recovery.pendingStamps[key] = nil
         Recovery.stats.structuralStalled =
             Recovery.stats.structuralStalled + 1
@@ -1643,6 +1666,25 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
 
     local existing = Recovery.deferredByKey[key]
     if existing ~= nil then
+        -- Preserve the temporary reference-failure backoff when a repeated
+        -- GIANTS work-area callback refreshes the request's params.
+        if kind == "STRUCTURAL" and existing.kind == "STRUCTURAL" then
+            params.referenceRetryUntilMs = math.max(
+                tonumber(params.referenceRetryUntilMs) or 0,
+                tonumber(existing.params.referenceRetryUntilMs) or 0
+            )
+            -- Overlapping work-area callbacks must not re-arm a previous
+            -- refused reference indefinitely through params replacement.
+            local oldDeadline = tonumber(
+                existing.params.referenceRetryDeadlineMs
+            )
+            if oldDeadline ~= nil then
+                params.referenceRetryDeadlineMs = math.min(
+                    tonumber(params.referenceRetryDeadlineMs) or math.huge,
+                    oldDeadline
+                )
+            end
+        end
         existing.x = point.x
         existing.z = point.z
         existing.params = params
@@ -1659,15 +1701,19 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
             or Recovery.DEFAULTS.deferredTtlMs
         )
         existing.lastRequestedMs = nowMs
-        existing.nextAttemptMs = math.min(
-            tonumber(existing.nextAttemptMs) or math.huge,
-            nowMs + (
-                kind == "CONVERGENCE"
-                    and Recovery.DEFAULTS.convergenceRetryMs
-                or kind == "STRUCTURAL"
-                    and Recovery.DEFAULTS.structuralRetryMs
-                or Recovery.DEFAULTS.deferredRetryMs
-            )
+        existing.nextAttemptMs = math.max(
+            math.min(
+                tonumber(existing.nextAttemptMs) or math.huge,
+                nowMs + (
+                    kind == "CONVERGENCE"
+                        and Recovery.DEFAULTS.convergenceRetryMs
+                    or kind == "STRUCTURAL"
+                        and Recovery.DEFAULTS.structuralRetryMs
+                    or Recovery.DEFAULTS.deferredRetryMs
+                )
+            ),
+            kind == "STRUCTURAL"
+                and (tonumber(params.referenceRetryUntilMs) or 0) or 0
         )
         Recovery.stats.deferredCoalesced =
             Recovery.stats.deferredCoalesced + 1
@@ -1701,7 +1747,11 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
         pulseIndex = pulseIndex,
         createdAtMs = nowMs,
         lastRequestedMs = nowMs,
-        nextAttemptMs = nowMs + retryMs,
+        nextAttemptMs = math.max(
+            nowMs + retryMs,
+            kind == "STRUCTURAL"
+                and (tonumber(params.referenceRetryUntilMs) or 0) or 0
+        ),
         expiresAtMs = nowMs + ttlMs
     }
 
@@ -1792,6 +1842,18 @@ function Recovery.update(dt)
                     Recovery.stats.deferredExpired =
                         Recovery.stats.deferredExpired + 1
                 end
+            elseif isStructural
+                and type(entry.params) == "table"
+                and tonumber(entry.params.referenceRetryDeadlineMs) ~= nil
+                and nowMs > tonumber(entry.params.referenceRetryDeadlineMs) then
+                -- A rejected local plane must not be re-probed indefinitely
+                -- after the latest authorized area has ceased to request it.
+                -- Future genuine work-area callbacks can create a new request.
+                removeDeferred(entry)
+                Recovery.stats.structuralStalled =
+                    Recovery.stats.structuralStalled + 1
+                Recovery.stats.referenceV2RetryDeadlineExpiries =
+                    Recovery.stats.referenceV2RetryDeadlineExpiries + 1
             elseif not isConvergence and not isStructural
                 and not stampAvailable(entry.key, nowMs) then
                 -- Another direct/deferred brush already handled this blocked
