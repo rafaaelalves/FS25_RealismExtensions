@@ -411,6 +411,16 @@ Recovery.update(16)
 assert(rejectedProbes==2,"V2 retry resumes after bounded backoff")
 assert(Recovery.getDiagnostics().referenceV2Backoffs==2)
 assert(Recovery.getDiagnostics().targetPlaneApplied==0)
+
+-- No new physically working area: the original V2 refusal deadline must
+-- expire even if several false retries refreshed deferred-entry TTL.
+g_currentMission.time=firstRejectedMs+Recovery.DEFAULTS.structuralTtlMs+200
+Recovery.update(16)
+local expired=Recovery.getDiagnostics()
+assert(expired.deferredCount==0,"expired invalid reference must leave queue")
+assert(expired.referenceV2RetryDeadlineExpiries==1)
+assert(rejectedProbes==2,"deadline must prevent further native probes")
+
 writer.measureRecoveryAt=oldMeasure
 Recovery.resetRuntimeState()
 
