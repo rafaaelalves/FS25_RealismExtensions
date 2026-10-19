@@ -421,6 +421,29 @@ function RealismExtensionsCore:update(dt)
                         end
                     end
 
+                    -- Sampled attribution for empty recovery footprints.
+                    -- Counts are observations across repeated work-area queries,
+                    -- not unique world-space cells or physical mesh changes.
+                    if (r.eligibilityEvidenceSamples or 0) > 0 then
+                        RealismExtensionsDiagnostics.verbose(string.format(
+                            "TerrainEligibility | sampledAreas=%d emptyNoHistory=%d emptyLowRut=%d emptyOffFootprint=%d emptyOther=%d bboxCells=%d historyBBox=%d historyArea=%d rutBBox=%d rutArea=%d belowMin=%d cooldown=%d truncated=%d maxRutArea=%.4fm",
+                            r.eligibilityEvidenceSamples or 0,
+                            r.eligibilityNoHistoryAreas or 0,
+                            r.eligibilityBelowThresholdAreas or 0,
+                            r.eligibilityOutsideFootprintAreas or 0,
+                            r.eligibilityOtherEmptyAreas or 0,
+                            r.eligibilityBBoxCells or 0,
+                            r.eligibilityHistoryInBBox or 0,
+                            r.eligibilityHistoryInArea or 0,
+                            r.eligibilityRutInBBox or 0,
+                            r.eligibilityRutInArea or 0,
+                            r.eligibilityBelowThresholdInArea or 0,
+                            r.eligibilityCooldownBlockedInArea or 0,
+                            r.eligibilityTruncatedSamples or 0,
+                            r.eligibilityMaxRutInAreaM or 0
+                        ))
+                    end
+
                     local toolParts = {}
                     local toolOrder = {
                         "CULTIVATOR",
