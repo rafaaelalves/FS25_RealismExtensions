@@ -306,8 +306,15 @@ pump()
 seedHistory({})
 Recovery.resetRuntimeState()
 g_currentMission.time=g_currentMission.time+1000
+RealismExtensionsConfig.diagnostics={verbose=true}
 Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
-assert(Recovery.getDiagnostics().intentCandidateCells==0)
+d=Recovery.getDiagnostics()
+assert(d.intentCandidateCells==0)
+assert(d.eligibilityEvidenceSamples==1)
+assert(d.eligibilityNoHistoryAreas==1)
+assert(d.structuralScheduled==0)
+assert(d.targetPlaneApplied==0)
+RealismExtensionsConfig.diagnostics=nil
 
 -- 6. Tool capability survives deferred scheduling and reaches TARGET.
 seedHistory({{x=0.40,z=0.40,rutDepthM=0.040}})

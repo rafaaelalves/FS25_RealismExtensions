@@ -263,6 +263,24 @@ function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, opti
     local nowMs = tonumber(options.nowMs) or 0
     local maxCells = math.max(1, math.floor(tonumber(options.maxCells) or 64))
 
+    -- Optional bounded eligibility evidence piggybacks on the existing fine
+    -- search. No extra field scan, heightmap read or gameplay decision.
+    -- These counts describe only the scanned subset if maxCells is reached.
+    local evidence = type(options.eligibilityEvidence) == "table"
+        and options.eligibilityEvidence or nil
+    if evidence ~= nil then
+        evidence.bboxCells = 0
+        evidence.historyInBBox = 0
+        evidence.historyInArea = 0
+        evidence.rutInBBox = 0
+        evidence.rutInArea = 0
+        evidence.belowThresholdInArea = 0
+        evidence.cooldownBlockedInArea = 0
+        evidence.eligibleInArea = 0
+        evidence.maxRutInAreaM = 0
+        evidence.truncated = false
+    end
+
     local xo, zo = xw + xh - xs, zw + zh - zs
     local minX = math.min(xs, xw, xh, xo)
     local maxX = math.max(xs, xw, xh, xo)
@@ -284,17 +302,58 @@ function History:getRecoveryCandidatesParallelogram(xs, zs, xw, zw, xh, zh, opti
             local eligibleByTime = lastMs == nil or nowMs <= 0
                 or nowMs - lastMs >= cooldownMs
             local x, z = ix * self.cellSizeM, iz * self.cellSizeM
+            local inside = nil
+            if evidence ~= nil then
+                evidence.bboxCells = evidence.bboxCells + 1
+                if h ~= nil then
+                    evidence.historyInBBox = evidence.historyInBBox + 1
+                    if rut >= minRutM then
+                        evidence.rutInBBox = evidence.rutInBBox + 1
+                    end
+                    inside = pointInParallelogram(
+                        x, z, xs, zs, xw, zw, xh, zh
+                    )
+                    if inside then
+                        evidence.historyInArea = evidence.historyInArea + 1
+                        evidence.maxRutInAreaM = math.max(
+                            evidence.maxRutInAreaM, rut
+                        )
+                        if rut < minRutM then
+                            evidence.belowThresholdInArea =
+                                evidence.belowThresholdInArea + 1
+                        else
+                            evidence.rutInArea = evidence.rutInArea + 1
+                            if not eligibleByTime then
+                                evidence.cooldownBlockedInArea =
+                                    evidence.cooldownBlockedInArea + 1
+                            end
+                        end
+                    end
+                end
+            end
 
+            -- With evidence disabled, preserve the original short-circuit path.
             if rut >= minRutM and eligibleByTime
-                and pointInParallelogram(x, z, xs, zs, xw, zw, xh, zh) then
+                and (inside == true or (
+                    inside == nil and pointInParallelogram(
+                        x, z, xs, zs, xw, zw, xh, zh
+                    )
+                )) then
                 out[#out + 1] = {
                     key = key,
                     x = x,
                     z = z,
                     rutDepthM = rut
                 }
+                if evidence ~= nil then
+                    evidence.eligibleInArea =
+                        evidence.eligibleInArea + 1
+                end
             end
         end
+    end
+    if evidence ~= nil then
+        evidence.truncated = #out >= maxCells
     end
     return out
 end
