@@ -1673,6 +1673,17 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
                 tonumber(params.referenceRetryUntilMs) or 0,
                 tonumber(existing.params.referenceRetryUntilMs) or 0
             )
+            -- Overlapping work-area callbacks must not re-arm a previous
+            -- refused reference indefinitely through params replacement.
+            local oldDeadline = tonumber(
+                existing.params.referenceRetryDeadlineMs
+            )
+            if oldDeadline ~= nil then
+                params.referenceRetryDeadlineMs = math.min(
+                    tonumber(params.referenceRetryDeadlineMs) or math.huge,
+                    oldDeadline
+                )
+            end
         end
         existing.x = point.x
         existing.z = point.z
