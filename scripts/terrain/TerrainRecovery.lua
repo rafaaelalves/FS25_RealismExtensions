@@ -109,6 +109,22 @@ local function newStats()
         intentPoints = 0,
         intentEmptyWorkAreas = 0,
         intentMaxRutM = 0,
+        -- Read-only, bounded samples of the same history search performed
+        -- during actual tillage. These are evaluations, not unique cells.
+        eligibilityEvidenceSamples = 0,
+        eligibilityBBoxCells = 0,
+        eligibilityHistoryInBBox = 0,
+        eligibilityHistoryInArea = 0,
+        eligibilityRutInBBox = 0,
+        eligibilityRutInArea = 0,
+        eligibilityBelowThresholdInArea = 0,
+        eligibilityCooldownBlockedInArea = 0,
+        eligibilityNoHistoryAreas = 0,
+        eligibilityBelowThresholdAreas = 0,
+        eligibilityOutsideFootprintAreas = 0,
+        eligibilityOtherEmptyAreas = 0,
+        eligibilityTruncatedSamples = 0,
+        eligibilityMaxRutInAreaM = 0,
         intentDeferredGone = 0,
         stampSkips = 0,
         brushesEnqueued = 0,
@@ -420,6 +436,17 @@ local function buildHistoryGuidedPoints(
         return {}
     end
 
+    -- Instrument existing work-area queries, not the native heightmap.
+    -- First 24 plus every 16th area are sampled in development builds;
+    -- sampling never authorizes a physical repair or changes the candidate set.
+    local diag = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.diagnostics or nil
+    local areaCalls = Recovery.stats.workedAreaCalls or 0
+    local inspectEligibility = diag ~= nil
+        and diag.verbose == true
+        and (areaCalls <= 24 or areaCalls % 16 == 0)
+    local evidence = inspectEligibility and {} or nil
+
     local candidates = history:getRecoveryCandidatesParallelogram(
         g.xs,
         g.zs,
@@ -431,12 +458,59 @@ local function buildHistoryGuidedPoints(
             minRutM = Recovery.DEFAULTS.minHistoryIntentRutM,
             nowMs = nowMs,
             cooldownMs = 0,
-            maxCells = Recovery.DEFAULTS.historyIntentMaxCells
+            maxCells = Recovery.DEFAULTS.historyIntentMaxCells,
+            eligibilityEvidence = evidence
         }
     ) or {}
 
     Recovery.stats.intentCandidateCells =
         Recovery.stats.intentCandidateCells + #candidates
+
+    if evidence ~= nil then
+        local stats = Recovery.stats
+        stats.eligibilityEvidenceSamples =
+            stats.eligibilityEvidenceSamples + 1
+        stats.eligibilityBBoxCells =
+            stats.eligibilityBBoxCells + evidence.bboxCells
+        stats.eligibilityHistoryInBBox =
+            stats.eligibilityHistoryInBBox + evidence.historyInBBox
+        stats.eligibilityHistoryInArea =
+            stats.eligibilityHistoryInArea + evidence.historyInArea
+        stats.eligibilityRutInBBox =
+            stats.eligibilityRutInBBox + evidence.rutInBBox
+        stats.eligibilityRutInArea =
+            stats.eligibilityRutInArea + evidence.rutInArea
+        stats.eligibilityBelowThresholdInArea =
+            stats.eligibilityBelowThresholdInArea
+            + evidence.belowThresholdInArea
+        stats.eligibilityCooldownBlockedInArea =
+            stats.eligibilityCooldownBlockedInArea
+            + evidence.cooldownBlockedInArea
+        stats.eligibilityMaxRutInAreaM = math.max(
+            stats.eligibilityMaxRutInAreaM,
+            evidence.maxRutInAreaM
+        )
+        if evidence.truncated then
+            stats.eligibilityTruncatedSamples =
+                stats.eligibilityTruncatedSamples + 1
+        end
+        if #candidates == 0 then
+            if evidence.historyInArea == 0 then
+                stats.eligibilityNoHistoryAreas =
+                    stats.eligibilityNoHistoryAreas + 1
+                if evidence.rutInBBox > 0 then
+                    stats.eligibilityOutsideFootprintAreas =
+                        stats.eligibilityOutsideFootprintAreas + 1
+                end
+            elseif evidence.rutInArea == 0 then
+                stats.eligibilityBelowThresholdAreas =
+                    stats.eligibilityBelowThresholdAreas + 1
+            else
+                stats.eligibilityOtherEmptyAreas =
+                    stats.eligibilityOtherEmptyAreas + 1
+            end
+        end
+    end
 
     if #candidates == 0 then
         Recovery.stats.intentEmptyWorkAreas =
