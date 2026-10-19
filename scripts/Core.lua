@@ -400,14 +400,15 @@ function RealismExtensionsCore:update(dt)
                     if RealismExtensionsConfig.modules ~= nil
                         and RealismExtensionsConfig.modules.TerrainRecoveryReferenceV2 == true then
                         RealismExtensionsDiagnostics.verbose(string.format(
-                            "TerrainReferenceV2 | accepted=%d rejected=%d acceptedMaxDrift=%.4fm rejectedMeanDrift=%.4fm rejectedMaxDrift=%.4fm rejectedAbove100mm=%d",
+                            "TerrainReferenceV2 | accepted=%d rejected=%d acceptedMaxDrift=%.4fm rejectedMeanDrift=%.4fm rejectedMaxDrift=%.4fm rejectedAbove100mm=%d referenceBackoffs=%d",
                             r.referenceV2Accepted or 0,
                             r.referenceV2Rejected or 0,
                             r.referenceV2MaxDriftM or 0,
                             (r.referenceV2RejectedDriftSumM or 0)
                                 / math.max(1, r.referenceV2RejectedDriftCount or 0),
                             r.referenceV2RejectedMaxDriftM or 0,
-                            r.referenceV2RejectedDriftAbove100mm or 0
+                            r.referenceV2RejectedDriftAbove100mm or 0,
+                            r.referenceV2Backoffs or 0
                         ))
                         local reasons = {}
                         for reason, count in pairs(r.referenceV2RejectReasons or {}) do
