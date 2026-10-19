@@ -49,6 +49,10 @@ Recovery.DEFAULTS = {
     structuralPatchMaxCells = 64,
 
     structuralRetryMs = 80,
+    -- A rejected V2 local plane cannot become trustworthy merely by running
+    -- the same probes again next frame. Back off expensive reference probes
+    -- without dropping the authorized rut or weakening curvature rejection.
+    structuralReferenceRejectedRetryMs = 1200,
     structuralTtlMs = 8000,
     structuralInFlightTimeoutMs = 2000,
     maxStructuralPulses = 6,
@@ -180,6 +184,7 @@ local function newStats()
         targetPlaneLowConfidence = 0,
         referenceV2Accepted = 0,
         referenceV2Rejected = 0,
+        referenceV2Backoffs = 0,
         referenceV2RejectReasons = {},
         referenceV2MaxDriftM = 0,
         referenceV2RejectedMaxDriftM = 0,
@@ -1183,6 +1188,17 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
                 end
             end
         end
+        if referenceReason == "CURVED_OR_INCONSISTENT" then
+            -- A fresh *work area* can keep authorizing this spatial key, but
+            -- the deferred queue must not undo this minimum retry interval.
+            -- A small bounded wait does not claim that old geometry is valid.
+            params.referenceRetryUntilMs = math.max(
+                tonumber(params.referenceRetryUntilMs) or 0,
+                nowMs + Recovery.DEFAULTS.structuralReferenceRejectedRetryMs
+            )
+            Recovery.stats.referenceV2Backoffs =
+                Recovery.stats.referenceV2Backoffs + 1
+        end
         Recovery.pendingStamps[key] = nil
         Recovery.stats.structuralStalled =
             Recovery.stats.structuralStalled + 1
@@ -1643,6 +1659,14 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
 
     local existing = Recovery.deferredByKey[key]
     if existing ~= nil then
+        -- Preserve the temporary reference-failure backoff when a repeated
+        -- GIANTS work-area callback refreshes the request's params.
+        if kind == "STRUCTURAL" and existing.kind == "STRUCTURAL" then
+            params.referenceRetryUntilMs = math.max(
+                tonumber(params.referenceRetryUntilMs) or 0,
+                tonumber(existing.params.referenceRetryUntilMs) or 0
+            )
+        end
         existing.x = point.x
         existing.z = point.z
         existing.params = params
@@ -1659,15 +1683,19 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
             or Recovery.DEFAULTS.deferredTtlMs
         )
         existing.lastRequestedMs = nowMs
-        existing.nextAttemptMs = math.min(
-            tonumber(existing.nextAttemptMs) or math.huge,
-            nowMs + (
-                kind == "CONVERGENCE"
-                    and Recovery.DEFAULTS.convergenceRetryMs
-                or kind == "STRUCTURAL"
-                    and Recovery.DEFAULTS.structuralRetryMs
-                or Recovery.DEFAULTS.deferredRetryMs
-            )
+        existing.nextAttemptMs = math.max(
+            math.min(
+                tonumber(existing.nextAttemptMs) or math.huge,
+                nowMs + (
+                    kind == "CONVERGENCE"
+                        and Recovery.DEFAULTS.convergenceRetryMs
+                    or kind == "STRUCTURAL"
+                        and Recovery.DEFAULTS.structuralRetryMs
+                    or Recovery.DEFAULTS.deferredRetryMs
+                )
+            ),
+            kind == "STRUCTURAL"
+                and (tonumber(params.referenceRetryUntilMs) or 0) or 0
         )
         Recovery.stats.deferredCoalesced =
             Recovery.stats.deferredCoalesced + 1
@@ -1701,7 +1729,11 @@ scheduleDeferred = function(point, key, params, nowMs, kind, pulseIndex)
         pulseIndex = pulseIndex,
         createdAtMs = nowMs,
         lastRequestedMs = nowMs,
-        nextAttemptMs = nowMs + retryMs,
+        nextAttemptMs = math.max(
+            nowMs + retryMs,
+            kind == "STRUCTURAL"
+                and (tonumber(params.referenceRetryUntilMs) or 0) or 0
+        ),
         expiresAtMs = nowMs + ttlMs
     }
 
