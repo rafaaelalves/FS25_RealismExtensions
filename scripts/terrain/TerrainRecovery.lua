@@ -471,38 +471,38 @@ local function buildHistoryGuidedPoints(
         stats.eligibilityEvidenceSamples =
             stats.eligibilityEvidenceSamples + 1
         stats.eligibilityBBoxCells =
-            stats.eligibilityBBoxCells + evidence.bboxCells
+            stats.eligibilityBBoxCells + (evidence.bboxCells or 0)
         stats.eligibilityHistoryInBBox =
-            stats.eligibilityHistoryInBBox + evidence.historyInBBox
+            stats.eligibilityHistoryInBBox + (evidence.historyInBBox or 0)
         stats.eligibilityHistoryInArea =
-            stats.eligibilityHistoryInArea + evidence.historyInArea
+            stats.eligibilityHistoryInArea + (evidence.historyInArea or 0)
         stats.eligibilityRutInBBox =
-            stats.eligibilityRutInBBox + evidence.rutInBBox
+            stats.eligibilityRutInBBox + (evidence.rutInBBox or 0)
         stats.eligibilityRutInArea =
-            stats.eligibilityRutInArea + evidence.rutInArea
+            stats.eligibilityRutInArea + (evidence.rutInArea or 0)
         stats.eligibilityBelowThresholdInArea =
             stats.eligibilityBelowThresholdInArea
-            + evidence.belowThresholdInArea
+            + (evidence.belowThresholdInArea or 0)
         stats.eligibilityCooldownBlockedInArea =
             stats.eligibilityCooldownBlockedInArea
-            + evidence.cooldownBlockedInArea
+            + (evidence.cooldownBlockedInArea or 0)
         stats.eligibilityMaxRutInAreaM = math.max(
             stats.eligibilityMaxRutInAreaM,
-            evidence.maxRutInAreaM
+            evidence.maxRutInAreaM or 0
         )
         if evidence.truncated then
             stats.eligibilityTruncatedSamples =
                 stats.eligibilityTruncatedSamples + 1
         end
         if #candidates == 0 then
-            if evidence.historyInArea == 0 then
+            if (evidence.historyInArea or 0) == 0 then
                 stats.eligibilityNoHistoryAreas =
                     stats.eligibilityNoHistoryAreas + 1
-                if evidence.rutInBBox > 0 then
+                if (evidence.rutInBBox or 0) > 0 then
                     stats.eligibilityOutsideFootprintAreas =
                         stats.eligibilityOutsideFootprintAreas + 1
                 end
-            elseif evidence.rutInArea == 0 then
+            elseif (evidence.rutInArea or 0) == 0 then
                 stats.eligibilityBelowThresholdAreas =
                     stats.eligibilityBelowThresholdAreas + 1
             else
