@@ -185,6 +185,7 @@ local function newStats()
         referenceV2Accepted = 0,
         referenceV2Rejected = 0,
         referenceV2Backoffs = 0,
+        referenceV2RetryDeadlineExpiries = 0,
         referenceV2RejectReasons = {},
         referenceV2MaxDriftM = 0,
         referenceV2RejectedMaxDriftM = 0,
@@ -1189,6 +1190,12 @@ enqueueStructuralRecoveryPoint = function(runtime, point, key, params, nowMs, pu
             end
         end
         if referenceReason == "CURVED_OR_INCONSISTENT" then
+            -- The existing queue TTL resets whenever an invalid reference
+            -- is retried, so absent an absolute deadline V2 can poll forever
+            -- long after the implement stopped its physical work.
+            params.referenceRetryDeadlineMs =
+                tonumber(params.referenceRetryDeadlineMs)
+                or (nowMs + Recovery.DEFAULTS.structuralTtlMs)
             -- A fresh *work area* can keep authorizing this spatial key, but
             -- the deferred queue must not undo this minimum retry interval.
             -- A small bounded wait does not claim that old geometry is valid.
@@ -1824,6 +1831,18 @@ function Recovery.update(dt)
                     Recovery.stats.deferredExpired =
                         Recovery.stats.deferredExpired + 1
                 end
+            elseif isStructural
+                and type(entry.params) == "table"
+                and tonumber(entry.params.referenceRetryDeadlineMs) ~= nil
+                and nowMs > tonumber(entry.params.referenceRetryDeadlineMs) then
+                -- A rejected local plane must not be re-probed indefinitely
+                -- after the latest authorized area has ceased to request it.
+                -- Future genuine work-area callbacks can create a new request.
+                removeDeferred(entry)
+                Recovery.stats.structuralStalled =
+                    Recovery.stats.structuralStalled + 1
+                Recovery.stats.referenceV2RetryDeadlineExpiries =
+                    Recovery.stats.referenceV2RetryDeadlineExpiries + 1
             elseif not isConvergence and not isStructural
                 and not stampAvailable(entry.key, nowMs) then
                 -- Another direct/deferred brush already handled this blocked
