@@ -67,6 +67,7 @@
         <sourceFile filename="scripts/terrain/TerrainMaintenancePolicy.lua"/>
         <sourceFile filename="scripts/terrain/TerrainMaintenance.lua"/>
         <sourceFile filename="scripts/terrain/TerrainTelemetry.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainGeometryProbe.lua"/>
         <sourceFile filename="scripts/terrain/LoadedContactRegistry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
