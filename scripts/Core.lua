@@ -68,6 +68,12 @@ function RealismExtensionsCore:loadMap()
 
     self:tryDiscoverProvider()
 
+    if RealismExtensionsTerrainGeometryProbe ~= nil
+        and type(RealismExtensionsTerrainGeometryProbe.installCommands)
+            == "function" then
+        RealismExtensionsTerrainGeometryProbe.installCommands()
+    end
+
     configureTireTrackAdapterProbe()
     if tireTrackAdapterNeeded()
         and RealismExtensionsNativeTireTrackAdapter ~= nil then
@@ -880,6 +886,11 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsTerrainGeometryProbe ~= nil
+        and type(RealismExtensionsTerrainGeometryProbe.uninstallCommands)
+            == "function" then
+        RealismExtensionsTerrainGeometryProbe.uninstallCommands()
+    end
     if RealismExtensionsVisualTrackRuntime ~= nil then
         RealismExtensionsVisualTrackRuntime.shutdown()
     end
