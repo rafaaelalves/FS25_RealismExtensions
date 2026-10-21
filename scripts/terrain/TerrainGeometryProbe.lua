@@ -1,0 +1,211 @@
+-- Read-only controlled snapshots of the main terrain-height sampling API.
+-- DOES NOT expose or assert access to FS25 0.125 m displacement vertices.
+RealismExtensionsTerrainGeometryProbe = RealismExtensionsTerrainGeometryProbe or {}
+local Probe = RealismExtensionsTerrainGeometryProbe
+Probe.VERSION = 1
+Probe.THRESHOLD_M = 0.002
+Probe.commandsInstalled = false
+Probe.position = nil
+Probe.previous = nil
+Probe.captureIndex = 0
+
+local function finite(value)
+    return type(value) == "number"
+        and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function speak(msg)
+    local line = "REGeoProbe | " .. tostring(msg)
+    if type(print) == "function" then print(line) end
+    return line
+end
+
+local function getTerrain()
+    local mission = g_currentMission
+    return mission ~= nil and mission.terrainRootNode or g_terrainNode
+end
+
+local function getSample(terrain, x, z)
+    if type(getTerrainHeightAtWorldPos) ~= "function"
+        or terrain == nil or terrain == 0 then
+        return nil
+    end
+    local ok, h = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
+    if ok and finite(h) then return h end
+    return nil
+end
+
+function Probe.reset()
+    Probe.position = nil
+    Probe.previous = nil
+    Probe.captureIndex = 0
+end
+
+function Probe:consoleMark(xText, zText)
+    local x, z = tonumber(xText), tonumber(zText)
+    if not (finite(x) and finite(z)) then
+        local mission = g_currentMission
+        local player = mission ~= nil and mission.player or nil
+        local node = player ~= nil and player.rootNode or nil
+        if type(getWorldTranslation) ~= "function"
+            or node == nil or node == 0 then
+            return speak("No player position; use reGeoMark <x> <z>")
+        end
+        local ok, px, _, pz = pcall(getWorldTranslation, node)
+        if not ok or not finite(px) or not finite(pz) then
+            return speak("Cannot resolve player position; use reGeoMark <x> <z>")
+        end
+        x, z = px, pz
+    end
+    self.position = { x = x, z = z }
+    self.previous = nil
+    self.captureIndex = 0
+    return speak(string.format(
+        "MARK x=%.3f z=%.3f | 4m x 4m main grid; 2m x 2m sampled every 0.125m; READ ONLY",
+        x, z
+    ))
+end
+
+local function sampleGrid(terrain, x, z, stepM, halfSteps)
+    local samples = {}
+    local minY, maxY = math.huge, -math.huge
+    local n = 0
+    for iz = -halfSteps, halfSteps do
+        for ix = -halfSteps, halfSteps do
+            local wx, wz = x + ix * stepM, z + iz * stepM
+            local y = getSample(terrain, wx, wz)
+            if y == nil then return nil end
+            n = n + 1
+            samples[n] = { x = wx, z = wz, y = y, ix = ix, iz = iz }
+            minY = math.min(minY, y)
+            maxY = math.max(maxY, y)
+        end
+    end
+    return {samples=samples, count=n, minY=minY, maxY=maxY}
+end
+
+local function residualAgainstCornerPlane(grid, halfSteps)
+    local stride = halfSteps * 2 + 1
+    local samples = grid.samples
+    local a = samples[1].y
+    local b = samples[stride].y
+    local c = samples[(stride-1)*stride+1].y
+    local d = samples[#samples].y
+    local minResidual, maxResidual = math.huge, -math.huge
+    local centerResidual = 0
+    for _, point in ipairs(samples) do
+        local u = (point.ix + halfSteps) / (2*halfSteps)
+        local v = (point.iz + halfSteps) / (2*halfSteps)
+        local plane = a*(1-u)*(1-v) + b*u*(1-v)
+                    + c*(1-u)*v + d*u*v
+        local residual = point.y - plane
+        minResidual = math.min(minResidual, residual)
+        maxResidual = math.max(maxResidual, residual)
+        if point.ix == 0 and point.iz == 0 then
+            centerResidual = residual
+        end
+    end
+    return minResidual, maxResidual, centerResidual
+end
+
+local function compareSamples(previous, current)
+    if previous == nil or current == nil
+        or #previous.samples ~= #current.samples then return nil end
+    local changed, maxUp, maxDown = 0, 0, 0
+    local sumAbs = 0
+    for i, after in ipairs(current.samples) do
+        local before = previous.samples[i]
+        local delta = after.y - before.y
+        if math.abs(delta) >= Probe.THRESHOLD_M then changed = changed + 1 end
+        maxUp = math.max(maxUp, delta)
+        maxDown = math.min(maxDown, delta)
+        sumAbs = sumAbs + math.abs(delta)
+    end
+    return {
+        changed=changed, maxUpM=maxUp, maxDownM=maxDown,
+        meanAbsM=sumAbs/#current.samples
+    }
+end
+
+function Probe.capture(label)
+    if Probe.position == nil then
+        return nil, speak("No marked location. Stand over the hole and run reGeoMark")
+    end
+    local terrain = getTerrain()
+    local p = Probe.position
+    local unit = nil
+    if type(getTerrainHeightmapUnitSize) == "function" then
+        local ok, size = pcall(getTerrainHeightmapUnitSize, terrain)
+        if ok and finite(size) and size > 0 then unit = size end
+    end
+    local fine = sampleGrid(terrain,p.x,p.z,0.125,8)
+    local main = sampleGrid(terrain,p.x,p.z,1.0,2)
+    if fine == nil or main == nil then
+        return nil, speak("Main terrain-height API unavailable; no snapshot stored")
+    end
+    local rrMin, rrMax, rrCenter = residualAgainstCornerPlane(fine,8)
+    local history = RealismExtensionsTerrainRuntime
+        and RealismExtensionsTerrainRuntime.history or nil
+    local h = history ~= nil and type(history.get)=="function"
+        and history:get(p.x,p.z) or nil
+    local rut = h ~= nil and tonumber(h.rutDepthM) or nil
+    local ref = h ~= nil and tonumber(h.preDeformHeightM) or nil
+
+    Probe.captureIndex = Probe.captureIndex + 1
+    local current = {
+        label=tostring(label or ("snap"..Probe.captureIndex)),
+        x=p.x,z=p.z,fine=fine,main=main,unitM=unit,
+        rutDepthM=rut,preDeformHeightM=ref
+    }
+    speak(string.format(
+        "SNAP #%d label=%s x=%.3f z=%.3f mainUnit=%s samples=25(main),289(dense SAME API) minY=%.4f maxY=%.4f centerResidual=%.4fm valleyResidual=%.4fm peakResidual=%.4fm rutDebt=%s firstTouch=%s",
+        Probe.captureIndex,current.label,p.x,p.z,
+        unit ~= nil and string.format("%.3fm",unit) or "unknown",
+        fine.minY,fine.maxY,rrCenter,rrMin,rrMax,
+        rut ~= nil and string.format("%.4fm",rut) or "none",
+        ref ~= nil and string.format("%.4fm",ref) or "none"
+    ))
+    local previous = Probe.previous
+    if previous ~= nil then
+        for _, key in ipairs({"main","fine"}) do
+            local d = compareSamples(previous[key],current[key])
+            speak(string.format(
+                "DELTA from=%s to=%s grid=%s changed(>=2mm)=%d/%d maxRaise=%.4fm maxLower=%.4fm avgAbsChange=%.4fm",
+                previous.label,current.label,
+                key=="main" and "1m" or "0.125m-sampled-MAIN-API",
+                d.changed,#current[key].samples,d.maxUpM,d.maxDownM,
+                d.meanAbsM
+            ))
+        end
+    end
+    Probe.previous = current
+    return current
+end
+
+function Probe:consoleSnap(label)
+    local current = self.capture(label)
+    if current == nil then return "REGeoProbe snapshot failed" end
+    return "REGeoProbe snapshot " .. current.label .. " captured (READ ONLY)"
+end
+
+function Probe.installCommands()
+    if Probe.commandsInstalled or type(addConsoleCommand) ~= "function" then
+        return false
+    end
+    if g_server == nil then
+        return false
+    end
+    addConsoleCommand("reGeoMark", "Mark diagnostic area at player or explicit x z", "consoleMark", Probe, "[x] [z]")
+    addConsoleCommand("reGeoSnap", "Snapshot main terrain height API and compare with prior snapshot", "consoleSnap", Probe, "[label]")
+    Probe.commandsInstalled = true
+    return true
+end
+
+function Probe.uninstallCommands()
+    if Probe.commandsInstalled and type(removeConsoleCommand) == "function" then
+        removeConsoleCommand("reGeoMark")
+        removeConsoleCommand("reGeoSnap")
+    end
+    Probe.commandsInstalled = false
+    Probe.reset()
+end
