@@ -41,28 +41,78 @@ function Probe.reset()
     Probe.captureIndex = 0
 end
 
+-- GIANTS FS25 Player uses g_localPlayer:getPosition() on foot;
+-- g_currentMission.player is not the local player in the real runtime.
+-- For an occupied vehicle the player's foot position may be stale.
+local function getPlayerPosition()
+    local player = g_localPlayer
+    if player == nil and g_currentMission ~= nil then
+        player = g_currentMission.player
+    end
+    if player == nil then return nil, nil, "no-local-player" end
+
+    if type(player.getCurrentVehicle) == "function" then
+        local okVehicle, vehicle = pcall(player.getCurrentVehicle, player)
+        if okVehicle and vehicle ~= nil then
+            local node = vehicle.rootNode
+            if type(getWorldTranslation) == "function"
+                and node ~= nil and node ~= 0 then
+                local ok, x, _, z = pcall(getWorldTranslation, node)
+                if ok and finite(x) and finite(z) then
+                    return x, z, "vehicle-root"
+                end
+            end
+            -- Do not silently mark a stale on-foot location while driving.
+            return nil, nil, "vehicle-position-unavailable"
+        end
+    end
+
+    if type(player.getPosition) == "function" then
+        local ok, x, _, z = pcall(player.getPosition, player)
+        if ok and finite(x) and finite(z) then
+            return x, z, "player-position"
+        end
+    end
+
+    if type(player.getMapPositionAndLookYaw) == "function" then
+        local ok, x, z = pcall(player.getMapPositionAndLookYaw, player)
+        if ok and finite(x) and finite(z) then
+            return x, z, "player-map-position"
+        end
+    end
+
+    local node = player.rootNode
+    if type(getWorldTranslation) == "function"
+        and node ~= nil and node ~= 0 then
+        local ok, x, _, z = pcall(getWorldTranslation, node)
+        if ok and finite(x) and finite(z) then
+            return x, z, "player-root"
+        end
+    end
+    return nil, nil, "player-position-unavailable"
+end
+
 function Probe:consoleMark(xText, zText)
     local x, z = tonumber(xText), tonumber(zText)
-    if not (finite(x) and finite(z)) then
-        local mission = g_currentMission
-        local player = mission ~= nil and mission.player or nil
-        local node = player ~= nil and player.rootNode or nil
-        if type(getWorldTranslation) ~= "function"
-            or node == nil or node == 0 then
-            return speak("No player position; use reGeoMark <x> <z>")
+    local origin = "explicit"
+    if xText ~= nil or zText ~= nil then
+        if not (finite(x) and finite(z)) then
+            return speak("Invalid coordinates; use reGeoMark <x> <z> or reGeoMark")
         end
-        local ok, px, _, pz = pcall(getWorldTranslation, node)
-        if not ok or not finite(px) or not finite(pz) then
-            return speak("Cannot resolve player position; use reGeoMark <x> <z>")
+    else
+        x, z, origin = getPlayerPosition()
+        if not (finite(x) and finite(z)) then
+            return speak("Cannot mark " .. tostring(origin)
+                .. "; stand on foot at the hole or use reGeoMark <x> <z>")
         end
-        x, z = px, pz
     end
+
     self.position = { x = x, z = z }
     self.previous = nil
     self.captureIndex = 0
     return speak(string.format(
-        "MARK x=%.3f z=%.3f | 4m x 4m main grid; 2m x 2m sampled every 0.125m; READ ONLY",
-        x, z
+        "MARK x=%.3f z=%.3f origin=%s | 4m x 4m main grid; 2m x 2m sampled every 0.125m; READ ONLY",
+        x, z, origin
     ))
 end
 
