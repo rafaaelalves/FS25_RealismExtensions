@@ -13,11 +13,17 @@ local variation=0
 g_server={}
 g_currentMission={
     terrainRootNode=99,
-    player={rootNode=50}
+    -- Deliberately do NOT provide g_currentMission.player: the real-game
+    -- regression was hidden by an invalid harness-only mission.player.
+}
+local vehicle=nil
+g_localPlayer={
+    getPosition=function() return 10,0,20 end,
+    getCurrentVehicle=function() return vehicle end
 }
 getWorldTranslation=function(node)
-    assert(node==50)
-    return 10,0,20
+    assert(node==77)
+    return 14,0,22
 end
 getTerrainHeightmapUnitSize=function(node)
     assert(node==99)
@@ -49,6 +55,7 @@ assert(p.installCommands()==true)
 assert(registered.reGeoMark and registered.reGeoSnap)
 assert(p:consoleMark():find("MARK"))
 assert(p.position.x==10 and p.position.z==20)
+assert(log[#log]:find("origin=player%-position"))
 local before=assert(p.capture("before"))
 assert(before.fine.count==289 and before.main.count==25)
 assert(before.unitM==1 and before.rutDepthM==0.04)
@@ -70,10 +77,36 @@ for _,line in ipairs(log) do
 end
 assert(foundMain and foundDense and not written)
 
+-- Driver position should be the occupied vehicle, not the stale player's
+-- last foot position.
+vehicle={rootNode=77}
+assert(p:consoleMark():find("origin=vehicle%-root"))
+assert(p.position.x==14 and p.position.z==22)
+vehicle={rootNode=0}
+assert(p:consoleMark():find("vehicle%-position%-unavailable"))
+-- Failure must not erase a previous successful snapshot.
+assert(p.position.x==14 and p.position.z==22)
+vehicle=nil
+-- Wrong/partial explicit coordinates fail closed, never mark implicitly.
+assert(p:consoleMark("5.5"):find("Invalid coordinates"))
+assert(p.position.x==14)
 p:consoleMark("5.5","6.25")
 assert(p.position.x==5.5 and p.position.z==6.25)
 assert(p.previous==nil)
 assert(p.capture("fresh")~=nil)
+
+-- Both documented positional fallbacks are supported without relying on
+-- g_currentMission.player.
+g_localPlayer={
+    getMapPositionAndLookYaw=function() return 3,4,0 end
+}
+assert(p:consoleMark():find("origin=player%-map%-position"))
+assert(p.position.x==3 and p.position.z==4)
+g_localPlayer={rootNode=77}
+assert(p:consoleMark():find("origin=player%-root"))
+assert(p.position.x==14 and p.position.z==22)
+g_localPlayer=nil
+assert(p:consoleMark():find("no%-local%-player"))
 p.uninstallCommands()
 assert(removed.reGeoMark and removed.reGeoSnap)
 assert(p.position==nil and p.previous==nil)
