@@ -199,6 +199,68 @@ function Journal:complete(token,successful)
     return result,nil
 end
 
+-- Snapshot is a geometry provenance sidecar, not a replacement for
+-- GIANTS native heightmap persistence. Never serialize an in-flight job as if
+-- the terrain result were confirmed, and never retroactively reconstruct an
+-- unknown original from the observed rut.
+function Journal:exportSnapshot()
+    if self.pendingCount>0 then return nil,"PENDING_NATIVE_WRITES" end
+    local cells={}
+    local unknown=0
+    for key,entry in pairs(self.observations) do
+        local current=self:getHeight(entry.x,entry.z)
+        if finite(current) and math.abs(current-entry.observedHeightM)<=0.002 then
+            cells[#cells+1]={
+                key=key,x=entry.x,z=entry.z,
+                preREHeightM=entry.preREHeightM,
+                observedHeightM=current,owned=entry.owned==true
+            }
+        else
+            -- The ground moved without a verified RE callback. Do not save
+            -- stale recovery authority for that cell.
+            unknown=unknown+1
+        end
+    end
+    table.sort(cells,function(a,b)return a.key<b.key end)
+    return {version=Journal.VERSION,unitM=self.unitM,cells=cells,unknown=unknown}
+end
+
+function Journal:importSnapshot(snapshot)
+    if self.pendingCount>0 then return false,"PENDING_NATIVE_WRITES" end
+    if type(snapshot)~="table" or snapshot.version~=Journal.VERSION
+        or not finite(snapshot.unitM) or not finite(self.unitM)
+        or math.abs(snapshot.unitM-self.unitM)>0.00001
+        or type(snapshot.cells)~="table" then
+        return false,"GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH"
+    end
+    local restored,rejected=0,0
+    local loaded={}
+    for _,cell in ipairs(snapshot.cells) do
+        if type(cell)=="table" and finite(cell.x) and finite(cell.z)
+            and finite(cell.preREHeightM) and finite(cell.observedHeightM) then
+            local ix=math.floor(cell.x/self.unitM+0.5)
+            local iz=math.floor(cell.z/self.unitM+0.5)
+            local x,z=ix*self.unitM,iz*self.unitM
+            local current=self:getHeight(x,z)
+            if finite(current) and math.abs(current-cell.observedHeightM)<=0.005
+                and math.abs(x-cell.x)<=0.00001
+                and math.abs(z-cell.z)<=0.00001 then
+                loaded[tostring(ix)..":"..tostring(iz)]={
+                    x=x,z=z,preREHeightM=cell.preREHeightM,
+                    observedHeightM=current,owned=cell.owned==true
+                }
+                restored=restored+1
+            else
+                rejected=rejected+1
+            end
+        else
+            rejected=rejected+1
+        end
+    end
+    self.observations=loaded
+    return true,restored,rejected
+end
+
 function Journal:reset()
     self.observations={}
     self.pendingByVertex={}
