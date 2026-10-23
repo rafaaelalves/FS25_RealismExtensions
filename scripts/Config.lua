@@ -43,6 +43,9 @@ RealismExtensionsConfig = {
     modules = {
         PTOControl = true,
         TerrainDeformation = true,
+        -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
+        -- NOT production-ready until journal save/restore and recovery are validated.
+        TerrainGeometryJournal = true,
         TerrainRecovery = true,
         -- Experimental correction: refuse unsupported terrain reference planes.
         -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
