@@ -291,6 +291,57 @@ vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == afterActorPolicyContexts)
 
+-- Causal journal path: accepting the queue MUST NOT create physical debt.
+-- The second wheel is deliberately distant to avoid vertex overlap.
+dofile("scripts/terrain/TerrainGeometryJournal.lua")
+local liveHeights={}
+local function heightKey(x,z)
+    return string.format("%.1f:%.1f",x,z)
+end
+local sampleHeight=function(x,z)
+    return liveHeights[heightKey(x,z)] or 100
+end
+local journal=RealismExtensionsTerrainGeometryJournal.new(
+    42,{unitM=1,sample=sampleHeight}
+)
+RealismExtensionsTerrainRuntime.geometryJournal=journal
+RealismExtensionsConfig.modules.TerrainGeometryJournal=true
+local callbacks={}
+RealismExtensionsTerrainRuntime.writer={
+    options={minDepthM=0.0004},
+    enqueue=function(self,brush)
+        assert(type(brush.onApplied)=="function")
+        callbacks[#callbacks+1]=brush
+        return true
+    end
+}
+TerrainDeformation={STATE_SUCCESS=1}
+vehicle.isServer=true
+wheelA.testX=20
+wheelB.testX=100
+bodySpeedKph=5
+g_currentMission.time=g_currentMission.time+1000
+local historyBefore=RealismExtensionsTerrainRuntime.history.count
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==2)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+assert(journal.pendingCount==2)
+local requeued=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==requeued) -- still pending: no duplicate native jobs
+callbacks[1].onApplied(false) -- failed submit/engine: no debt
+assert(journal.pendingCount==1)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+liveHeights[heightKey(100,0)]=99.988
+callbacks[2].onApplied(1)
+assert(journal.pendingCount==0)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
+assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0)
+local countAfter=RealismExtensionsTerrainRuntime.history.count
+callbacks[2].onApplied(1) -- duplicate callback ignored by journal
+assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
+-- Note: the existing logger sees this case as failed journal confirmation.
+
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
