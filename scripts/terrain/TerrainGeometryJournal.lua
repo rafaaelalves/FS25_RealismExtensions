@@ -15,7 +15,9 @@ end
 
 local function unitForTerrain(terrain, fallback)
     local v
-    if type(getTerrainHeightmapUnitSize) == "function" then
+    -- C++/Luau bindings emit a script error even inside pcall when given nil.
+    if type(getTerrainHeightmapUnitSize) == "function"
+        and type(terrain) == "number" and terrain > 0 then
         local ok, result = pcall(getTerrainHeightmapUnitSize, terrain)
         if ok then v = result end
     end
@@ -25,7 +27,8 @@ local function unitForTerrain(terrain, fallback)
 end
 
 local function nativeHeight(terrain, x, z)
-    if type(getTerrainHeightAtWorldPos) ~= "function" then return nil end
+    if type(getTerrainHeightAtWorldPos) ~= "function"
+        or type(terrain) ~= "number" or terrain <= 0 then return nil end
     local ok, v = pcall(getTerrainHeightAtWorldPos, terrain, x, 0, z)
     if ok and finite(v) then return v end
     return nil
