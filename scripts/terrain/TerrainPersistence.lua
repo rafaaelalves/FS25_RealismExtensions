@@ -219,6 +219,10 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
     end
     local snapshot,reason=journal:exportSnapshot()
     if snapshot==nil then return false,reason end
+    if type(snapshot.unitM)~="number" or snapshot.unitM<=0
+        or snapshot.unitM~=snapshot.unitM then
+        return false,"native heightmap unit unavailable; geometry journal not saved"
+    end
     local path=Persistence.getGeometryPath(missionInfo)
     if path==nil then return false,"geometry save path unavailable" end
     local xml=XMLFile.create("realismExtensionsGeometryJournal",path,
