@@ -86,6 +86,7 @@ queued[2].onApplied(1)
 assert(j.observations["0:0"]==nil) -- confirmed restoration
 assert(historyCells[key(0,0)].rutDepthM==0)
 assert(C.stats.improved==2)
+assert(C.stats.physicallyClosed==1 and C.stats.gainSumM>0.29)
 -- Unowned, terraformed or legacy deformation cannot be flattened by RE.
 set(0,0,99.6)
 g_currentMission.time=3000
