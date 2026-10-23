@@ -497,6 +497,13 @@ function Engine.processSample(
     end
 
     local journal = RealismExtensionsTerrainRuntime.geometryJournal
+    local causalRequired = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    if causalRequired and (journal == nil or journal.unitM == nil) then
+        diagCount("geometryJournalFailClosed", 1)
+        return false
+    end
     local journalToken = nil
     local pendingReason = nil
     local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
