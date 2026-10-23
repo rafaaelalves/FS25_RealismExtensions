@@ -1,3 +1,5 @@
+> **Estado substituído para decisões de release (2026-10-23):** os checkpoints “baseline SMOOTH/R6 funciona” deste documento registram o entendimento na data de escrita, mas falharam no teste de recuperação profunda de 23/10. O bloqueador real agora é divergência entre intenção `TerrainWriter:enqueue`, geometria escrita pelo motor e `SpatialHistory`. **Usar [revisão consolidada](../research/2026-10-23-terrain-recovery-release-reset.md) como plano de execução corrente**, preservando esta página como histórico de evolução, não como roteiro de novos testes incrementais TARGET.
+
 # Terrain evolution plan
 
 Updated: 2026-10-02
