@@ -352,6 +352,23 @@ callbacks[2].onApplied(1) -- duplicate callback ignored by journal
 assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
 -- Note: the existing logger sees this case as failed journal confirmation.
 
+-- A missing native journal is NOT permission to fall back to pre-callback
+-- geometry debt when causal restoration is requested.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsTerrainRuntime.geometryJournal=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+wheelA.testX=30
+wheelB.testX=120
+g_currentMission.time=g_currentMission.time+1000
+local beforeUnavailable=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeUnavailable)
+assert((RealismExtensionsTerrainRuntime.stats.geometryJournalFailClosed or 0)>0)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
