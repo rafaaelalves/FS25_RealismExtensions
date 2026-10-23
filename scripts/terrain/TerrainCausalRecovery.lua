@@ -24,7 +24,9 @@ C.byKey={}
 C.inFlight=nil
 C.nextTryMs=0
 C.stats={considered=0,accepted=0,completed=0,improved=0,
-    unchanged=0,failed=0,collateral=0,expired=0,blocked=0}
+    unchanged=0,failed=0,collateral=0,expired=0,blocked=0,
+    gainSumM=0,maxGainM=0,maxBeforeDeficitM=0,
+    physicallyClosed=0,unsafe=0,tooDeepRejected=0}
 
 local function now()
     return g_currentMission~=nil and tonumber(g_currentMission.time) or 0
@@ -66,7 +68,9 @@ function C.reset()
     C.queue={};C.queueHead=1;C.queueTail=0
     C.byKey={};C.inFlight=nil;C.nextTryMs=0
     C.stats={considered=0,accepted=0,completed=0,improved=0,
-        unchanged=0,failed=0,collateral=0,expired=0,blocked=0}
+        unchanged=0,failed=0,collateral=0,expired=0,blocked=0,
+    gainSumM=0,maxGainM=0,maxBeforeDeficitM=0,
+    physicallyClosed=0,unsafe=0,tooDeepRejected=0}
 end
 
 -- No global history scan. Direct lookup of native-grid vertices inside a
@@ -106,6 +110,9 @@ function C.observeWorkedArea(geometry,profile)
                     }
                     C.byKey[p.key]=true
                     C.stats.considered=C.stats.considered+1
+                    C.stats.maxBeforeDeficitM=math.max(
+                        C.stats.maxBeforeDeficitM,p.deficitM
+                    )
                     count=count+1
                 elseif p~=nil and C.byKey[p.key]~=nil then
                     -- Multiple fragments of one legitimate work pass may
@@ -221,6 +228,14 @@ function C.update()
                                         +(result.collateral or 0)
                                     if result.safe and result.gainM>0.0001 then
                                         C.stats.improved=C.stats.improved+1
+                                        C.stats.gainSumM=C.stats.gainSumM+result.gainM
+                                        C.stats.maxGainM=math.max(
+                                            C.stats.maxGainM,result.gainM
+                                        )
+                                        if result.completed then
+                                            C.stats.physicallyClosed=
+                                                C.stats.physicallyClosed+1
+                                        end
                                         -- A completed native vertex only clears
                                         -- an exact associated mechanical cell.
                                         -- Do not clear all 0.2m neighbors merely
@@ -237,6 +252,9 @@ function C.update()
                                         end
                                     else
                                         C.stats.unchanged=C.stats.unchanged+1
+                                        if result.safe==false then
+                                            C.stats.unsafe=C.stats.unsafe+1
+                                        end
                                     end
                                 end
                             end
