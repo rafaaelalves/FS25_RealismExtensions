@@ -1060,6 +1060,13 @@ function Writer:flush()
                 self.stats.submittedBrushes = self.stats.submittedBrushes + #batch
             else
                 self.stats.failedJobs = self.stats.failedJobs + 1
+                -- Enqueue is not native success. Notify callback-bearing brushes
+                -- that submission itself failed so causal locks cannot leak.
+                for _, failedBrush in ipairs(batch) do
+                    if type(failedBrush.onApplied) == "function" then
+                        pcall(failedBrush.onApplied, false, nil, nil, nil, nil, nil)
+                    end
+                end
             end
         end
     end
