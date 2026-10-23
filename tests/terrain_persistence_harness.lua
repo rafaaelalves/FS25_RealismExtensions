@@ -107,6 +107,11 @@ assert(foreign.count==0)
 -- Native geometry journal persists in a separate sidecar. It stores only
 -- successful main-grid lowering, never pending/failed transactions.
 local geoApi=RealismExtensionsTerrainGeometryJournal
+local nilJournal=geoApi.new(nil,{sample=function() return 100 end})
+local nilSaved,why=RealismExtensionsTerrainPersistence.saveGeometryJournal(
+    g_currentMission.missionInfo,nilJournal
+)
+assert(nilSaved==false and string.find(why,"unit unavailable",1,true)~=nil)
 local journal=geoApi.new(42,{unitM=1})
 local transaction=assert(journal:begin("wheel-1",5,5,0.3))
 terrainHeights["5:5"]=99.94
