@@ -560,24 +560,27 @@ function Engine.processSample(
         end or nil
     })
 
-    if accepted and journalToken == nil then
-        -- Legacy experimental mode only: accepts a queued request as debt.
-        -- The journal-enabled mode commits after physical confirmation above.
-        historyStore:commit(
-            x,
-            z,
-            copyHistoryForAppliedDepth(
-                response, previousDepth, appliedDepth, history,
-                preDeformReferenceY
+    if accepted then
+        if journalToken == nil then
+            -- Legacy experimental mode only: a queued request counts as debt.
+            historyStore:commit(
+                x,
+                z,
+                copyHistoryForAppliedDepth(
+                    response, previousDepth, appliedDepth, history,
+                    preDeformReferenceY
+                )
             )
-        )
-        if preDeformReferenceY ~= nil then
-            diagCount("preDeformReferenceCaptured", 1)
-        elseif history ~= nil and history.preDeformHeightM ~= nil then
-            diagCount("preDeformReferencePreserved", 1)
-        else
-            diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            if preDeformReferenceY ~= nil then
+                diagCount("preDeformReferenceCaptured", 1)
+            elseif history ~= nil and history.preDeformHeightM ~= nil then
+                diagCount("preDeformReferencePreserved", 1)
+            else
+                diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            end
         end
+        -- Journal mode also owns an accepted request, but NOT physical debt.
+        -- Its native callback alone commits that debt when height lowered.
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
         if actor ~= nil then
