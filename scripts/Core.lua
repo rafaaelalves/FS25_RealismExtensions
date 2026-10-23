@@ -139,6 +139,10 @@ function RealismExtensionsCore:loadMap()
         end
     end
 
+    if RealismExtensionsTerrainCausalRecovery ~= nil then
+        RealismExtensionsTerrainCausalRecovery.reset()
+    end
+
     if RealismExtensionsTerrainMaintenance ~= nil
         and type(RealismExtensionsTerrainMaintenance.initialize) == "function" then
         RealismExtensionsTerrainMaintenance.initialize()
