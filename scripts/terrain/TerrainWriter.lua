@@ -541,6 +541,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             brushes[1].source == "RECOVERY"
             or brushes[1].source == "MAINTENANCE"
         )
+        and brushes[1].skipRecoveryGeometryProbe ~= true
 
     if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
