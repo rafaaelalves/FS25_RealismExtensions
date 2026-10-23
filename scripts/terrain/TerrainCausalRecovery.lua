@@ -26,7 +26,9 @@ C.nextTryMs=0
 C.stats={considered=0,accepted=0,completed=0,improved=0,
     unchanged=0,failed=0,collateral=0,expired=0,blocked=0,
     gainSumM=0,maxGainM=0,maxBeforeDeficitM=0,
-    physicallyClosed=0,unsafe=0,tooDeepRejected=0}
+    physicallyClosed=0,unsafe=0,
+    noBaselineVisits=0,untrustedVisits=0,
+    toolPLOW=0,toolSUBSOILER=0,toolCULTIVATOR=0,toolOTHER=0}
 
 local function now()
     return g_currentMission~=nil and tonumber(g_currentMission.time) or 0
@@ -53,6 +55,37 @@ local function inside(x,z,g)
     -- Do not grant recovery across field boundaries or unworked strips.
     return a>=0 and a<=1 and b>=0 and b<=1
 end
+local function segmentDistanceSquared(px,pz,x0,z0,x1,z1)
+    local dx,dz=x1-x0,z1-z0
+    local len2=dx*dx+dz*dz
+    if len2<=0.00000001 then
+        return (px-x0)^2+(pz-z0)^2
+    end
+    local t=math.max(0,math.min(1,((px-x0)*dx+(pz-z0)*dz)/len2))
+    local x,z=x0+t*dx,z0+t*dz
+    return (px-x)^2+(pz-z)^2
+end
+
+local function nativeVertexTouchesWorkedArea(x,z,g,unit)
+    if inside(x,z,g) then return true end
+    -- The 1m main-heightmap vertex owns a surrounding surface footprint.
+    -- A narrow subsoiler stripe may intersect that footprint without
+    -- containing the exact vertex centre. Cap the extension to 45cm.
+    local margin=math.min(0.45,0.45*unit)
+    if margin<=0 then return false end
+    local ax,az=g.xs,g.zs
+    local bx,bz=ax+g.ux,az+g.uz
+    local cx,cz=bx+g.vx,bz+g.vz
+    local dx,dz=ax+g.vx,az+g.vz
+    local d2=math.min(
+        segmentDistanceSquared(x,z,ax,az,bx,bz),
+        segmentDistanceSquared(x,z,bx,bz,cx,cz),
+        segmentDistanceSquared(x,z,cx,cz,dx,dz),
+        segmentDistanceSquared(x,z,dx,dz,ax,az)
+    )
+    return d2<=margin*margin
+end
+
 local function effort(p)
     local f=math.max(0,math.min(1,
         tonumber(p~=nil and p.surfaceRegrade01) or 0.65))
@@ -70,7 +103,9 @@ function C.reset()
     C.stats={considered=0,accepted=0,completed=0,improved=0,
         unchanged=0,failed=0,collateral=0,expired=0,blocked=0,
     gainSumM=0,maxGainM=0,maxBeforeDeficitM=0,
-    physicallyClosed=0,unsafe=0,tooDeepRejected=0}
+    physicallyClosed=0,unsafe=0,
+    noBaselineVisits=0,untrustedVisits=0,
+    toolPLOW=0,toolSUBSOILER=0,toolCULTIVATOR=0,toolOTHER=0}
 end
 
 -- No global history scan. Direct lookup of native-grid vertices inside a
@@ -83,10 +118,11 @@ function C.observeWorkedArea(geometry,profile)
     local x2,x3=geometry.xs+geometry.vx,geometry.xs+geometry.ux+geometry.vx
     local z0,z1=geometry.zs,geometry.zs+geometry.uz
     local z2,z3=geometry.zs+geometry.vz,geometry.zs+geometry.uz+geometry.vz
-    local minIx,maxIx=math.ceil(math.min(x0,x1,x2,x3)/unit),
-        math.floor(math.max(x0,x1,x2,x3)/unit)
-    local minIz,maxIz=math.ceil(math.min(z0,z1,z2,z3)/unit),
-        math.floor(math.max(z0,z1,z2,z3)/unit)
+    local margin=math.min(0.45,0.45*unit)
+    local minIx,maxIx=math.ceil((math.min(x0,x1,x2,x3)-margin)/unit),
+        math.floor((math.max(x0,x1,x2,x3)+margin)/unit)
+    local minIz,maxIz=math.ceil((math.min(z0,z1,z2,z3)-margin)/unit),
+        math.floor((math.max(z0,z1,z2,z3)+margin)/unit)
     local total=(maxIx-minIx+1)*(maxIz-minIz+1)
     if total<=0 or total>C.DEFAULTS.maxAreaVertices then
         -- Never iterate a giant malformed machine work-area every frame.
@@ -99,8 +135,17 @@ function C.observeWorkedArea(geometry,profile)
     for ix=minIx,maxIx do
         for iz=minIz,maxIz do
             local x,z=ix*unit,iz*unit
-            if inside(x,z,geometry) then
+            if nativeVertexTouchesWorkedArea(x,z,geometry,unit) then
                 local p=j:getRecoverablePoint(ix,iz,C.DEFAULTS.minDeficitM)
+                if p==nil then
+                    local e=j.observations~=nil
+                        and j.observations[tostring(ix)..":"..tostring(iz)] or nil
+                    if e==nil then
+                        C.stats.noBaselineVisits=C.stats.noBaselineVisits+1
+                    elseif e.owned~=true then
+                        C.stats.untrustedVisits=C.stats.untrustedVisits+1
+                    end
+                end
                 if p~=nil and C.byKey[p.key]==nil
                     and (C.queueTail-C.queueHead+1)<C.DEFAULTS.maxPending then
                     C.queueTail=C.queueTail+1
@@ -110,6 +155,9 @@ function C.observeWorkedArea(geometry,profile)
                     }
                     C.byKey[p.key]=true
                     C.stats.considered=C.stats.considered+1
+                    local toolKey="tool"..profileId
+                    if C.stats[toolKey]==nil then toolKey="toolOTHER" end
+                    C.stats[toolKey]=C.stats[toolKey]+1
                     C.stats.maxBeforeDeficitM=math.max(
                         C.stats.maxBeforeDeficitM,p.deficitM
                     )
