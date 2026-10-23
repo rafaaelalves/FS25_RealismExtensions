@@ -119,10 +119,12 @@ function RealismExtensionsCore:loadMap()
         end
     end
 
+    self.geometryJournalLoadAttempted = false
     if tdEnabled and g_server ~= nil
         and RealismExtensionsTerrainPersistence ~= nil
         and RealismExtensionsTerrainRuntime ~= nil
         and RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        self.geometryJournalLoadAttempted = true
         local ok, restored, invalid = RealismExtensionsTerrainPersistence.loadGeometryJournal(
             g_currentMission ~= nil and g_currentMission.missionInfo or nil,
             RealismExtensionsTerrainRuntime.geometryJournal
@@ -221,6 +223,32 @@ function RealismExtensionsCore:update(dt)
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsTerrainRuntime ~= nil then
+        -- loadMap is earlier than native terrainRootNode creation in some saves.
+        -- Once the mission node exists, attach and load the journal precisely
+        -- once, before any new wheel rut or tillage operation can use it.
+        if self.geometryJournalLoadAttempted ~= true
+            and g_server ~= nil
+            and RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal ~= nil
+            and RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal() then
+            self.geometryJournalLoadAttempted = true
+            local jp=RealismExtensionsTerrainPersistence
+            if jp ~= nil then
+                local ok, restored, rejected = jp.loadGeometryJournal(
+                    g_currentMission ~= nil and g_currentMission.missionInfo or nil,
+                    RealismExtensionsTerrainRuntime.geometryJournal
+                )
+                if ok then
+                    RealismExtensionsDiagnostics.info(string.format(
+                        "native journal ready; restored=%d rejected=%d",
+                        restored or 0,rejected or 0
+                    ))
+                else
+                    RealismExtensionsDiagnostics.info(
+                        "native journal ready; no trusted sidecar: "..tostring(restored)
+                    )
+                end
+            end
+        end
         if RealismExtensionsTerrainCausalRecovery ~= nil
             and type(RealismExtensionsTerrainCausalRecovery.update) == "function" then
             RealismExtensionsTerrainCausalRecovery.update(dt)
@@ -932,6 +960,7 @@ function RealismExtensionsCore:deleteMap()
     self.terrainDiagElapsedMs = 0
     self.terrainDiagPrevious = nil
     self._terrainDiagNextSnapshot = nil
+    self.geometryJournalLoadAttempted = false
 
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
