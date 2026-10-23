@@ -289,6 +289,12 @@ function Journal:finishRecovery(token,success)
     local e=self.observations[token.targetKey]
     if e~=nil then
         e.observedHeightM=target
+        if collateral>0 then
+            -- A native brush that moved other vertices cannot be trusted as
+            -- vertex-local. Stop automatic regrading rather than accumulating
+            -- more off-footprint damage on every agricultural pass.
+            e.owned=false
+        end
         if target>token.targetOriginalY+0.004 or target<token.targetBeforeY-0.002 then
             -- Undershoot/overraise: no more automated writes against this old
             -- reference until a new, trusted terrain ownership event exists.
