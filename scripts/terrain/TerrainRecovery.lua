@@ -2017,10 +2017,16 @@ local function recoverWorkedArea(
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
     protectWorkArea(g, nowMs)
-    if RealismExtensionsTerrainCausalRecovery ~= nil
-        and RealismExtensionsTerrainCausalRecovery.enabled() then
-        RealismExtensionsTerrainCausalRecovery.observeWorkedArea(g, profile)
-        -- Avoid concurrent legacy ring-fitted R1/R7 target writes.
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true then
+        -- An unavailable journal MUST NOT silently fall back to the legacy
+        -- R1/R7 TARGET algorithm when causal recovery was explicitly selected.
+        -- It is safer to produce no recovery than to grade unknown geography.
+        if RealismExtensionsTerrainCausalRecovery ~= nil
+            and RealismExtensionsTerrainCausalRecovery.enabled() then
+            RealismExtensionsTerrainCausalRecovery.observeWorkedArea(g, profile)
+        end
         return
     end
     local points = buildHistoryGuidedPoints(
