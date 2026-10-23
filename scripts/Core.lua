@@ -221,6 +221,10 @@ function RealismExtensionsCore:update(dt)
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainDeformation == true
         and RealismExtensionsTerrainRuntime ~= nil then
+        if RealismExtensionsTerrainCausalRecovery ~= nil
+            and type(RealismExtensionsTerrainCausalRecovery.update) == "function" then
+            RealismExtensionsTerrainCausalRecovery.update(dt)
+        end
         if RealismExtensionsTerrainRecovery ~= nil
             and type(RealismExtensionsTerrainRecovery.update) == "function" then
             RealismExtensionsTerrainRecovery.update(dt)
