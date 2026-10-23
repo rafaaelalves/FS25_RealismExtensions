@@ -1,3 +1,5 @@
+> **Atualização de estado em 2026-10-23:** a escolha de SMOOTH como mecanismo físico foi um checkpoint histórico, **não um mecanismo de recuperação profunda aprovado para release**. Os testes de outubro mostraram melhoria de rugosidade sem restituição útil dos sulcos profundos; R4 RAISE produziu montes, e R1/R7 TARGET também falhou no critério de jogabilidade. Ver [revisão consolidada](../research/2026-10-23-terrain-recovery-release-reset.md) e [issue #59](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/59). Este ADR permanece como memória cronológica, não como autorização para repetir o SMOOTH antigo.
+
 # 0005 — Terrain recovery uses physical TerrainDeformation smoothing
 
 Status: accepted mechanism; current policy under runtime validation
