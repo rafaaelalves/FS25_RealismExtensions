@@ -199,6 +199,111 @@ function Journal:complete(token,successful)
     return result,nil
 end
 
+-- Experimental causal restitution applies only to a geometry vertex with
+-- verified pre-RE reference and an unchanged, still-owned RE lowering.
+-- It never infers a height from legacy 0.20m mechanical rut debt.
+function Journal:getRecoverablePoint(ix, iz, minDepthM)
+    if not finite(self.unitM) then return nil end
+    local key=tostring(ix)..":"..tostring(iz)
+    if self.pendingByVertex[key]~=nil then return nil end
+    local e=self.observations[key]
+    if e==nil or e.owned~=true then return nil end
+    local current=self:getHeight(e.x,e.z)
+    if not finite(current) then return nil end
+    if math.abs(current-e.observedHeightM)>0.002 then
+        -- Somebody else changed this ground; retaining an old "original" as
+        -- restore authority could undo deliberate TerraFarm work.
+        e.owned=false
+        e.observedHeightM=current
+        return nil
+    end
+    local deficit=e.preREHeightM-current
+    if deficit<math.max(0.003,tonumber(minDepthM) or 0.003)
+        or deficit>0.4 then return nil end
+    return {key=key,x=e.x,z=e.z,beforeY=current,
+        originalY=e.preREHeightM,deficitM=deficit}
+end
+
+function Journal:beginRecovery(point, radiusM)
+    if type(point)~="table" or not finite(self.unitM) then
+        return nil,"NO_TRUSTED_VERTEX"
+    end
+    local ix=math.floor(point.x/self.unitM+0.5)
+    local iz=math.floor(point.z/self.unitM+0.5)
+    local current=self:getRecoverablePoint(ix,iz,0.003)
+    if current==nil or current.key~=point.key then
+        return nil,"REFERENCE_NOT_TRUSTED"
+    end
+    local radius=math.min(
+        math.max(0.12,self.unitM*0.56),
+        math.max(0.12,tonumber(radiusM) or self.unitM*0.56)
+    )
+    local token,reason=self:begin("RECOVER:"..point.key,
+        current.x,current.z,radius)
+    if token==nil then return nil,reason end
+    token.targetKey=point.key
+    token.targetOriginalY=current.originalY
+    token.targetBeforeY=current.beforeY
+    return token,nil
+end
+
+-- This differs from the LOWER callback path: a known RE depression may
+-- legitimately be raised toward its immutable first-touch height. Every
+-- altered *other* native vertex is flagged as collateral, not re-attributed.
+function Journal:finishRecovery(token,success)
+    if type(token)~="table" or token.active~=true
+        or self.pendingByLogicalKey[token.key]~=token
+        or token.targetKey==nil then return nil,"STALE_RECOVERY_TOKEN" end
+    token.active=false
+    for _,p in ipairs(token.points) do
+        if self.pendingByVertex[p.key]==token then
+            self.pendingByVertex[p.key]=nil
+        end
+    end
+    self.pendingByLogicalKey[token.key]=nil
+    self.pendingCount=math.max(0,self.pendingCount-1)
+    if not success then return {success=false,gainM=0,collateral=0} end
+    local post={}
+    for i,p in ipairs(token.points) do
+        local y=self:getHeight(p.x,p.z)
+        if not finite(y) then return nil,"POST_HEIGHT_UNAVAILABLE" end
+        post[i]=y
+    end
+    local target=nil
+    local collateral=0
+    for i,p in ipairs(token.points) do
+        local y=post[i]
+        local delta=y-p.beforeY
+        if p.key==token.targetKey then
+            target=y
+        elseif math.abs(delta)>0.002 then
+            collateral=collateral+1
+            local e=self.observations[p.key]
+            if e~=nil then e.owned=false;e.observedHeightM=y end
+        end
+    end
+    if not finite(target) then return nil,"TARGET_VERTEX_UNOBSERVED" end
+    local beforeDeficit=token.targetOriginalY-token.targetBeforeY
+    local afterDeficit=token.targetOriginalY-target
+    local gain=beforeDeficit-math.max(0,afterDeficit)
+    local e=self.observations[token.targetKey]
+    if e~=nil then
+        e.observedHeightM=target
+        if target>token.targetOriginalY+0.004 or target<token.targetBeforeY-0.002 then
+            -- Undershoot/overraise: no more automated writes against this old
+            -- reference until a new, trusted terrain ownership event exists.
+            e.owned=false
+        elseif afterDeficit<=0.004 then
+            self.observations[token.targetKey]=nil -- physically restored
+        end
+    end
+    return {success=true,gainM=math.max(0,gain),afterY=target,
+        beforeY=token.targetBeforeY,collateral=collateral,
+        completed=afterDeficit<=0.004,
+        safe=collateral==0 and target<=token.targetOriginalY+0.004
+            and target>=token.targetBeforeY-0.002}
+end
+
 -- Snapshot is a geometry provenance sidecar, not a replacement for
 -- GIANTS native heightmap persistence. Never serialize an in-flight job as if
 -- the terrain result were confirmed, and never retroactively reconstruct an
