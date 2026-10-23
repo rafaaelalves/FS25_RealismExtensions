@@ -173,9 +173,9 @@ function Journal:complete(token,successful)
                 if entry==nil then
                     entry={x=p.x,z=p.z,preREHeightM=p.beforeY,observedHeightM=y,owned=true}
                 else
-                    -- Positive/unexplained terrain changes invalidate the
-                    -- old reference; do not synthesize ownership from them.
-                    if entry.owned==true then entry.observedHeightM=y end
+                    -- Once provenance was invalidated, track subsequent known
+                    -- geometry changes WITHOUT resurrecting the old reference.
+                    entry.observedHeightM=y
                 end
             else
                 result.raisedVertices=result.raisedVertices+1
