@@ -10,7 +10,9 @@ local calls=0
 getTerrainHeightmapUnitSize=function(node)
     assert(node~=nil)
     calls=calls+1
-    return 1
+    -- This harness supplies a per-instance unit; native retrieval is deliberately
+    -- unavailable for fake node 999 so incompatible fallback units stay testable.
+    return nil
 end
 local unready=API.new(nil)
 assert(unready.unitM==nil and calls==0)
