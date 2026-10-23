@@ -178,10 +178,13 @@ function C.update()
                 local contact=RealismExtensionsLoadedContactRegistry
                 local blocked=contact~=nil
                     and contact.overlapsCircle(point.x,point.z,radius,clock)
-                if blocked or j.pendingCount>0 then
+                if blocked then
                     C.stats.blocked=C.stats.blocked+1
                     push(item)
                 else
+                    -- The geometry journal locks native vertices, not the
+                    -- whole farm. Other independent RE writes in distant
+                    -- fields must not globally starve tillage recovery.
                     local token=j:beginRecovery(point,radius)
                     if token==nil then
                         push(item)
