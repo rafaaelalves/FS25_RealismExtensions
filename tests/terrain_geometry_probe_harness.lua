@@ -46,6 +46,14 @@ RealismExtensionsTerrainRuntime={history={
         if math.abs(x-10)<0.001 and math.abs(z-20)<0.001 then
             return {rutDepthM=0.04,preDeformHeightM=124}
         end
+    end,
+    getRecoveryCellsCircle=function(self,x,z,radius,opts)
+        assert(radius==1.5)
+        assert(opts.maxCells==256)
+        if math.abs(x-10)<0.001 and math.abs(z-20)<0.001 then
+            return {{x=10,z=20,rutDepthM=0.04},{x=10.2,z=20,rutDepthM=0.06}}
+        end
+        return {}
     end
 }}
 
@@ -60,8 +68,23 @@ local before=assert(p.capture("before"))
 assert(before.fine.count==289 and before.main.count==25)
 assert(before.unitM==1 and before.rutDepthM==0.04)
 assert(before.preDeformHeightM==124)
+-- Writer callback associations are spatially bounded and are NOT assumed
+-- to be exact native vertex ownership. Cover both nested rectangles.
+p.observeWriterCallback({x=10.1,z=20.1,radiusM=0.20},"LOWER",nil,-0.030)
+p.observeWriterCallback({x=10,z=21.2,radiusM=0.40},"TARGET","RECOVERY",0.025)
+p.observeWriterCallback({x=11.75,z=20,radiusM=0.20},"LOWER",nil,-0.015)
+p.observeWriterCallback({x=15,z=20,radiusM=0.20},"TARGET","RECOVERY",0.030)
+assert(p.writeEvents.near2m.lower==1)
+assert(p.writeEvents.near2m.target==1)
+assert(p.writeEvents.near4m.lower==2)
+assert(p.writeEvents.near4m.target==1)
 variation=0.055
 local after=assert(p.capture("after"))
+assert(p.writeEvents.near2m.lower==0 and p.writeEvents.near4m.target==0)
+assert(table.concat(log,"\n"):find("HISTORY_NEAR radius=1.5m cells=2"))
+assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near2m wheelLower=1"))
+assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near4m wheelLower=2"))
+assert(table.concat(log,"\n"):find("SHAPE from=before to=after"))
 assert(after.x==before.x and after.z==before.z)
 local foundMain=false
 local foundDense=false
