@@ -92,6 +92,34 @@ local changed=API.new(999,{unitM=1,sample=sample})
 local loaded,restoredCount,rejected=changed:importSnapshot(snap)
 assert(loaded and rejected>=1 and restoredCount<number)
 assert(changed.observations["0:0"]==nil)
+-- Reject further RE rut digging in inherited/unknown deep hollows while
+-- preserving a clean naturally sloping plane (opposite samples cancel).
+local slope=API.new(999,{unitM=1,sample=function(x,z)
+    return 100+0.22*x+0.11*z
+end})
+local room=assert(slope:getLoweringBudget(0,0,0.25,0.10,0.12))
+assert(math.abs(room-0.10)<0.000001)
+local oldHollow=API.new(999,{unitM=1,sample=function(x,z)
+    if x==30 and z==0 then return 99.70 end
+    return 100
+end})
+local noRoom,whyNo=oldHollow:getLoweringBudget(30,0,0.3,0.10,0.12)
+assert(noRoom==0 and whyNo=="DEEP_EXISTING_HOLLOW")
+local capped=API.new(999,{unitM=1,sample=sample})
+local capBrush=assert(capped:begin("wheel:cap",50,0,0.3))
+set(50,0,99.88)
+assert(capped:complete(capBrush,true).loweredVertices==1)
+local capRoom,capReason=capped:getLoweringBudget(50,0,0.3,0.10,0.12)
+assert(capRoom==0 and capReason=="DEPTH_CAP")
+local untrusted=API.new(999,{unitM=1,sample=sample})
+local editBrush=assert(untrusted:begin("wheel:edit",60,0,0.3))
+set(60,0,99.98)
+assert(untrusted:complete(editBrush,true).loweredVertices==1)
+set(60,0,99.93)
+local blockRoom,blockReason=untrusted:getLoweringBudget(60,0,0.3,0.10,0.12)
+assert(blockRoom==0 and blockReason=="EXTERNAL_EDIT")
+assert(untrusted.observations["60:0"].owned==false)
+
 -- A GIANTS TARGET brush that affects an adjacent native vertex must
 -- invalidate its own repeated-repair authority instead of doing 20 more passes.
 local rut=assert(j:begin("wheel:collateral",20,0,0.3))
