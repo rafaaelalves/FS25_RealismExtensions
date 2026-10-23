@@ -1,3 +1,5 @@
+> **Atualização de release (2026-10-23):** a aceitação prévia de R6/R7 abaixo foi **superada pela reprovação em gameplay** (dezenas de passadas vs Amenizar eficaz). A arquitetura de histórico especulativo, callbacks assíncronas e resolução espacial foi revisada em [2026-10-23 terrain recovery release reset](../research/2026-10-23-terrain-recovery-release-reset.md); o caminho crítico não é mais tuning de TARGET ou novos logs do mesmo cenário. `main` segue protegida e TerrainDeformation está desativado enquanto a versão v1 jogável não for comprovada.
+
 # Roadmap integral de estabilização RC/RE — 2026-10-08
 
 **Status:** roteiro aprovado como orientação de trabalho; **hipóteses de dificuldade e sistema de guincho não aprovadas para implementação**.  
