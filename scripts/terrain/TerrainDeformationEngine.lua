@@ -496,16 +496,73 @@ function Engine.processSample(
         end
     end
 
+    local journal = RealismExtensionsTerrainRuntime.geometryJournal
+    local journalToken = nil
+    local pendingReason = nil
+    local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
+    if journal ~= nil then
+        -- Explicit per-native-vertex exclusion avoids claiming concurrent
+        -- lower writes as independent geometry. Retry on next wheel sample.
+        local logicalKey = historyStore:getKey(x, z)
+        journalToken, pendingReason = journal:begin(
+            logicalKey, x, z, brushRadius
+        )
+        if journalToken == nil then
+            diagCount("geometryJournalDeferred", 1)
+            return false
+        end
+    end
+
     local accepted = writer:enqueue({
         x = x,
         z = z,
         depthM = appliedDepth,
-        radiusM = math.max(0.10, response.rutWidthM * 0.5),
+        radiusM = brushRadius,
         hardness = Engine.DEFAULTS.brushHardness,
-        massTransport = transport
+        massTransport = transport,
+        -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
+        onApplied = journalToken ~= nil and function(state)
+            local success = state ~= false
+                and (state == nil or TerrainDeformation == nil
+                    or TerrainDeformation.STATE_SUCCESS == nil
+                    or state == TerrainDeformation.STATE_SUCCESS)
+            local physical = journal:complete(journalToken, success)
+            if physical ~= nil and physical.success
+                and physical.loweredVertices > 0 then
+                -- Mechanical wear remains a separate model. Its physical rut
+                -- component is now limited to observed native height movement
+                -- instead of a queued 3mm request whose brush may be a no-op.
+                -- Geometry truth is the journal, not this 0.20m proxy depth.
+                local observed = math.min(
+                    appliedDepth,
+                    math.max(0, physical.maxLowerM)
+                )
+                if observed > 0.00005 then
+                    local current = historyStore:get(x, z)
+                    local currentDepth = current ~= nil
+                        and tonumber(current.rutDepthM) or previousDepth
+                    historyStore:commit(
+                        x,
+                        z,
+                        copyHistoryForAppliedDepth(
+                            response, currentDepth, observed, current,
+                            preDeformReferenceY
+                        )
+                    )
+                    diagCount("geometryJournalConfirmedDepthM", observed)
+                end
+                diagCount("geometryJournalConfirmed", 1)
+            elseif physical ~= nil and physical.success then
+                diagCount("geometryJournalNoLowering", 1)
+            else
+                diagCount("geometryJournalFailed", 1)
+            end
+        end or nil
     })
 
-    if accepted then
+    if accepted and journalToken == nil then
+        -- Legacy experimental mode only: accepts a queued request as debt.
+        -- The journal-enabled mode commits after physical confirmation above.
         historyStore:commit(
             x,
             z,
@@ -586,6 +643,7 @@ function Engine.processSample(
         return true
     end
 
+    if journalToken ~= nil then journal:complete(journalToken, false) end
     diagCount("writerRejects", 1)
     return false
 end
@@ -880,6 +938,7 @@ end
 RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     history = nil,
     writer = nil,
+    geometryJournal = nil,
     stats = {}
 }
 
@@ -894,6 +953,16 @@ function RealismExtensionsTerrainRuntime.initialize()
 
     if RealismExtensionsTerrainRuntime.writer == nil then
         RealismExtensionsTerrainRuntime.writer = RealismExtensionsTerrainWriter.new()
+    end
+    if RealismExtensionsTerrainRuntime.geometryJournal == nil
+        and RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainGeometryJournal == true
+        and RealismExtensionsTerrainGeometryJournal ~= nil then
+        RealismExtensionsTerrainRuntime.geometryJournal =
+            RealismExtensionsTerrainGeometryJournal.new(
+                g_currentMission ~= nil and g_currentMission.terrainRootNode or nil
+            )
     end
 end
 
@@ -927,7 +996,11 @@ function RealismExtensionsTerrainRuntime.clear()
     if RealismExtensionsTerrainRuntime.writer ~= nil then
         RealismExtensionsTerrainRuntime.writer:clear()
     end
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        RealismExtensionsTerrainRuntime.geometryJournal:reset()
+    end
     RealismExtensionsTerrainRuntime.history = nil
     RealismExtensionsTerrainRuntime.writer = nil
+    RealismExtensionsTerrainRuntime.geometryJournal = nil
     RealismExtensionsTerrainRuntime.stats = {}
 end
