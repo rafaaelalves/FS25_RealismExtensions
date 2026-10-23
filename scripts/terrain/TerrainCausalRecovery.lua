@@ -260,4 +260,12 @@ function C.update()
     end
 end
 
+function C.getDiagnostics()
+    local out={}
+    for k,v in pairs(C.stats) do out[k]=v end
+    out.pending=math.max(0,C.queueTail-C.queueHead+1)
+    out.inFlight=C.inFlight~=nil
+    return out
+end
+
 return C
