@@ -84,6 +84,54 @@ function Journal:enumerateVertices(x,z,radius)
     return out
 end
 
+-- Keep RE from turning a real/native depression into an unbounded pit
+-- while restitution is still experimental. This is a write-time safety gate,
+-- NOT a recovery command or a replacement for Mud's traction/sink physics.
+-- Only samples the principal heightmap and is slope-invariant for a plane.
+function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
+    if not finite(self.unitM) then return nil,"UNIT_UNAVAILABLE" end
+    local cap=tonumber(maxVerifiedDepthM) or 0.10
+    local reliefCap=tonumber(maxConcavityM) or 0.12
+    if not finite(cap) or cap<=0 or not finite(reliefCap) then
+        return nil,"INVALID_LIMITS"
+    end
+    local verts=self:enumerateVertices(x,z,radiusM)
+    if verts==nil then return nil,"FOOTPRINT_UNAVAILABLE" end
+    local largestDebt=0
+    for _,p in ipairs(verts) do
+        local existing=self.observations[p.key]
+        if existing~=nil then
+            if existing.owned~=true then return 0,"UNTRUSTED_EDIT" end
+            local y=self:getHeight(existing.x,existing.z)
+            if not finite(y) then return nil,"HEIGHT_UNAVAILABLE" end
+            if math.abs(y-existing.observedHeightM)>0.002 then
+                existing.owned=false
+                existing.observedHeightM=y
+                return 0,"EXTERNAL_EDIT"
+            end
+            local depth=existing.preREHeightM-y
+            if not finite(depth) then return nil,"INVALID_REFERENCE" end
+            largestDebt=math.max(largestDebt,depth)
+        end
+    end
+    if largestDebt>=cap then return 0,"DEPTH_CAP" end
+
+    -- Legacy saves lack a trusted first-touch height. Detect a deep local
+    -- hollow using opposing samples so a linear natural slope cancels out.
+    -- Refuse additional RE excavation in it; do not invent an old baseline.
+    local u=self.unitM
+    local c=self:getHeight(x,z)
+    local a=self:getHeight(x-u,z)
+    local b=self:getHeight(x+u,z)
+    local d=self:getHeight(x,z-u)
+    local e=self:getHeight(x,z+u)
+    if not (finite(c) and finite(a) and finite(b)
+        and finite(d) and finite(e)) then return nil,"RELIEF_UNKNOWN" end
+    local concavity=math.max((a+b)*0.5-c,(d+e)*0.5-c)
+    if concavity>reliefCap then return 0,"DEEP_EXISTING_HOLLOW" end
+    return cap-largestDebt,nil
+end
+
 function Journal:begin(logicalKey,x,z,radiusM)
     self.stats.requested=self.stats.requested+1
     local verts = self:enumerateVertices(x,z,radiusM)
