@@ -119,6 +119,26 @@ function RealismExtensionsCore:loadMap()
         end
     end
 
+    if tdEnabled and g_server ~= nil
+        and RealismExtensionsTerrainPersistence ~= nil
+        and RealismExtensionsTerrainRuntime ~= nil
+        and RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        local ok, restored, invalid = RealismExtensionsTerrainPersistence.loadGeometryJournal(
+            g_currentMission ~= nil and g_currentMission.missionInfo or nil,
+            RealismExtensionsTerrainRuntime.geometryJournal
+        )
+        if ok then
+            RealismExtensionsDiagnostics.info(string.format(
+                "restored native geometry journal cells=%d rejected=%d",
+                restored or 0,invalid or 0
+            ))
+        elseif restored ~= "no persisted geometry journal" then
+            RealismExtensionsDiagnostics.verbose(
+                "geometry journal not restored: "..tostring(restored)
+            )
+        end
+    end
+
     if RealismExtensionsTerrainMaintenance ~= nil
         and type(RealismExtensionsTerrainMaintenance.initialize) == "function" then
         RealismExtensionsTerrainMaintenance.initialize()
@@ -945,6 +965,24 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
         RealismExtensionsDiagnostics.verbose(
             "terrain history not saved: " .. tostring(detail)
         )
+    end
+
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        local geoOk, geoCount, unknown =
+            RealismExtensionsTerrainPersistence.saveGeometryJournal(
+                missionInfo,
+                RealismExtensionsTerrainRuntime.geometryJournal
+            )
+        if geoOk then
+            RealismExtensionsDiagnostics.info(string.format(
+                "saved native geometry journal cells=%d unknown=%d",
+                geoCount or 0,unknown or 0
+            ))
+        else
+            RealismExtensionsDiagnostics.info(
+                "geometry journal not saved: "..tostring(geoCount)
+            )
+        end
     end
 end
 
