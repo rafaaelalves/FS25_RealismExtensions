@@ -102,6 +102,17 @@ function Journal:begin(logicalKey,x,z,radiusM)
         end
         before[#before+1]={key=v.key,x=v.x,z=v.z,beforeY=y}
     end
+    -- Any unexpected geometry edit between two RE writes ends ownership
+    -- of the old baseline at that native vertex. Do not overwrite baseline.
+    -- This guard is conservative and is not an attribution of the external
+    -- writer; it protects deliberate TerraFarm/Construction edits.
+    for _,p in ipairs(before) do
+        local entry=self.observations[p.key]
+        if entry~=nil and math.abs(entry.observedHeightM-p.beforeY)>0.002 then
+            entry.owned=false
+            entry.observedHeightM=p.beforeY
+        end
+    end
     self.nextId=self.nextId+1
     local token={id=self.nextId,key=logicalKey,points=before,active=true}
     for _,p in ipairs(before) do self.pendingByVertex[p.key]=token end
