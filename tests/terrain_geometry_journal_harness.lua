@@ -5,6 +5,15 @@ local heights={}
 local function key(x,z) return string.format("%.2f,%.2f",x,z) end
 local function sample(x,z) return heights[key(x,z)] or 100 end
 local function set(x,z,y) heights[key(x,z)]=y end
+-- GIANTS must never receive nil as a native handle during loadMap.
+local calls=0
+getTerrainHeightmapUnitSize=function(node)
+    assert(node~=nil)
+    calls=calls+1
+    return 1
+end
+local unready=API.new(nil)
+assert(unready.unitM==nil and calls==0)
 local j=API.new(999,{unitM=1,sample=sample})
 assert(j.unitM==1)
 local verts=j:enumerateVertices(0,0,0.3)
