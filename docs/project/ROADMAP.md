@@ -103,3 +103,15 @@ These are candidates, not promises. Every module must justify ownership and main
 - [ ] **P3:** tire track **visual** save/replay and unbraked trailer mud drag as isolated measurement tasks, not presumed physics gaps.
 
 [AutoSwitch RE research memo](../research/2026-10-18-autoswitch-decision-policy-and-wheel-racks.md). Current RE PTO V1.6, RC per-bridge arbitration and `TerrainDeformation=false` in main remain unchanged.
+
+
+## Source research — Hydraulic Suspension System 1.1.0.0 (2026-10-23)
+
+- [x] Source-audited uploaded HSS 1.1.0.0 (`0c014805e1dc8dd981f7f2d6c34903578a90daa0b1b94db4120d7a335381cf59`) against archived 1.0.0.0 (`b338a28d13cadfe8b00949c7d0461079a04f6ee29a5afdd6fc79c3567038d40e`): +2, modified 41, removed 0; CRC/XML/Lua syntax pass.
+- [x] Evaluate physical front/rear/pendular suspension, dynamic WORK/ROAD damping, frontloader Ride Control and cab visuals; no heightmap writer or replacement grip simulator.
+- [x] Identify non-composing MR/HSS per-wheel spring/damper claim, parked/AI ownership persistence, client-to-server permission/clamp omission, 7→12 config reset, new `loaderOff` schema question and forced wheel rebuild performance gate.
+- [ ] **After current RE Terrain V3 recovery milestone or as a separately authorized independent research sprint:** controlled singleplayer A/B HSS 1.1 vs vanilla/MR/RMS/Mud/Reifen on supported tractor, small tractor, Fastrac and frontloader. Verify owner release across driver→AI→park and double save/reload.
+- [ ] **If measurable unique capability confirmed:** design a distinct opt-in `SuspensionControl` subsystem (not a broad RC physics replacement) with vehicle-profile provenance, safe exclusive spring/damper lease/release, server authority, visual axle and arm/cab effects separated; preserve RE native PTO and existing MR/Mud/Reifen/RMS ownership.
+- [ ] No MP promotion without server validation of controller/ownership and clamped height requests; do not import third-party code/sounds without applicable permissions.
+
+[HSS exact-source research](../research/2026-10-23-hydraulic-suspension-system-1.1.0.0-audit.md). **Docs only; no RE behavior or package version changed.**
