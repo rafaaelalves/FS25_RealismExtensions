@@ -124,6 +124,17 @@ local function pop()
     C.queueHead=C.queueHead+1
     if C.queueHead>C.queueTail then
         C.queue={};C.queueHead=1;C.queueTail=0
+    elseif C.queueHead>256 and C.queueHead>C.queueTail*0.5 then
+        -- A blocked wheel can keep a candidate in the queue for seconds.
+        -- Without bounded compaction the Lua array index grows forever while
+        -- tasks are repeatedly retried, despite a fixed active queue size.
+        local compact={}
+        for i=C.queueHead,C.queueTail do
+            compact[#compact+1]=C.queue[i]
+        end
+        C.queue=compact
+        C.queueHead=1
+        C.queueTail=#compact
     end
     return p
 end
