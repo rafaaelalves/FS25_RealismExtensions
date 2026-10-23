@@ -291,7 +291,7 @@ function RealismExtensionsCore:update(dt)
                 and RealismExtensionsTerrainCausalRecovery.getDiagnostics() or {}
             local ws=runtime.writer~=nil and runtime.writer.stats or {}
             RealismExtensionsDiagnostics.info(string.format(
-                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d recoveryCandidates=%d queued=%d callback=%d improved=%d unchanged=%d collateral=%d failed=%d legacyTarget=%d nativeFailure=%d",
+                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d recoveryCandidates=%d queued=%d callback=%d improved=%d unchanged=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d",
                 tostring(RealismExtensionsConfig.modules.TerrainCausalRecovery==true),
                 tostring(journal~=nil and journal.unitM~=nil),
                 journal~=nil and tostring(journal.unitM) or "-",
