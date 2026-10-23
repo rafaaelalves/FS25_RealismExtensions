@@ -291,7 +291,7 @@ function RealismExtensionsCore:update(dt)
                 and RealismExtensionsTerrainCausalRecovery.getDiagnostics() or {}
             local ws=runtime.writer~=nil and runtime.writer.stats or {}
             RealismExtensionsDiagnostics.info(string.format(
-                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d",
+                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm missingBaselineVisits=%d untrustedVisits=%d byTool=%d/%d/%d/%d unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d",
                 tostring(RealismExtensionsConfig.modules.TerrainCausalRecovery==true),
                 tostring(journal~=nil and journal.unitM~=nil),
                 journal~=nil and tostring(journal.unitM) or "-",
@@ -304,6 +304,9 @@ function RealismExtensionsCore:update(dt)
                 cs.considered or 0,cs.pending or 0,cs.completed or 0,
                 cs.improved or 0,cs.physicallyClosed or 0,
                 cs.gainSumM or 0,cs.maxGainM or 0,cs.maxBeforeDeficitM or 0,
+                cs.noBaselineVisits or 0,cs.untrustedVisits or 0,
+                cs.toolPLOW or 0,cs.toolSUBSOILER or 0,
+                cs.toolCULTIVATOR or 0,cs.toolOTHER or 0,
                 cs.unchanged or 0,cs.unsafe or 0,
                 cs.collateral or 0,cs.failed or 0,
                 ws.recoveryTargetBrushes or 0,ws.failedJobs or 0
