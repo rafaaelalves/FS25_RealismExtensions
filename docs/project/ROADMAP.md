@@ -115,3 +115,15 @@ These are candidates, not promises. Every module must justify ownership and main
 - [ ] No MP promotion without server validation of controller/ownership and clamped height requests; do not import third-party code/sounds without applicable permissions.
 
 [HSS exact-source research](../research/2026-10-23-hydraulic-suspension-system-1.1.0.0-audit.md). **Docs only; no RE behavior or package version changed.**
+
+
+## External source research — Realistic Physics 1.20.2.0 (2026-10-23)
+
+- [x] Source audit exact `FS25_RealisticPhysics.zip` SHA-256 `04e19cf8ad0310eda538f72ad09cb2d1b0ea52f19a0d1f5b3246979f1b74fc72`: 170 entries (168 Lua, 1 XML, 1 DDS), CRC/XML/Lua parse PASS. 167 tables are mainly uniform (`forcePointRatio=0.9` in all, `damper=1` in 161, 3 rear tractor travel `0.10`), not 167 physically unique machine models.
+- [x] Identify **not a soil dryness/hardpan/implement-draft mod**: the `road/hard/field/soft` labels merely scale wheelspin-induced grip oscillation and vertical force; no moisture read, compaction, historical strength or heightmap writer. `fadeSpeed=1.8 m/s` is 6.48 km/h despite comment claiming ~22; `updateTireFriction` temporary multiplier can clamp at 0.05 × baseline, conflicting with MR/Mud/Reifen.
+- [x] Distinguish HSS ownership from RP: HSS is a full dynamic suspension/ride-control capability worth separate external-first test; RP broad rewrites spring/damping baselines and adds synthetic wheel hop. Do not initially co-install HSS/RP; no RC hook patch or RE implementation justified.
+- [ ] **P1 as an independent research milestone, after Terrain V3 recovery or explicit re-prioritization:** audit actual MR/SoilCompaction/Mud/RC `MRMudDraft` mechanics for **dry/very-dry soil implement workability**, separate soft-wet adhesion, optimal soil and dry penetration strength. Measure native implement depth, draft and wheel-slip limitations; only then design a narrow owner-composed soil-strength provider if missing.
+- [ ] **P2 parked:** after HSS A/B, inspect real wheel hop/chassis vertical acceleration and decide whether GIANTS/HSS suspension already covers it, rather than add a sinusoidal grip loss or second friction writer.
+- [ ] **P2 data quality:** adopt concept of `rsStock` vanilla-vs-current per-wheel diagnostic only with RE-specific capability profiles and no copied third-party code.
+
+[Realistic Physics exact-source audit](../research/2026-10-23-realistic-physics-1.20.2.0-full-stack-audit.md). **RE/RC runtime and modDesc versions unchanged; docs-only — do not generate build artifacts.**
