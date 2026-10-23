@@ -13,6 +13,11 @@ Engine.DEFAULTS = {
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.003,
+    -- Temporary physical safety envelope for experimental journal-owned ruts;
+    -- depth cap is relative to the VERIFIED original main-heightmap vertex,
+    -- not to a speculative 0.20m history cell.
+    maxVerifiedNativeRutDepthM = 0.10,
+    maxPreExistingHollowM = 0.12,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
@@ -82,8 +87,24 @@ local function diagnosticsEnabled()
         and RealismExtensionsConfig.diagnostics.verbose == true
 end
 
+-- A few critical ownership counters stay cheap and available when the
+-- high-volume five-second research mode is OFF.
+local HEALTH_COUNTERS={
+    brushesAccepted=true,
+    geometryJournalDeferred=true,
+    geometryJournalConfirmed=true,
+    geometryJournalNoLowering=true,
+    geometryJournalConfirmedDepthM=true,
+    geometryJournalFailClosed=true,
+    geometryJournalFailed=true,
+    nativeRutGuardBlocked=true,
+    nativeRutGuardUnavailable=true,
+    nativeRutGuardCap=true,
+    nativeRutGuardOldHollow=true,
+    nativeRutGuardUntrusted=true
+}
 local function diagCount(name, delta)
-    if not diagnosticsEnabled() then return end
+    if not diagnosticsEnabled() and HEALTH_COUNTERS[name]~=true then return end
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil then return end
     runtime.stats = runtime.stats or {}
@@ -507,6 +528,34 @@ function Engine.processSample(
     local journalToken = nil
     local pendingReason = nil
     local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
+    if journal ~= nil and causalRequired then
+        -- Independent native-grid safety ceiling: once excavation exceeds
+        -- the confirmed physical budget (or enters an existing deep hollow),
+        -- suppress further RE writes. Mud can still sink temporarily.
+        local remaining,reason=journal:getLoweringBudget(
+            x,z,brushRadius,
+            Engine.DEFAULTS.maxVerifiedNativeRutDepthM,
+            Engine.DEFAULTS.maxPreExistingHollowM
+        )
+        if remaining==nil or remaining<=0 then
+            diagCount("nativeRutGuardBlocked",1)
+            if remaining==nil then
+                diagCount("nativeRutGuardUnavailable",1)
+            elseif reason=="DEPTH_CAP" then
+                diagCount("nativeRutGuardCap",1)
+            elseif reason=="DEEP_EXISTING_HOLLOW" then
+                diagCount("nativeRutGuardOldHollow",1)
+            else
+                diagCount("nativeRutGuardUntrusted",1)
+            end
+            return false
+        end
+        appliedDepth=math.min(appliedDepth,remaining)
+        if appliedDepth<=writer.options.minDepthM then
+            diagCount("nativeRutGuardCap",1)
+            return false
+        end
+    end
     if journal ~= nil then
         -- Explicit per-native-vertex exclusion avoids claiming concurrent
         -- lower writes as independent geometry. Retry on next wheel sample.
