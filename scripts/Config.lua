@@ -46,6 +46,8 @@ RealismExtensionsConfig = {
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
+        -- Opt-in until the causal restoration actuator passes in-game checks.
+        TerrainCausalRecovery = false,
         TerrainRecovery = true,
         -- Experimental correction: refuse unsupported terrain reference planes.
         -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
