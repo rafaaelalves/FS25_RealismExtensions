@@ -71,6 +71,8 @@ assert(math.abs(j.observations["0:0"].observedHeightM-99.7)<0.000001)
 set(0,0,99.97)
 queued[1].onApplied(1)
 assert(C.inFlight==nil and C.stats.improved==1)
+assert(C.stats.gainSumM>0.26 and C.stats.maxGainM>0.26)
+assert(C.stats.physicallyClosed==0)
 assert(j.observations["0:0"].owned==true)
 assert(historyCells[key(0,0)].rutDepthM==0.08) -- not yet closed
 queued[1].onApplied(1) -- callback may repeat; must not double count
