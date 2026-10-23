@@ -6,17 +6,18 @@ RealismExtensionsConfig = {
         -- development: causal runtime telemetry enabled for active research.
         -- stabilization: retain cheap health/perf telemetry, reduce research noise.
         -- minimal: errors/startup identity only.
-        profile = "development",
-        verbose = true,
+        profile = "stabilization",
+        -- Full historical research trace remains opt-in via verbose=true.
+        verbose = false,
         ptoWorkerEvents = true,
-        windowMs = 5000,
+        windowMs = 60000,
         causalWindows = true,
         writerAttribution = true,
         -- Bounded per-operation causal samples (12 TARGET, 18 rut max).
-        targetOutcomeSamples = true,
-        rutCausalSamples = true,
+        targetOutcomeSamples = false,
+        rutCausalSamples = false,
         expensiveGeometry = false,
-        performanceTiming = true
+        performanceTiming = false
     },
     ptoHud = {
         enabled = true,
