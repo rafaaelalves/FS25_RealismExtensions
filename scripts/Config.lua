@@ -47,8 +47,9 @@ RealismExtensionsConfig = {
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
-        -- Opt-in until the causal restoration actuator passes in-game checks.
-        TerrainCausalRecovery = false,
+        -- The experimental branch actively exercises causal restoration.
+        -- Production main remains protected; only use this on a copied save.
+        TerrainCausalRecovery = true,
         TerrainRecovery = true,
         -- Experimental correction: refuse unsupported terrain reference planes.
         -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
@@ -56,7 +57,8 @@ RealismExtensionsConfig = {
         -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
         -- toggle false to compare original R6 behavior on the same backup save.
         TerrainPlasticYield = true,
-        TerrainMaintenance = true,
+        -- Isolate the legacy R1 maintenance writer during causal v1 trial.
+        TerrainMaintenance = false,
         SoilMassTransport = false,
         NativeTireTrackProbe = true,
         AIVisualTireTracks = true,
