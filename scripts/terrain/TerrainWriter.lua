@@ -186,6 +186,7 @@ function Writer:enqueue(brush)
         targetPlaneAx = tonumber(brush.targetPlaneAx) or 0,
         targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
         recoveryPreProbe = brush.recoveryPreProbe,
+        skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
         onApplied = brush.onApplied
     }
     self.queueCount = (self.queueCount or 0) + 1
