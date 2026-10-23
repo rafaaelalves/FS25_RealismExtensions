@@ -9,6 +9,15 @@ Probe.position = nil
 Probe.previous = nil
 Probe.captureIndex = 0
 
+local function newWriteEvents()
+    return {
+        near2m={lower=0,target=0,other=0,raise=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0},
+        near4m={lower=0,target=0,other=0,raise=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0}
+    }
+end
+
+Probe.writeEvents = newWriteEvents()
+
 local function finite(value)
     return type(value) == "number"
         and value == value and value ~= math.huge and value ~= -math.huge
@@ -39,6 +48,7 @@ function Probe.reset()
     Probe.position = nil
     Probe.previous = nil
     Probe.captureIndex = 0
+    Probe.writeEvents = newWriteEvents()
 end
 
 -- GIANTS FS25 Player uses g_localPlayer:getPosition() on foot;
@@ -110,10 +120,48 @@ function Probe:consoleMark(xText, zText)
     self.position = { x = x, z = z }
     self.previous = nil
     self.captureIndex = 0
+    self.writeEvents = newWriteEvents()
     return speak(string.format(
         "MARK x=%.3f z=%.3f origin=%s | 4m x 4m main grid; 2m x 2m sampled every 0.125m; READ ONLY",
         x, z, origin
     ))
+end
+
+-- Callback-based *proximity* telemetry from RE's own TerrainWriter only.
+-- It is not a native write attribution for every measured heightmap sample.
+-- Called after a successful native writer callback; no new terrain writes.
+local function overlapsSquare(px, pz, brush, halfWidthM)
+    local radius = tonumber(brush.radiusM) or 0
+    local dx = math.max(0, math.abs(brush.x - px) - halfWidthM)
+    local dz = math.max(0, math.abs(brush.z - pz) - halfWidthM)
+    return dx*dx + dz*dz <= radius*radius
+end
+
+function Probe.observeWriterCallback(brush, mode, source, deltaY)
+    local p = Probe.position
+    if p == nil or type(brush) ~= "table"
+        or not finite(brush.x) or not finite(brush.z) then
+        return
+    end
+    local kind = mode == "LOWER" and "lower"
+        or (mode == "TARGET" and source == "RECOVERY") and "target"
+        or mode == "RAISE" and "raise" or "other"
+    local events = Probe.writeEvents
+    for _, desc in ipairs({{"near2m",1}, {"near4m",2}}) do
+        if overlapsSquare(p.x,p.z,brush,desc[2]) then
+            local e = events[desc[1]]
+            e[kind] = e[kind] + 1
+            if finite(deltaY) then
+                if kind == "lower" and deltaY < -0.00005 then
+                    e.lowerCenterDown = e.lowerCenterDown + 1
+                elseif kind == "target" and deltaY > 0.00005 then
+                    e.targetCenterUp = e.targetCenterUp + 1
+                elseif kind == "target" and deltaY < -0.00005 then
+                    e.targetCenterDown = e.targetCenterDown + 1
+                end
+            end
+        end
+    end
 end
 
 local function sampleGrid(terrain, x, z, stepM, halfSteps)
@@ -158,6 +206,15 @@ local function residualAgainstCornerPlane(grid, halfSteps)
     return minResidual, maxResidual, centerResidual
 end
 
+local function formatWriterEvents(prefix, events, interval)
+    return string.format(
+        "WRITER_NEAR interval=%s area=%s wheelLower=%d (centerDown=%d) recoveryTarget=%d (centerUp=%d centerDown=%d) raise=%d other=%d (callback brush overlap, NOT per-vertex ownership)",
+        tostring(interval),prefix,events.lower,events.lowerCenterDown,
+        events.target,events.targetCenterUp,events.targetCenterDown,
+        events.raise,events.other
+    )
+end
+
 local function compareSamples(previous, current)
     if previous == nil or current == nil
         or #previous.samples ~= #current.samples then return nil end
@@ -200,12 +257,26 @@ function Probe.capture(label)
         and history:get(p.x,p.z) or nil
     local rut = h ~= nil and tonumber(h.rutDepthM) or nil
     local ref = h ~= nil and tonumber(h.preDeformHeightM) or nil
+    local nearbyCells, nearbyMax = 0, 0
+    if history ~= nil and type(history.getRecoveryCellsCircle) == "function" then
+        local candidates = history:getRecoveryCellsCircle(
+            p.x,p.z,1.5,{minRutM=0.003,maxCells=256}
+        )
+        if type(candidates) == "table" then
+            nearbyCells = #candidates
+            for _,candidate in ipairs(candidates) do
+                nearbyMax = math.max(nearbyMax,tonumber(candidate.rutDepthM) or 0)
+            end
+        end
+    end
 
     Probe.captureIndex = Probe.captureIndex + 1
     local current = {
         label=tostring(label or ("snap"..Probe.captureIndex)),
         x=p.x,z=p.z,fine=fine,main=main,unitM=unit,
-        rutDepthM=rut,preDeformHeightM=ref
+        rutDepthM=rut,preDeformHeightM=ref,
+        valleyResidualM=rrMin,peakResidualM=rrMax,
+        centerResidualM=rrCenter
     }
     speak(string.format(
         "SNAP #%d label=%s x=%.3f z=%.3f mainUnit=%s samples=25(main),289(dense SAME API) minY=%.4f maxY=%.4f centerResidual=%.4fm valleyResidual=%.4fm peakResidual=%.4fm rutDebt=%s firstTouch=%s",
@@ -215,8 +286,26 @@ function Probe.capture(label)
         rut ~= nil and string.format("%.4fm",rut) or "none",
         ref ~= nil and string.format("%.4fm",ref) or "none"
     ))
+    speak(string.format(
+        "HISTORY_NEAR radius=1.5m cells=%d maxRut=%.4fm center=%s (not proof of native vertex ownership)",
+        nearbyCells,nearbyMax,
+        rut ~= nil and string.format("%.4fm",rut) or "none"
+    ))
     local previous = Probe.previous
+    local interval = previous ~= nil
+        and (previous.label .. "->" .. current.label)
+        or ("mark->" .. current.label)
+    for _,area in ipairs({"near2m","near4m"}) do
+        speak(formatWriterEvents(area, Probe.writeEvents[area], interval))
+    end
     if previous ~= nil then
+        speak(string.format(
+            "SHAPE from=%s to=%s valleyResidualChange=%+.4fm peakResidualChange=%+.4fm centerResidualChange=%+.4fm (relative to measured patch corner surface, NOT restoration proof)",
+            previous.label,current.label,
+            current.valleyResidualM-previous.valleyResidualM,
+            current.peakResidualM-previous.peakResidualM,
+            current.centerResidualM-previous.centerResidualM
+        ))
         for _, key in ipairs({"main","fine"}) do
             local d = compareSamples(previous[key],current[key])
             speak(string.format(
@@ -229,6 +318,7 @@ function Probe.capture(label)
         end
     end
     Probe.previous = current
+    Probe.writeEvents = newWriteEvents()
     return current
 end
 
