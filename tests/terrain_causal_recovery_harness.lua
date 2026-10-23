@@ -112,4 +112,17 @@ assert(#queued==3)
 queued[3].onApplied(false)
 assert(C.inFlight==nil and j.pendingCount==0 and C.stats.failed==1)
 assert(j.observations["4:4"].owned==true)
+-- A 25cm subsoiler strip may partially touch a 1m native grid vertex
+-- despite never containing its exact centre; do not lose its worked area.
+C.reset()
+local narrowLower=assert(j:begin("wheel:narrow",8,0,0.3))
+set(8,0,99.93)
+assert(j:complete(narrowLower,true).loweredVertices==1)
+local narrow={xs=8.30,zs=-0.20,ux=0.25,uz=0,vx=0,vz=0.4}
+local sub={id="SUBSOILER",surfaceRegrade01=0.35}
+assert(C.observeWorkedArea(narrow,sub)==1)
+assert(C.stats.toolSUBSOILER==1)
+assert(C.observeWorkedArea({xs=8.60,zs=-0.20,ux=0.2,uz=0,
+    vx=0,vz=0.4},sub)==0) -- beyond the half-grid support margin
+assert(C.stats.noBaselineVisits>=0)
 print("terrain_causal_recovery_harness: OK")
