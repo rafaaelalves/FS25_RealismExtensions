@@ -319,6 +319,16 @@ TerrainDeformation={STATE_SUCCESS=1}
 vehicle.isServer=true
 wheelA.testX=20
 wheelB.testX=100
+-- Reset motion anchors: moving from the earlier 2m positions is a
+-- teleport in this harness, not a continuous tire rut.
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastZ=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastZ=nil
 bodySpeedKph=5
 g_currentMission.time=g_currentMission.time+1000
 local historyBefore=RealismExtensionsTerrainRuntime.history.count
