@@ -43,6 +43,10 @@ local area={xs=-0.7,zs=-0.7,ux=1.4,uz=0,vx=0,vz=1.4}
 local otherArea={xs=3,zs=3,ux=1,uz=0,vx=0,vz=1}
 local profile={id="PLOW",surfaceRegrade01=0.9}
 assert(C.enabled()==true)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+assert(C.enabled()==false)
+assert(C.observeWorkedArea(area,profile)==0)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
 -- Physical rut exists only after a completed LOWER callback.
 local op=assert(j:begin("wheel:0",0,0,0.3))
 set(0,0,99.7)
