@@ -964,16 +964,25 @@ function RealismExtensionsTerrainRuntime.initialize()
     if RealismExtensionsTerrainRuntime.writer == nil then
         RealismExtensionsTerrainRuntime.writer = RealismExtensionsTerrainWriter.new()
     end
-    if RealismExtensionsTerrainRuntime.geometryJournal == nil
-        and RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.modules ~= nil
-        and RealismExtensionsConfig.modules.TerrainGeometryJournal == true
-        and RealismExtensionsTerrainGeometryJournal ~= nil then
-        RealismExtensionsTerrainRuntime.geometryJournal =
-            RealismExtensionsTerrainGeometryJournal.new(
-                g_currentMission ~= nil and g_currentMission.terrainRootNode or nil
-            )
-    end
+    RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+end
+
+-- The initial loadMap hook can run before mission.terrainRootNode exists.
+-- Retry only until a real native map node and a positive unit are available.
+function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then return true end
+    if RealismExtensionsConfig == nil or RealismExtensionsConfig.modules == nil
+        or RealismExtensionsConfig.modules.TerrainGeometryJournal ~= true
+        or RealismExtensionsTerrainGeometryJournal == nil then return false end
+    local missionNode = g_currentMission ~= nil
+        and g_currentMission.terrainRootNode or nil
+    local terrainNode = type(missionNode) == "number" and missionNode > 0
+        and missionNode or g_terrainNode
+    if type(terrainNode) ~= "number" or terrainNode <= 0 then return false end
+    local candidate = RealismExtensionsTerrainGeometryJournal.new(terrainNode)
+    if candidate.unitM == nil then return false end
+    RealismExtensionsTerrainRuntime.geometryJournal = candidate
+    return true
 end
 
 function RealismExtensionsTerrainRuntime.flush()
