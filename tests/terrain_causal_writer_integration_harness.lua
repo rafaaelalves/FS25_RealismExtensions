@@ -112,11 +112,15 @@ assert(get(0,0)>baseline(0,0)-0.04)
 assert(get(1,0)==baseline(1,0))
 assert(get(0,1)==baseline(0,1))
 assert(j.observations["0:0"]~=nil)
--- No false completion without an actual native height match; another
--- legitimate short pass can complete the last few millimeters.
-g_currentMission.time=3000
-assert(C.observeWorkedArea(area,profile)==1)
-C.update();w:flush()
-assert(C.stats.completed==3)
+-- No false completion without a real native-height match. With a
+-- simulated engine that applies only 65% of the distance to every target,
+-- additional real operations are necessary even when logic is correct.
+for i=3,5 do
+    g_currentMission.time=i*1000
+    assert(C.observeWorkedArea(area,profile)==1)
+    C.update();w:flush()
+    if i<5 then assert(j.observations["0:0"]~=nil) end
+end
 assert(j.observations["0:0"]==nil)
+assert(C.stats.completed==5)
 print("terrain_causal_writer_integration_harness: OK")
