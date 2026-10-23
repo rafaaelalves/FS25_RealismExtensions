@@ -943,6 +943,9 @@ function RealismExtensionsCore:deleteMap()
         RealismExtensionsTerrainMaintenance.shutdown()
     end
 
+    if RealismExtensionsTerrainCausalRecovery ~= nil then
+        RealismExtensionsTerrainCausalRecovery.reset()
+    end
     if RealismExtensionsTerrainRuntime ~= nil then
         RealismExtensionsTerrainRuntime.clear()
     end
