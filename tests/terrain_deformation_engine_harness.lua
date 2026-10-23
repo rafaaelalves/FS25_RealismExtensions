@@ -335,7 +335,7 @@ local historyBefore=RealismExtensionsTerrainRuntime.history.count
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert(#callbacks==2)
 assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
-assert(journal.pendingCount==2)
+assert(journal.pendingCount==2, "journal pending="..tostring(journal.pendingCount).." active="..tostring((function() local n=0 for _ in pairs(journal.pendingByLogicalKey) do n=n+1 end return n end)()))
 local requeued=#callbacks
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert(#callbacks==requeued) -- still pending: no duplicate native jobs
