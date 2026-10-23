@@ -866,6 +866,17 @@ function Writer:_submitBatch(depthM, brushes, mode)
                     }
                 end
 
+                -- Development-only, read-only *proximity* attribution.
+                -- This telemetry is passive and inactive without reGeoMark.
+                -- It does not assert which individual native vertex moved.
+                local geoProbe = RealismExtensionsTerrainGeometryProbe
+                if geoProbe ~= nil and geoProbe.position ~= nil
+                    and type(geoProbe.observeWriterCallback) == "function" then
+                    geoProbe.observeWriterCallback(
+                        brush,self.mode,self.source,deltaY
+                    )
+                end
+
                 if type(brush.onApplied) == "function" then
                     pcall(
                         brush.onApplied,
