@@ -200,3 +200,79 @@ function Persistence.load(missionInfo, history)
     if not ok then return false, reason end
     return true, #snapshot.cells
 end
+
+
+-- Separate experimental provenance sidecar. The old v2 mechanical-history
+-- XML remains unchanged, so the new grid domain cannot corrupt legacy saves.
+Persistence.GEOMETRY_FILE_NAME = "realismExtensionsGeometryJournal.xml"
+Persistence.GEOMETRY_ROOT = "realismExtensionsGeometryJournal"
+
+function Persistence.getGeometryPath(missionInfo)
+    if missionInfo==nil or missionInfo.savegameDirectory==nil then return nil end
+    return missionInfo.savegameDirectory.."/"..Persistence.GEOMETRY_FILE_NAME
+end
+
+function Persistence.saveGeometryJournal(missionInfo,journal)
+    if g_server==nil or missionInfo==nil or missionInfo.isValid~=true
+        or journal==nil or type(journal.exportSnapshot)~="function" then
+        return false,"not authoritative geometry save context"
+    end
+    local snapshot,reason=journal:exportSnapshot()
+    if snapshot==nil then return false,reason end
+    if type(snapshot.unitM)~="number" or snapshot.unitM<=0
+        or snapshot.unitM~=snapshot.unitM then
+        return false,"native heightmap unit unavailable; geometry journal not saved"
+    end
+    local path=Persistence.getGeometryPath(missionInfo)
+    if path==nil then return false,"geometry save path unavailable" end
+    local xml=XMLFile.create("realismExtensionsGeometryJournal",path,
+        Persistence.GEOMETRY_ROOT)
+    if xml==nil then return false,"unable to create geometry journal XML" end
+    local root=Persistence.GEOMETRY_ROOT
+    xml:setInt(root.."#formatVersion",snapshot.version)
+    xml:setString(root.."#mapId",getMapIdentity() or "")
+    xml:setFloat(root.."#unitM",snapshot.unitM)
+    for i,c in ipairs(snapshot.cells) do
+        local key=string.format("%s.cells.cell(%d)",root,i-1)
+        xml:setFloat(key.."#x",c.x)
+        xml:setFloat(key.."#z",c.z)
+        xml:setFloat(key.."#preREHeightM",c.preREHeightM)
+        xml:setFloat(key.."#observedHeightM",c.observedHeightM)
+        xml:setBool(key.."#owned",c.owned==true)
+    end
+    xml:save()
+    xml:delete()
+    return true,#snapshot.cells,snapshot.unknown
+end
+
+function Persistence.loadGeometryJournal(missionInfo,journal)
+    if g_server==nil or journal==nil or type(journal.importSnapshot)~="function" then
+        return false,"not authoritative geometry load context"
+    end
+    local path=Persistence.getGeometryPath(missionInfo)
+    if path==nil or fileExists(path)~=true then
+        return false,"no persisted geometry journal"
+    end
+    local xml=XMLFile.load("realismExtensionsGeometryJournal",path)
+    if xml==nil then return false,"unable to load geometry journal XML" end
+    local root=Persistence.GEOMETRY_ROOT
+    local ver=xml:getInt(root.."#formatVersion",0)
+    local mapId=xml:getString(root.."#mapId","")
+    local unitM=xml:getFloat(root.."#unitM",-1)
+    if mapId~=(getMapIdentity() or "") then
+        xml:delete()
+        return false,"geometry journal map identity mismatch"
+    end
+    local snap={version=ver,unitM=unitM,cells={}}
+    xml:iterate(root..".cells.cell",function(_,key)
+        snap.cells[#snap.cells+1]={
+            x=xml:getFloat(key.."#x"),
+            z=xml:getFloat(key.."#z"),
+            preREHeightM=xml:getFloat(key.."#preREHeightM"),
+            observedHeightM=xml:getFloat(key.."#observedHeightM"),
+            owned=xml:getBool(key.."#owned",false)
+        }
+    end)
+    xml:delete()
+    return journal:importSnapshot(snap)
+end

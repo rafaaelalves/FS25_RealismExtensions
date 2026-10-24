@@ -186,6 +186,7 @@ function Writer:enqueue(brush)
         targetPlaneAx = tonumber(brush.targetPlaneAx) or 0,
         targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
         recoveryPreProbe = brush.recoveryPreProbe,
+        skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
         onApplied = brush.onApplied
     }
     self.queueCount = (self.queueCount or 0) + 1
@@ -540,6 +541,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             brushes[1].source == "RECOVERY"
             or brushes[1].source == "MAINTENANCE"
         )
+        and brushes[1].skipRecoveryGeometryProbe ~= true
 
     if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
@@ -1060,6 +1062,13 @@ function Writer:flush()
                 self.stats.submittedBrushes = self.stats.submittedBrushes + #batch
             else
                 self.stats.failedJobs = self.stats.failedJobs + 1
+                -- Enqueue is not native success. Notify callback-bearing brushes
+                -- that submission itself failed so causal locks cannot leak.
+                for _, failedBrush in ipairs(batch) do
+                    if type(failedBrush.onApplied) == "function" then
+                        pcall(failedBrush.onApplied, false, nil, nil, nil, nil, nil)
+                    end
+                end
             end
         end
     end

@@ -6,17 +6,18 @@ RealismExtensionsConfig = {
         -- development: causal runtime telemetry enabled for active research.
         -- stabilization: retain cheap health/perf telemetry, reduce research noise.
         -- minimal: errors/startup identity only.
-        profile = "development",
-        verbose = true,
+        profile = "stabilization",
+        -- Full historical research trace remains opt-in via verbose=true.
+        verbose = false,
         ptoWorkerEvents = true,
-        windowMs = 5000,
+        windowMs = 60000,
         causalWindows = true,
         writerAttribution = true,
         -- Bounded per-operation causal samples (12 TARGET, 18 rut max).
-        targetOutcomeSamples = true,
-        rutCausalSamples = true,
+        targetOutcomeSamples = false,
+        rutCausalSamples = false,
         expensiveGeometry = false,
-        performanceTiming = true
+        performanceTiming = false
     },
     ptoHud = {
         enabled = true,
@@ -43,6 +44,12 @@ RealismExtensionsConfig = {
     modules = {
         PTOControl = true,
         TerrainDeformation = true,
+        -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
+        -- NOT production-ready until journal save/restore and recovery are validated.
+        TerrainGeometryJournal = true,
+        -- The experimental branch actively exercises causal restoration.
+        -- Production main remains protected; only use this on a copied save.
+        TerrainCausalRecovery = true,
         TerrainRecovery = true,
         -- Experimental correction: refuse unsupported terrain reference planes.
         -- Turn OFF to reproduce the pre-fix annular estimator in A/B tests.
@@ -50,7 +57,8 @@ RealismExtensionsConfig = {
         -- EXPERIMENTAL v1. Pure bearing-pressure gate for RE persistent ruts;
         -- toggle false to compare original R6 behavior on the same backup save.
         TerrainPlasticYield = true,
-        TerrainMaintenance = true,
+        -- Isolate the legacy R1 maintenance writer during causal v1 trial.
+        TerrainMaintenance = false,
         SoilMassTransport = false,
         NativeTireTrackProbe = true,
         AIVisualTireTracks = true,

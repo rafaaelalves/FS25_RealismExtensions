@@ -13,6 +13,11 @@ Engine.DEFAULTS = {
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.003,
+    -- Temporary physical safety envelope for experimental journal-owned ruts;
+    -- depth cap is relative to the VERIFIED original main-heightmap vertex,
+    -- not to a speculative 0.20m history cell.
+    maxVerifiedNativeRutDepthM = 0.10,
+    maxPreExistingHollowM = 0.12,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
@@ -82,8 +87,24 @@ local function diagnosticsEnabled()
         and RealismExtensionsConfig.diagnostics.verbose == true
 end
 
+-- A few critical ownership counters stay cheap and available when the
+-- high-volume five-second research mode is OFF.
+local HEALTH_COUNTERS={
+    brushesAccepted=true,
+    geometryJournalDeferred=true,
+    geometryJournalConfirmed=true,
+    geometryJournalNoLowering=true,
+    geometryJournalConfirmedDepthM=true,
+    geometryJournalFailClosed=true,
+    geometryJournalFailed=true,
+    nativeRutGuardBlocked=true,
+    nativeRutGuardUnavailable=true,
+    nativeRutGuardCap=true,
+    nativeRutGuardOldHollow=true,
+    nativeRutGuardUntrusted=true
+}
 local function diagCount(name, delta)
-    if not diagnosticsEnabled() then return end
+    if not diagnosticsEnabled() and HEALTH_COUNTERS[name]~=true then return end
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil then return end
     runtime.stats = runtime.stats or {}
@@ -496,31 +517,126 @@ function Engine.processSample(
         end
     end
 
+    local journal = RealismExtensionsTerrainRuntime.geometryJournal
+    local causalRequired = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    if causalRequired and (journal == nil or journal.unitM == nil) then
+        diagCount("geometryJournalFailClosed", 1)
+        return false
+    end
+    local journalToken = nil
+    local pendingReason = nil
+    local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
+    if journal ~= nil and causalRequired then
+        -- Independent native-grid safety ceiling: once excavation exceeds
+        -- the confirmed physical budget (or enters an existing deep hollow),
+        -- suppress further RE writes. Mud can still sink temporarily.
+        local remaining,reason=journal:getLoweringBudget(
+            x,z,brushRadius,
+            Engine.DEFAULTS.maxVerifiedNativeRutDepthM,
+            Engine.DEFAULTS.maxPreExistingHollowM
+        )
+        if remaining==nil or remaining<=0 then
+            diagCount("nativeRutGuardBlocked",1)
+            if remaining==nil then
+                diagCount("nativeRutGuardUnavailable",1)
+            elseif reason=="DEPTH_CAP" then
+                diagCount("nativeRutGuardCap",1)
+            elseif reason=="DEEP_EXISTING_HOLLOW" then
+                diagCount("nativeRutGuardOldHollow",1)
+            else
+                diagCount("nativeRutGuardUntrusted",1)
+            end
+            return false
+        end
+        appliedDepth=math.min(appliedDepth,remaining)
+        if appliedDepth<=writer.options.minDepthM then
+            diagCount("nativeRutGuardCap",1)
+            return false
+        end
+    end
+    if journal ~= nil then
+        -- Explicit per-native-vertex exclusion avoids claiming concurrent
+        -- lower writes as independent geometry. Retry on next wheel sample.
+        local logicalKey = historyStore:getKey(x, z)
+        journalToken, pendingReason = journal:begin(
+            logicalKey, x, z, brushRadius
+        )
+        if journalToken == nil then
+            diagCount("geometryJournalDeferred", 1)
+            return false
+        end
+    end
+
     local accepted = writer:enqueue({
         x = x,
         z = z,
         depthM = appliedDepth,
-        radiusM = math.max(0.10, response.rutWidthM * 0.5),
+        radiusM = brushRadius,
         hardness = Engine.DEFAULTS.brushHardness,
-        massTransport = transport
+        massTransport = transport,
+        -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
+        onApplied = journalToken ~= nil and function(state)
+            local success = state ~= false
+                and (state == nil or TerrainDeformation == nil
+                    or TerrainDeformation.STATE_SUCCESS == nil
+                    or state == TerrainDeformation.STATE_SUCCESS)
+            local physical = journal:complete(journalToken, success)
+            if physical ~= nil and physical.success
+                and physical.loweredVertices > 0 then
+                -- Mechanical wear remains a separate model. Its physical rut
+                -- component is now limited to observed native height movement
+                -- instead of a queued 3mm request whose brush may be a no-op.
+                -- Geometry truth is the journal, not this 0.20m proxy depth.
+                local observed = math.min(
+                    appliedDepth,
+                    math.max(0, physical.maxLowerM)
+                )
+                if observed > 0.00005 then
+                    local current = historyStore:get(x, z)
+                    local currentDepth = current ~= nil
+                        and tonumber(current.rutDepthM) or previousDepth
+                    historyStore:commit(
+                        x,
+                        z,
+                        copyHistoryForAppliedDepth(
+                            response, currentDepth, observed, current,
+                            preDeformReferenceY
+                        )
+                    )
+                    diagCount("geometryJournalConfirmedDepthM", observed)
+                end
+                diagCount("geometryJournalConfirmed", 1)
+            elseif physical ~= nil and physical.success then
+                diagCount("geometryJournalNoLowering", 1)
+            else
+                diagCount("geometryJournalFailed", 1)
+            end
+        end or nil
     })
 
     if accepted then
-        historyStore:commit(
-            x,
-            z,
-            copyHistoryForAppliedDepth(
-                response, previousDepth, appliedDepth, history,
-                preDeformReferenceY
+        if journalToken == nil then
+            -- Legacy experimental mode only: a queued request counts as debt.
+            historyStore:commit(
+                x,
+                z,
+                copyHistoryForAppliedDepth(
+                    response, previousDepth, appliedDepth, history,
+                    preDeformReferenceY
+                )
             )
-        )
-        if preDeformReferenceY ~= nil then
-            diagCount("preDeformReferenceCaptured", 1)
-        elseif history ~= nil and history.preDeformHeightM ~= nil then
-            diagCount("preDeformReferencePreserved", 1)
-        else
-            diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            if preDeformReferenceY ~= nil then
+                diagCount("preDeformReferenceCaptured", 1)
+            elseif history ~= nil and history.preDeformHeightM ~= nil then
+                diagCount("preDeformReferencePreserved", 1)
+            else
+                diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            end
         end
+        -- Journal mode also owns an accepted request, but NOT physical debt.
+        -- Its native callback alone commits that debt when height lowered.
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
         if actor ~= nil then
@@ -586,6 +702,7 @@ function Engine.processSample(
         return true
     end
 
+    if journalToken ~= nil then journal:complete(journalToken, false) end
     diagCount("writerRejects", 1)
     return false
 end
@@ -880,6 +997,7 @@ end
 RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     history = nil,
     writer = nil,
+    geometryJournal = nil,
     stats = {}
 }
 
@@ -895,6 +1013,25 @@ function RealismExtensionsTerrainRuntime.initialize()
     if RealismExtensionsTerrainRuntime.writer == nil then
         RealismExtensionsTerrainRuntime.writer = RealismExtensionsTerrainWriter.new()
     end
+    RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+end
+
+-- The initial loadMap hook can run before mission.terrainRootNode exists.
+-- Retry only until a real native map node and a positive unit are available.
+function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then return true end
+    if RealismExtensionsConfig == nil or RealismExtensionsConfig.modules == nil
+        or RealismExtensionsConfig.modules.TerrainGeometryJournal ~= true
+        or RealismExtensionsTerrainGeometryJournal == nil then return false end
+    local missionNode = g_currentMission ~= nil
+        and g_currentMission.terrainRootNode or nil
+    local terrainNode = type(missionNode) == "number" and missionNode > 0
+        and missionNode or g_terrainNode
+    if type(terrainNode) ~= "number" or terrainNode <= 0 then return false end
+    local candidate = RealismExtensionsTerrainGeometryJournal.new(terrainNode)
+    if candidate.unitM == nil then return false end
+    RealismExtensionsTerrainRuntime.geometryJournal = candidate
+    return true
 end
 
 function RealismExtensionsTerrainRuntime.flush()
@@ -927,7 +1064,11 @@ function RealismExtensionsTerrainRuntime.clear()
     if RealismExtensionsTerrainRuntime.writer ~= nil then
         RealismExtensionsTerrainRuntime.writer:clear()
     end
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        RealismExtensionsTerrainRuntime.geometryJournal:reset()
+    end
     RealismExtensionsTerrainRuntime.history = nil
     RealismExtensionsTerrainRuntime.writer = nil
+    RealismExtensionsTerrainRuntime.geometryJournal = nil
     RealismExtensionsTerrainRuntime.stats = {}
 end
