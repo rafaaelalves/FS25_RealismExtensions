@@ -324,6 +324,23 @@ function RealismExtensionsCore:update(dt)
                 ws.causalNativeStarted or 0,ws.causalNativeFinished or 0,
                 ws.causalNativePendingSkips or 0
             ))
+            if RealismExtensionsConfig.modules.NativeWheelDisplacementObservation==true
+                and RealismExtensionsTerrainNativeWheelBridge~=nil then
+                local n=RealismExtensionsTerrainNativeWheelBridge.stats or {}
+                RealismExtensionsDiagnostics.info(string.format(
+                    "TerrainNativeWheel | passive=true samples=%d distinct=%d ready=%d baseline=%d nonDefault=%d zero=%d changes=%d scaleMin=%s scaleMax=%s foreignMin=%s foreignMax=%s shapeMissing=%d setterMissing=%d noNode=%d unsupported=%d disallowed=%d clients=%d (nativeWheelDisplacementNotMainHeightmap=true)",
+                    n.samples or 0,n.distinctWheels or 0,n.ready or 0,
+                    n.baseScale or 0,n.nonDefaultScale or 0,n.zeroScale or 0,
+                    n.scaleChanges or 0,
+                    n.minScale~=nil and string.format("%.3f",n.minScale) or "-",
+                    n.maxScale~=nil and string.format("%.3f",n.maxScale) or "-",
+                    n.nonDefaultMinScale~=nil and string.format("%.3f",n.nonDefaultMinScale) or "-",
+                    n.nonDefaultMaxScale~=nil and string.format("%.3f",n.nonDefaultMaxScale) or "-",
+                    n.noNativeShape or 0,n.nativeSetterMissing or 0,
+                    n.wheelNodeMissing or 0,n.sinkUnsupported or 0,
+                    n.disabledByWheel or 0,n.notServer or 0
+                ))
+            end
             if RealismExtensionsTerrainCausalMaintenance~=nil
                 and RealismExtensionsConfig.modules.TerrainCausalMaintenance==true then
                 local m=RealismExtensionsTerrainCausalMaintenance.getDiagnostics()
