@@ -68,6 +68,29 @@ assert(j:invalidateCompletedFootprint({id=999})==false)
 assert(j.stats.anomalousCompletedFootprints==1)
 assert(j.stats.anomalousOwnershipInvalidated>=1)
 
+-- Saved v1 observations were collected BEFORE anomalous native deltas
+-- were reliably invalidated. Import their heights, never their authority.
+-- A v2 sidecar written by the corrected implementation retains ownership.
+local trusted=API.new(999,{unitM=1,sample=sample})
+local rt=assert(trusted:begin("versioned",80,80,0.3))
+set(80,80,99.992)
+assert(trusted:complete(rt,true).loweredVertices==1)
+assert(trusted.observations["80:80"].owned==true)
+local newSnapshot=assert(trusted:exportSnapshot())
+assert(newSnapshot.version==2)
+local newReader=API.new(999,{unitM=1,sample=sample})
+assert(newReader:importSnapshot(newSnapshot)==true)
+assert(newReader.observations["80:80"].owned==true)
+local oldSnapshot={
+    version=1,unitM=newSnapshot.unitM,cells=newSnapshot.cells
+}
+local legacyReader=API.new(999,{unitM=1,sample=sample})
+assert(legacyReader:importSnapshot(oldSnapshot)==true)
+assert(legacyReader.observations["80:80"].owned==false)
+assert(legacyReader:getRecoverablePoint(80,80)==nil)
+assert(legacyReader.stats.legacyProvenanceDowngraded==1)
+assert(sample(80,80)==99.992) -- data migration does not regrade terrain
+
 -- Terrain changed WITHOUT RE writer: invalidate old baseline before new edit.
 set(0,0,99.50)
 local externallyChanged=assert(j:begin("wheel-one",0,0,0.3))
@@ -99,7 +122,7 @@ assert(result==nil and why=="POST_HEIGHT_UNAVAILABLE")
 assert(j2.pendingCount==0)
 assert(j2:begin("x",5,5,0.3)==nil) -- sampling still unavailable
 local snap=assert(j:exportSnapshot())
-assert(snap.version==1 and snap.unitM==1)
+assert(snap.version==2 and snap.unitM==1)
 local restored=API.new(999,{unitM=1,sample=sample})
 local ok,number,bad=restored:importSnapshot(snap)
 assert(ok and number>=2 and bad==0)
