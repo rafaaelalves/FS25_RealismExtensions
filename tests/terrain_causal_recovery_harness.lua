@@ -64,6 +64,20 @@ g_currentMission.time=1500
 C.update()
 assert(#queued==1 and C.inFlight~=nil)
 assert(math.abs(queued[1].targetY-99.97)<0.000001)
+-- Job accepted into RE queue is NOT yet submitted to the native engine.
+assert(C.inFlight.startMs==nil)
+g_currentMission.time=1500+C.DEFAULTS.inFlightTimeoutMs+100
+C.update()
+assert(C.inFlight~=nil and j.pendingCount==1
+    and (C.stats.callbackTimeoutAlerts or 0)==0,
+    "queued recovery cannot expire its journal lock before native submit")
+queued[1].onSubmitted()
+assert(C.inFlight.startMs==g_currentMission.time)
+g_currentMission.time=g_currentMission.time+C.DEFAULTS.inFlightTimeoutMs+100
+C.update()
+assert(C.inFlight~=nil and j.pendingCount==1
+    and C.stats.callbackTimeoutAlerts==1,
+    "slow native completion must report timeout but retain lock")
 -- Enqueue did NOT reduce the mechanical debt or restore physical height.
 assert(historyCells[key(0,0)].rutDepthM==0.08)
 assert(math.abs(j.observations["0:0"].observedHeightM-99.7)<0.000001)
