@@ -40,6 +40,12 @@ References:
 
 `tests/terrain_deformation_engine_harness.lua` specifically synthesizes one other queue submission during a mocked RE callback and checks this annotation appears, without granting ownership or altering quarantine.
 
+## Separate uncertainty: what exactly does the height accessor return?
+
+The GIANTS engine documentation for `getTerrainHeightAtWorldPos(terrain,x,y,z)` only promises **"Get terrain height at world pos"**; unlike `getTerrainHeightmapUnitSize`, it does NOT specify in that entry whether fine physical displacement is included or ignored in the returned height. Sampling at integer-spaced positions and observing 3.891mm steps strongly suggests principal-height quantization, but this is **not a formally proven native-vs-fine channel separation**. Do not interpret every observed height change as a direct modification of the permanent main-heightmap file until this behavior is tested or documented by the engine.
+
+Source: https://gdn.giants-software.com/documentation_scripting_fs25.php?category=28&function=811&version=engine
+
 ## Verdict and next gate
 
 - Current source evidence **does not prove duplicate RE native write submission**; its own causal queue serialization already prevents it.
