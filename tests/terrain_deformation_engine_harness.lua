@@ -347,6 +347,11 @@ callbacks[2].onApplied(1)
 assert(journal.pendingCount==0)
 assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
 assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0)
+-- The simulated native result moved 12mm despite a 3mm maximum command.
+-- This event must be measured from the callback, not inferred from intent.
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredExcessEvents or 0)==1)
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredLowerMaxSumM or 0)>=0.0119)
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredRequestedSumM or 0)<=0.00301)
 local countAfter=RealismExtensionsTerrainRuntime.history.count
 callbacks[2].onApplied(1) -- duplicate callback ignored by journal
 assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
