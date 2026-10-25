@@ -12,8 +12,6 @@ Probe.owner=nil
 Probe.original=nil
 Probe.wrapper=nil
 
-local unpackFn=table.unpack or unpack
-local function pack(...) return {n=select("#",...),...} end
 local function counter(key)
     Probe.stats[key]=(Probe.stats[key] or 0)+1
 end
@@ -90,8 +88,11 @@ function Probe.install(queue)
         return false,"QUEUE_POINTER_DRIFT_OR_OWNER_CHANGED"
     end
     local original=queue.queueJob
+    -- Hook generations are separate: on a future map load, an older wrapper
+    -- retained by a third-party wrapper must NOT start counting again.
+    local hookState={active=true}
     local wrapper=function(self,deformation,preview,callbackName,target,...)
-        if Probe.enabled then
+        if hookState.active and Probe.enabled then
             -- Observability MUST NOT be able to prevent a native job even
             -- if a diagnostic writer crashes.
             pcall(Probe._record,deformation,preview,callbackName,target)
@@ -103,6 +104,7 @@ function Probe.install(queue)
     Probe.owner=queue
     Probe.original=original
     Probe.wrapper=wrapper
+    Probe.hookState=hookState
     Probe.enabled=true
     queue.queueJob=wrapper
     counter("installs")
@@ -120,6 +122,7 @@ end
 
 function Probe.shutdown()
     Probe.enabled=false
+    if Probe.hookState~=nil then Probe.hookState.active=false end
     if Probe.owner~=nil and Probe.owner.queueJob==Probe.wrapper then
         Probe.owner.queueJob=Probe.original
     end
@@ -128,6 +131,7 @@ function Probe.shutdown()
     Probe.owner=nil
     Probe.original=nil
     Probe.wrapper=nil
+    Probe.hookState=nil
 end
 
 function Probe.formatSnapshot()
