@@ -75,20 +75,6 @@ function RealismExtensionsCore:loadMap()
         RealismExtensionsTerrainGeometryProbe.installCommands()
     end
 
-    -- Optional native queue submission observation: an off-by-default
-    -- pass-through diagnostic, NOT a global terrain writer or mutex.
-    if RealismExtensionsConfig ~= nil
-        and RealismExtensionsConfig.modules ~= nil
-        and RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
-        and RealismExtensionsTerrainNativeQueueProbe ~= nil
-        and RealismExtensionsTerrainNativeQueueProbe.owner == nil then
-        local queue=g_terrainDeformationQueue or
-            (g_currentMission ~= nil and g_currentMission.terrainDeformationQueue)
-        if queue~=nil then
-            RealismExtensionsTerrainNativeQueueProbe.install(queue)
-        end
-    end
-
     configureTireTrackAdapterProbe()
     if tireTrackAdapterNeeded()
         and RealismExtensionsNativeTireTrackAdapter ~= nil then
@@ -198,6 +184,20 @@ function RealismExtensionsCore:loadMap()
 end
 
 function RealismExtensionsCore:update(dt)
+    -- Optional native queue submission observation: an off-by-default
+    -- pass-through diagnostic, NOT a global terrain writer or mutex.
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
+        and RealismExtensionsTerrainNativeQueueProbe ~= nil
+        and RealismExtensionsTerrainNativeQueueProbe.owner == nil then
+        local queue=g_terrainDeformationQueue or
+            (g_currentMission ~= nil and g_currentMission.terrainDeformationQueue)
+        if queue~=nil then
+            RealismExtensionsTerrainNativeQueueProbe.install(queue)
+        end
+    end
+
     if RealismExtensionsState ~= nil then
         local available = RealismExtensionsState.getProviderStatus()
         if not available then
@@ -342,6 +342,12 @@ function RealismExtensionsCore:update(dt)
                 ws.causalNativeStarted or 0,ws.causalNativeFinished or 0,
                 ws.causalNativePendingSkips or 0
             ))
+            if RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
+                and RealismExtensionsTerrainNativeQueueProbe ~= nil then
+                RealismExtensionsDiagnostics.info(
+                    RealismExtensionsTerrainNativeQueueProbe.formatSnapshot()
+                )
+            end
             if RealismExtensionsConfig.modules.NativeWheelDisplacementObservation==true
                 and RealismExtensionsTerrainNativeWheelBridge~=nil then
                 local n=RealismExtensionsTerrainNativeWheelBridge.stats or {}
@@ -1050,6 +1056,10 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsTerrainNativeQueueProbe~=nil then
+        RealismExtensionsTerrainNativeQueueProbe.shutdown()
+        RealismExtensionsTerrainNativeQueueProbe.reset()
+    end
     if RealismExtensionsTerrainGeometryProbe ~= nil
         and type(RealismExtensionsTerrainGeometryProbe.uninstallCommands)
             == "function" then
