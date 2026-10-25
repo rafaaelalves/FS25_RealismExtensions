@@ -296,7 +296,7 @@ function RealismExtensionsCore:update(dt)
                 and RealismExtensionsTerrainCausalRecovery.getDiagnostics() or {}
             local ws=runtime.writer~=nil and runtime.writer.stats or {}
             RealismExtensionsDiagnostics.info(string.format(
-                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeActualMaxSum=%.4fm nativeRequestedSum=%.4fm nativeAmplified=%d frozenContexts=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm missingBaselineVisits=%d untrustedVisits=%d byTool=%d/%d/%d/%d unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d isolatedNativePending=%s nativeJobs=%d/%d isolatedPendingSkips=%d",
+                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeActualMaxSum=%.4fm nativeRequestedSum=%.4fm nativeAmplified=%d nativeOwnershipRejected=%d trustedVerticesRevoked=%d frozenContexts=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm missingBaselineVisits=%d untrustedVisits=%d byTool=%d/%d/%d/%d unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d isolatedNativePending=%s nativeJobs=%d/%d isolatedPendingSkips=%d",
                 tostring(RealismExtensionsConfig.modules.TerrainCausalRecovery==true),
                 tostring(journal~=nil and journal.unitM~=nil),
                 journal~=nil and tostring(journal.unitM) or "-",
@@ -307,6 +307,8 @@ function RealismExtensionsCore:update(dt)
                 d.nativeMeasuredLowerMaxSumM or 0,
                 d.nativeMeasuredRequestedSumM or 0,
                 d.nativeMeasuredExcessEvents or 0,
+                js.anomalousCompletedFootprints or 0,
+                js.anomalousOwnershipInvalidated or 0,
                 d.freezeContextSamples or 0,
                 d.nativeRutGuardBlocked or 0,d.nativeRutGuardCap or 0,
                 d.nativeRutGuardOldHollow or 0,d.nativeRutGuardUntrusted or 0,
