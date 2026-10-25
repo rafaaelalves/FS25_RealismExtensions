@@ -127,6 +127,31 @@ local geoLoad,n,invalid=RealismExtensionsTerrainPersistence.loadGeometryJournal(
 assert(geoLoad and n>=1 and invalid==0)
 assert(j2.observations["5:5"].owned==true)
 assert(math.abs(j2.observations["5:5"].preREHeightM-100)<0.000001)
+-- Simulate loading an old on-disk v1 sidecar from before the new
+-- callback-mismatch protection: the height remains, but ownership does not.
+local geometryPath=nil
+for path in pairs(files) do
+    if string.find(path,"realismExtensionsGeometryJournal",1,true) then
+        geometryPath=path
+        break
+    end
+end
+assert(geometryPath~=nil)
+local versionKey=RealismExtensionsTerrainPersistence.GEOMETRY_ROOT..
+    "#formatVersion"
+assert(files[geometryPath][versionKey]==2)
+files[geometryPath][versionKey]=1
+local legacyJournal=geoApi.new(42,{unitM=1})
+local legacyOk,legacyCount,legacyRejected=
+    RealismExtensionsTerrainPersistence.loadGeometryJournal(
+        g_currentMission.missionInfo,legacyJournal)
+assert(legacyOk and legacyCount>=1 and legacyRejected==0)
+assert(legacyJournal.observations["5:5"].owned==false)
+assert(legacyJournal:getRecoverablePoint(5,5)==nil)
+assert(legacyJournal.stats.legacyProvenanceDowngraded>=1)
+assert(terrainHeights["5:5"]==99.94)
+files[geometryPath][versionKey]=2
+
 -- Imported references must not authorize restore if saved geometry differs
 -- from the loaded GIANTS heightmap after a manual landscaping operation.
 terrainHeights["5:5"]=99.2
