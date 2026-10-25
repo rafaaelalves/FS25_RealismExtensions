@@ -47,6 +47,9 @@ RealismExtensionsConfig = {
         -- OBSERVATION ONLY: record the native fine wheel-displacement
         -- capability/scale without changing physics or geometry.
         NativeWheelDisplacementObservation = true,
+        -- Manual research toggle only. Installs a pass-through observer on
+        -- the shared GIANTS native queue; cannot detect direct .apply jobs.
+        TerrainQueueSubmissionProbe = false,
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
