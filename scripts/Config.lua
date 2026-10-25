@@ -59,6 +59,9 @@ RealismExtensionsConfig = {
         TerrainPlasticYield = true,
         -- Isolate the legacy R1 maintenance writer during causal v1 trial.
         TerrainMaintenance = false,
+        -- Verified RE-owned native journal repair on NPC fields (1 period)
+        -- and municipal dirt/gravel (2 periods), never legacy annular TARGET.
+        TerrainCausalMaintenance = true,
         SoilMassTransport = false,
         NativeTireTrackProbe = true,
         AIVisualTireTracks = true,
