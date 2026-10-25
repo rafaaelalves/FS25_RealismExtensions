@@ -6,7 +6,9 @@ RealismExtensionsTerrainGeometryJournal =
     RealismExtensionsTerrainGeometryJournal or {}
 local Journal = RealismExtensionsTerrainGeometryJournal
 
-Journal.VERSION = 1
+-- Version 2 revokes unverified ownership from old v1 sidecars. Legacy
+-- geometry remains unchanged; only automatic recovery authority changes.
+Journal.VERSION = 2
 
 local function finite(v)
     return type(v) == "number" and v == v
@@ -53,7 +55,8 @@ function Journal.new(terrain, options)
             submitChecks = 0,submitDriftRejected = 0,
             submitHeightUnavailable = 0,submitMaxDriftM = 0,
             anomalousCompletedFootprints = 0,
-            anomalousOwnershipInvalidated = 0
+            anomalousOwnershipInvalidated = 0,
+            legacyProvenanceDowngraded = 0
         }
     }, {__index=Journal})
 end
@@ -477,13 +480,18 @@ end
 
 function Journal:importSnapshot(snapshot)
     if self.pendingCount>0 then return false,"PENDING_NATIVE_WRITES" end
-    if type(snapshot)~="table" or snapshot.version~=Journal.VERSION
+    -- Version 1 could serialize anomalous callback outcomes as RE-owned
+    -- before the observed-vs-requested mismatch was checked. Preserve its
+    -- map samples as untrusted observations but never auto-restore them.
+    local isLegacyV1=type(snapshot)=="table" and snapshot.version==1
+    if type(snapshot)~="table"
+        or (snapshot.version~=Journal.VERSION and not isLegacyV1)
         or not finite(snapshot.unitM) or not finite(self.unitM)
         or math.abs(snapshot.unitM-self.unitM)>0.00001
         or type(snapshot.cells)~="table" then
         return false,"GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH"
     end
-    local restored,rejected=0,0
+    local restored,rejected,legacyDowngraded=0,0,0
     local loaded={}
     for _,cell in ipairs(snapshot.cells) do
         if type(cell)=="table" and finite(cell.x) and finite(cell.z)
@@ -495,10 +503,15 @@ function Journal:importSnapshot(snapshot)
             if finite(current) and math.abs(current-cell.observedHeightM)<=0.005
                 and math.abs(x-cell.x)<=0.00001
                 and math.abs(z-cell.z)<=0.00001 then
+                local formerlyOwned=cell.owned==true
                 loaded[tostring(ix)..":"..tostring(iz)]={
                     x=x,z=z,preREHeightM=cell.preREHeightM,
-                    observedHeightM=current,owned=cell.owned==true
+                    observedHeightM=current,
+                    owned=formerlyOwned and not isLegacyV1
                 }
+                if isLegacyV1 and formerlyOwned then
+                    legacyDowngraded=legacyDowngraded+1
+                end
                 restored=restored+1
             else
                 rejected=rejected+1
@@ -508,6 +521,8 @@ function Journal:importSnapshot(snapshot)
         end
     end
     self.observations=loaded
+    self.stats.legacyProvenanceDowngraded=
+        (self.stats.legacyProvenanceDowngraded or 0)+legacyDowngraded
     return true,restored,rejected
 end
 
