@@ -347,6 +347,8 @@ callbacks[2].onApplied(1)
 assert(journal.pendingCount==0)
 assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
 assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0)
+assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0.0119,
+    "native 12mm movement MUST NOT become just 3mm historic rut debt")
 -- The simulated native result moved 12mm despite a 3mm maximum command.
 -- This event must be measured from the callback, not inferred from intent.
 assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredExcessEvents or 0)==1)
