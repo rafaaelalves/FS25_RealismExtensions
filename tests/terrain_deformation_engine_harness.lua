@@ -359,6 +359,46 @@ callbacks[2].onApplied(1) -- duplicate callback ignored by journal
 assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
 -- Note: the existing logger sees this case as failed journal confirmation.
 
+-- Excessive native movement quarantines all further causal wheel
+-- excavation in this game session. This is an experimental save-safety gate,
+-- NOT a claim that the native actuator's amplification is fixed.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+wheelA.testX=220
+wheelB.testX=320
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastZ=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastZ=nil
+g_currentMission.time=g_currentMission.time+1000
+local preFault=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==preFault+2)
+callbacks[preFault+1].onApplied(false)
+liveHeights[heightKey(320,0)]=99.945
+callbacks[preFault+2].onApplied(1)
+assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
+assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineTriggers or 0)==1)
+assert(journal.pendingCount==0)
+
+-- Even before the writer flushes queued wheels, the no-more-writes gate
+-- should block new wheel samples from introducing further native requests.
+wheelA.testX=400
+wheelB.testX=500
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local preBlocked=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==preBlocked)
+assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineSkips or 0)>=1)
+RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
+
 -- A missing native journal is NOT permission to fall back to pre-callback
 -- geometry debt when causal restoration is requested.
 RealismExtensionsConfig.modules.TerrainCausalRecovery=true
