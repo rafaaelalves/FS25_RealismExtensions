@@ -44,6 +44,9 @@ RealismExtensionsConfig = {
     modules = {
         PTOControl = true,
         TerrainDeformation = true,
+        -- OBSERVATION ONLY: record the native fine wheel-displacement
+        -- capability/scale without changing physics or geometry.
+        NativeWheelDisplacementObservation = true,
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
