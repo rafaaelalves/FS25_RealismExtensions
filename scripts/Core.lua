@@ -142,8 +142,9 @@ function RealismExtensionsCore:loadMap()
         )
         if ok then
             RealismExtensionsDiagnostics.info(string.format(
-                "restored native geometry journal cells=%d rejected=%d",
-                restored or 0,invalid or 0
+                "restored native geometry journal cells=%d rejected=%d legacyOwnershipRevoked=%d",
+                restored or 0,invalid or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0
             ))
         elseif restored ~= "no persisted geometry journal" then
             RealismExtensionsDiagnostics.verbose(
@@ -255,8 +256,9 @@ function RealismExtensionsCore:update(dt)
                 )
                 if ok then
                     RealismExtensionsDiagnostics.info(string.format(
-                        "native journal ready; restored=%d rejected=%d",
-                        restored or 0,rejected or 0
+                        "native journal ready; restored=%d rejected=%d legacyOwnershipRevoked=%d",
+                        restored or 0,rejected or 0,
+                        RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0
                     ))
                 else
                     RealismExtensionsDiagnostics.info(
