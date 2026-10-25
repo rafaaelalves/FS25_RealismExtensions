@@ -539,6 +539,9 @@ function Engine.processSample(
     end
     local journalToken = nil
     local pendingReason = nil
+    -- Optional coarse queue-concurrency correlation, never proof that
+    -- another job changed THIS terrain patch. Direct apply() is invisible.
+    local externalQueueBaseline=nil
     local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
     if journal ~= nil and causalRequired then
         -- Independent native-grid safety ceiling: once excavation exceeds
@@ -605,8 +608,24 @@ function Engine.processSample(
             end
             return okay,reason
         end or nil,
+        -- Only a submitted RE native job can delimit the observation.
+        -- Submission is notified before the actual GIANTS queue call.
+        onSubmitted = function()
+            local probe=RealismExtensionsTerrainNativeQueueProbe
+            if probe~=nil and probe.enabled==true then
+                externalQueueBaseline=
+                    (probe.stats or {}).externalDuringREPending or 0
+            end
+        end,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
         onApplied = journalToken ~= nil and function(state)
+            local otherQueueWhilePending=nil
+            local probe=RealismExtensionsTerrainNativeQueueProbe
+            if externalQueueBaseline~=nil and probe~=nil then
+                otherQueueWhilePending=math.max(0,
+                    ((probe.stats or {}).externalDuringREPending or 0)
+                    -externalQueueBaseline)
+            end
             local success = state ~= false
                 and (state == nil or TerrainDeformation == nil
                     or TerrainDeformation.STATE_SUCCESS == nil
@@ -676,8 +695,11 @@ function Engine.processSample(
                         if RealismExtensionsDiagnostics~=nil
                             and type(RealismExtensionsDiagnostics.info)=="function" then
                             RealismExtensionsDiagnostics.info(string.format(
-                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING",
-                                x,z,appliedDepth,physical.maxLowerM))
+                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING otherQueuedWhilePending=%s (not proof of heightmap ownership)",
+                                x,z,appliedDepth,physical.maxLowerM,
+                                otherQueueWhilePending~=nil
+                                    and tostring(otherQueueWhilePending)
+                                    or "unobserved"))
                         end
                     end
                     rt.nativeExcessExamples=(rt.nativeExcessExamples or 0)+1
@@ -685,7 +707,7 @@ function Engine.processSample(
                         and RealismExtensionsDiagnostics~=nil
                         and type(RealismExtensionsDiagnostics.info)=="function" then
                         RealismExtensionsDiagnostics.info(string.format(
-                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f",
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f otherQueuedWhilePending=%s",
                             x,z,appliedDepth,physical.maxLowerM,
                             physical.sampledVertices or 0,physical.loweredVertices or 0,
                             tonumber(context.physicalGroundWetness) or -1,
@@ -698,7 +720,10 @@ function Engine.processSample(
                             tonumber(physical.maxLowerPoint ~= nil
                                 and physical.maxLowerPoint.beforeY) or 0,
                             tonumber(physical.maxLowerPoint ~= nil
-                                and physical.maxLowerPoint.afterY) or 0
+                                and physical.maxLowerPoint.afterY) or 0,
+                            otherQueueWhilePending~=nil
+                                and tostring(otherQueueWhilePending)
+                                or "unobserved"
                         ))
                     end
                 end
