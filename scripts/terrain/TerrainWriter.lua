@@ -59,6 +59,9 @@ function Writer.new(options)
             callbackDisplacedVolumeM3 = 0,
             callbackMaxDisplacedVolumeM3 = 0,
             callbackVolumeMissing = 0,
+            causalNativePendingSkips = 0,
+            causalNativeStarted = 0,
+            causalNativeFinished = 0,
             massTransportSourceVolumeM3 = 0,
             massTransportTargetVolumeM3 = 0,
             massTransportRaisedVolumeM3 = 0,
@@ -588,7 +591,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
         )
     end
 
+    local strictCausal = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    local causalSingleRut = strictCausal and mode == "LOWER"
+        and brushes ~= nil and #brushes == 1
+        and type(brushes[1].onApplied) == "function"
     local callbackTarget = {
+        causalSingleRut = causalSingleRut,
         deformation = deformation,
         owner = self,
         terrain = terrain,
@@ -601,6 +611,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
+        if self.causalSingleRut then
+            -- The queue's native callback, not job submission, ends the
+            -- isolation window. Exactly one RE native job may be in flight.
+            self.owner.nativeCausalPending=false
+            self.owner.stats.causalNativeFinished =
+                self.owner.stats.causalNativeFinished + 1
+            self.causalSingleRut=false
+        end
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
             and RealismExtensionsTerrainPerformance.begin() or nil
         if state ~= nil
@@ -955,8 +973,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if q ~= nil and type(q.queueJob) == "function" then
+        if causalSingleRut then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
         local ok = pcall(q.queueJob, q, deformation, false, "done", callbackTarget)
         if not ok then
+            if causalSingleRut then self.nativeCausalPending=false end
             deformation:delete()
             return false, "queueJob failed"
         end
@@ -964,8 +987,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if type(deformation.apply) == "function" then
+        if causalSingleRut then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
         local ok = pcall(deformation.apply, deformation, false, "done", callbackTarget)
         if not ok then
+            if causalSingleRut then self.nativeCausalPending=false end
             deformation:delete()
             return false, "direct apply failed"
         end
@@ -978,11 +1006,24 @@ end
 
 function Writer:flush()
     if self:getQueueSize() == 0 then return 0, 0 end
+    local strictCausal = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    if strictCausal and self.nativeCausalPending == true then
+        self.stats.causalNativePendingSkips =
+            self.stats.causalNativePendingSkips + 1
+        return 0, 0
+    end
     local perfStarted = RealismExtensionsTerrainPerformance ~= nil
         and RealismExtensionsTerrainPerformance.begin() or nil
 
     local brushBudget = math.max(1, math.floor(self.options.maxBrushesPerFrame))
     local jobBudget = math.max(1, math.floor(self.options.maxJobsPerFrame))
+    -- A single asynchronous RE native job at a time prevents another RE
+    -- TARGET or LOWER from changing sampled vertices before the callback.
+    -- The conservative experimental policy trades throughput for reliable
+    -- geometry attribution; benchmark before release.
+    if strictCausal then jobBudget=1 end
     local perJob = math.max(1, math.floor(self.options.maxBrushesPerJob))
     local bucketM = math.max(0.0001, tonumber(self.options.depthBucketM) or 0.0005)
 
