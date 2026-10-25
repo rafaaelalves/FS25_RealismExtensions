@@ -526,6 +526,13 @@ function Engine.processSample(
     local causalRequired = RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    -- Experimental fail-closed protection: if a previous native callback
+    -- observed a severe excess, stop new wheel writes for this session.
+    -- Mud transient physics and causal recovery remain active.
+    if causalRequired and RealismExtensionsTerrainRuntime.nativeDamageQuarantined then
+        diagCount("nativeAmplitudeQuarantineSkips",1)
+        return false
+    end
     if causalRequired and (journal == nil or journal.unitM == nil) then
         diagCount("geometryJournalFailClosed", 1)
         return false
@@ -581,6 +588,23 @@ function Engine.processSample(
         radiusM = brushRadius,
         hardness = Engine.DEFAULTS.brushHardness,
         massTransport = transport,
+        -- A journal token is captured at ENQUEUE, and therefore needs a
+        -- second, just-in-time native-vertex check when TerrainWriter submits
+        -- it. A changed patch must never be silently attributed to RE.
+        beforeSubmit = journalToken ~= nil and function()
+            if RealismExtensionsTerrainRuntime.nativeDamageQuarantined then
+                diagCount("nativeAmplitudeQuarantineSkips",1)
+                return false,"NATIVE_AMPLITUDE_QUARANTINE"
+            end
+            local okay,reason=journal:validateBeforeSubmit(journalToken)
+            if not okay then
+                diagCount("geometryJournalSubmitRejected",1)
+                if reason=="QUEUED_GEOMETRY_DRIFT" then
+                    diagCount("geometryJournalQueueDriftRejected",1)
+                end
+            end
+            return okay,reason
+        end or nil,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
         onApplied = journalToken ~= nil and function(state)
             local success = state ~= false
@@ -622,19 +646,40 @@ function Engine.processSample(
                 if physical.maxLowerM>appliedDepth+0.002 then
                     diagCount("nativeMeasuredExcessEvents",1)
                     local rt=RealismExtensionsTerrainRuntime
+                    -- One 25mm+ response to a 2-3mm request is already an
+                    -- unacceptable risk for a live game save. Do not allow
+                    -- another RE native lowering until the actuator has been
+                    -- studied; this does not erase or regrade existing soil.
+                    if not rt.nativeDamageQuarantined
+                        and physical.maxLowerM>math.max(0.025,appliedDepth*8) then
+                        rt.nativeDamageQuarantined=true
+                        diagCount("nativeAmplitudeQuarantineTriggers",1)
+                        if RealismExtensionsDiagnostics~=nil
+                            and type(RealismExtensionsDiagnostics.info)=="function" then
+                            RealismExtensionsDiagnostics.info(string.format(
+                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING",
+                                x,z,appliedDepth,physical.maxLowerM))
+                        end
+                    end
                     rt.nativeExcessExamples=(rt.nativeExcessExamples or 0)+1
                     if rt.nativeExcessExamples<=6
                         and RealismExtensionsDiagnostics~=nil
                         and type(RealismExtensionsDiagnostics.info)=="function" then
                         RealismExtensionsDiagnostics.info(string.format(
-                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f",
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f",
                             x,z,appliedDepth,physical.maxLowerM,
                             physical.sampledVertices or 0,physical.loweredVertices or 0,
                             tonumber(context.physicalGroundWetness) or -1,
                             tostring(context.hardFrozen==true),
                             tonumber(footprint.groundPressurePa) or 0,
                             tonumber(context.longitudinalSlip) or 0,
-                            tonumber(response.plasticDemandBearingRatio) or -1
+                            tonumber(response.plasticDemandBearingRatio) or -1,
+                            tostring(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.key or "none"),
+                            tonumber(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.beforeY) or 0,
+                            tonumber(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.afterY) or 0
                         ))
                     end
                 end
@@ -1066,6 +1111,7 @@ RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
 
 function RealismExtensionsTerrainRuntime.initialize()
     RealismExtensionsTerrainRuntime.stats = {}
+    RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
     if RealismExtensionsTerrainRuntime.history == nil then
         RealismExtensionsTerrainRuntime.history = RealismExtensionsSpatialHistory.new({
             cellSizeM = Engine.DEFAULTS.historyCellSizeM,
@@ -1134,4 +1180,5 @@ function RealismExtensionsTerrainRuntime.clear()
     RealismExtensionsTerrainRuntime.writer = nil
     RealismExtensionsTerrainRuntime.geometryJournal = nil
     RealismExtensionsTerrainRuntime.stats = {}
+    RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
 end
