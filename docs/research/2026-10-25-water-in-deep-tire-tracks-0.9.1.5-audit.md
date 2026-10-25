@@ -106,3 +106,11 @@ Update path exits when `getIsClient()` false. The save append writes XML **only 
 6. Test with **MapFlood separately** only after its exact source review, especially overlapping surface mesh and water-plane resource allocation.
 
 **Engineering action:** **documentation only**; no runtime code, no RC bridge, no ZIP/build, no active mod/version gates. Keep the existing terrain recovery blocker highest priority; this audit supplies research and future integration tests, not new production scope.
+
+## 7. Decision refinement — **approved for controlled experimental-stack trial** (2026-10-25)
+
+The source-only **NOT ACTIVE IN PRIMARY STACK** decision is not a prohibition on trying the mod. After comparing the two water mods and the user's aim to learn through real gameplay, this audit now **recommends testing the unmodified Water in Deep Tire Tracks 0.9.1.5 ZIP as a provisional visual consumer of the RE experimental rut build**, on a cloned save. No RC bridge, code port, physics ownership change or production compatibility claim is implied. The original source limitations above remain open.
+
+**First A/B gate:** Use exactly the same game save/build and a known real RE rut before and after enabling WIT; retain RC/Mud. Record gameplay screenshots, frame time and logs, WIT tile/SWS stats when available, wetness source and observed rut geometry. Inspect dry versus rain and after plow recovery; test with MapFlood absent. If the water looks plausible and no overlapping resource or performance problems appear, keep WIT as a *provisional optional experiment* for further play and targeted validation. On real geometry shifts, use available `witClear` only as a manual diagnostic, not a proven permanent cache-fix. No requirement to complete all RE terrain architecture work before conducting this trial.
+
+**Potential future replacement:** A clean-room `RutSurfaceWater` renderer/subsystem consuming normalized terrain and wetness with provenance, distinct from a new soil moisture/traction solver; consider only after visual value, costs and geometry contracts are measured. Until then, external ownership is a valid positive outcome.
