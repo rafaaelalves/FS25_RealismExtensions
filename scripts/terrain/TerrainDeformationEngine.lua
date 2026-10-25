@@ -101,7 +101,12 @@ local HEALTH_COUNTERS={
     nativeRutGuardUnavailable=true,
     nativeRutGuardCap=true,
     nativeRutGuardOldHollow=true,
-    nativeRutGuardUntrusted=true
+    nativeRutGuardUntrusted=true,
+    nativeMeasuredLowerEvents=true,
+    nativeMeasuredLowerMaxSumM=true,
+    nativeMeasuredRequestedSumM=true,
+    nativeMeasuredExcessEvents=true,
+    freezeContextSamples=true
 }
 local function diagCount(name, delta)
     if not diagnosticsEnabled() and HEALTH_COUNTERS[name]~=true then return end
@@ -608,6 +613,31 @@ function Engine.processSample(
                     diagCount("geometryJournalConfirmedDepthM", observed)
                 end
                 diagCount("geometryJournalConfirmed", 1)
+                -- Geometry outcome is the engine result, not the 3mm request.
+                -- Compare the SAME brush's pre-/post-heightmap delta with
+                -- its submitted amount to catch native amplification.
+                diagCount("nativeMeasuredLowerEvents",1)
+                diagCount("nativeMeasuredLowerMaxSumM",physical.maxLowerM)
+                diagCount("nativeMeasuredRequestedSumM",appliedDepth)
+                if physical.maxLowerM>appliedDepth+0.002 then
+                    diagCount("nativeMeasuredExcessEvents",1)
+                    local rt=RealismExtensionsTerrainRuntime
+                    rt.nativeExcessExamples=(rt.nativeExcessExamples or 0)+1
+                    if rt.nativeExcessExamples<=6
+                        and RealismExtensionsDiagnostics~=nil
+                        and type(RealismExtensionsDiagnostics.info)=="function" then
+                        RealismExtensionsDiagnostics.info(string.format(
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f",
+                            x,z,appliedDepth,physical.maxLowerM,
+                            physical.sampledVertices or 0,physical.loweredVertices or 0,
+                            tonumber(context.physicalGroundWetness) or -1,
+                            tostring(context.hardFrozen==true),
+                            tonumber(footprint.groundPressurePa) or 0,
+                            tonumber(context.longitudinalSlip) or 0,
+                            tonumber(response.plasticDemandBearingRatio) or -1
+                        ))
+                    end
+                end
             elseif physical ~= nil and physical.success then
                 diagCount("geometryJournalNoLowering", 1)
             else
@@ -804,6 +834,39 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     diagCount("contextAccepted", 1)
     state.hadContext = true
+    -- Single transition record, NOT per-wheel/per-frame climate spam. This
+    -- compares the Mud-provided frozen state with current GIANTS air temp.
+    local rt=RealismExtensionsTerrainRuntime
+    if rt~=nil and type(context.hardFrozen)=="boolean" then
+        if context.hardFrozen then
+            diagCount("freezeContextSamples",1)
+        end
+        if rt.lastFreezeState==nil
+            or rt.lastFreezeState~=context.hardFrozen then
+            rt.lastFreezeState=context.hardFrozen
+            rt.freezeTransitionCount=(rt.freezeTransitionCount or 0)+1
+            if rt.freezeTransitionCount<=8
+                and RealismExtensionsDiagnostics~=nil
+                and type(RealismExtensionsDiagnostics.info)=="function" then
+                local env=g_currentMission~=nil
+                    and g_currentMission.environment or nil
+                local weather=env~=nil and env.weather or nil
+                local air=nil
+                if weather~=nil
+                    and type(weather.getCurrentTemperature)=="function" then
+                    local ok,v=pcall(weather.getCurrentTemperature,weather)
+                    if ok and type(v)=="number" then air=v end
+                end
+                RealismExtensionsDiagnostics.info(string.format(
+                    "TerrainFreezeState | frozen=%s airC=%s wetness=%.3f x=%.1f z=%.1f (source=Mud via RC; air is not soil temperature)",
+                    tostring(context.hardFrozen),
+                    air~=nil and string.format("%.2f",air) or "unknown",
+                    tonumber(context.physicalGroundWetness) or -1,
+                    context.worldX or 0,context.worldZ or 0
+                ))
+            end
+        end
+    end
 
     local footprint = RealismExtensionsFootprintModel.compute(context)
     if footprint == nil or footprint.available ~= true then
