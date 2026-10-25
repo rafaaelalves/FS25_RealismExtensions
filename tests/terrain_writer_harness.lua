@@ -463,3 +463,43 @@ local qb3,qj3=qw:flush()
 assert(qb3==1 and qj3==1 and qw:getQueueSize()==0)
 assert(qw.queueHead==1 and qw.queueTail==0)
 print("terrain_writer_r6_queue_harness: OK")
+
+-- A callback-bearing LOWER is a *single native transaction*. A former
+-- batch of 3 distinct 2.4mm brushes caused each wheel's journal callback
+-- to sample geometry AFTER all 3 commands, corrupting attribution. In
+-- contrast, regular no-callback brushes may still batch for throughput.
+local causal = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=5,maxJobsPerFrame=2,maxBrushesPerJob=8,
+    depthBucketM=0.0005,minDepthM=0.0004
+})
+local beforeJobs=#created
+local confirmations={}
+for i=1,3 do
+    local ix=140+i
+    local original=10
+    assert(causal:enqueue({
+        x=ix,z=140,depthM=0.0024,radiusM=0.21,
+        onApplied=function(state)
+            assert(state==TerrainDeformation.STATE_SUCCESS)
+            confirmations[#confirmations+1]=ix
+            assert(math.abs((heights[tostring(ix)..":140"] or 10)
+                -(original-0.0024))<0.000001)
+        end
+    }))
+end
+local n1,j1=causal:flush()
+assert(n1==2 and j1==2)
+assert(#created==beforeJobs+2)
+assert(#confirmations==2)
+assert(causal:getQueueSize()==1)
+for i=beforeJobs+1,beforeJobs+2 do
+    assert(#created[i].brushes==1)
+    assert(math.abs(created[i].depth+0.0024)<0.000001,
+        "native command may not round the requested 2.4mm to 2.5mm")
+end
+local n2,j2=causal:flush()
+assert(n2==1 and j2==1)
+assert(#confirmations==3 and causal:getQueueSize()==0)
+assert(#created[beforeJobs+3].brushes==1)
+assert(math.abs(created[beforeJobs+3].depth+0.0024)<0.000001)
+print("terrain_writer_causal_single_brush_harness: OK")
