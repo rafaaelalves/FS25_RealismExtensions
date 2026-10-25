@@ -49,6 +49,25 @@ local noop=assert(j:begin("wheel-one",0,0,0.3))
 assert(j:complete(noop,true).movedVertices==0)
 assert(j.stats.noEffect==1)
 
+-- A giant native jump measured during RE's callback is not proof of RE
+-- ownership. Revoke every potentially affected heightmap vertex and keep
+-- the old pre-RE reference immutable, but unavailable for automatic TARGET.
+local giant=assert(j:begin("ambiguous-burst",60,60,0.3))
+set(60,60,99.945)
+local burst=assert(j:complete(giant,true))
+assert(burst.maxLowerM>0.05)
+assert(j.observations["60:60"].owned==true)
+local revoked,revokedCount=j:invalidateCompletedFootprint(
+    giant,"EXCESS_NATIVE_LOWERING")
+assert(revoked==true and revokedCount>=1)
+assert(j.observations["60:60"].owned==false)
+assert(j:getRecoverablePoint(60,60)==nil)
+assert(j.observations["60:60"].preREHeightM==100)
+assert(j:invalidateCompletedFootprint(giant)==false)
+assert(j:invalidateCompletedFootprint({id=999})==false)
+assert(j.stats.anomalousCompletedFootprints==1)
+assert(j.stats.anomalousOwnershipInvalidated>=1)
+
 -- Terrain changed WITHOUT RE writer: invalidate old baseline before new edit.
 set(0,0,99.50)
 local externallyChanged=assert(j:begin("wheel-one",0,0,0.3))
