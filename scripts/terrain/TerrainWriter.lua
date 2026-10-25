@@ -995,13 +995,26 @@ function Writer:flush()
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
             .. ":" .. tostring(bucket)
+        -- A geometry-journal LOWER callback owns one before/after native
+        -- transaction. Grouping multiple callback-bearing ruts in ONE
+        -- TerrainDeformation job makes each individual callback measure the
+        -- sum of several brushes and invalidates causal depth attribution.
+        -- Keep the exact requested depth; the 0.5mm grouping bucket may
+        -- otherwise round even a one-brush physical command.
+        if brush.mode == "LOWER" and brush.onApplied ~= nil then
+            groupKey = groupKey .. ":CAUSAL:" .. tostring(consumed + 1)
+        end
         if brush.mode == "TARGET"
             or (brush.mode == "RAISE" and brush.source == "RECOVERY") then
             groupKey = groupKey
                 .. ":" .. string.format("%.3f", brush.x)
                 .. ":" .. string.format("%.3f", brush.z)
         end
-        groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
+        local nativeDepth = (brush.mode == "LOWER"
+            and brush.onApplied ~= nil) and brush.depthM or bucket
+        groups[groupKey] = groups[groupKey] or {
+            mode=brush.mode or "LOWER", depth=nativeDepth, brushes={}
+        }
         local groupInfo = groups[groupKey]
         local group = groupInfo.brushes
         local factor = math.max(0, tonumber(self.options.coalesceDistanceFactor) or 0)
@@ -1046,8 +1059,10 @@ function Writer:flush()
             local recoveryRaise = mode == "RAISE"
                 and group[index] ~= nil
                 and group[index].source == "RECOVERY"
-            local batchLimit = (mode == "TARGET" or recoveryRaise)
-                and 1 or perJob
+            local causalLower = mode == "LOWER"
+                and group[index] ~= nil and group[index].onApplied ~= nil
+            local batchLimit = (mode == "TARGET" or recoveryRaise
+                or causalLower) and 1 or perJob
             for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]
