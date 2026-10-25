@@ -360,6 +360,20 @@ function Recovery.isRutGenerationSuppressed(vehicle, nowMs)
     Recovery.stats.activeCombinationQueries =
         Recovery.stats.activeCombinationQueries + 1
 
+    -- In the causal geometry branch, an actively-working cultivator must NOT
+    -- immunize the whole tractor/implement combination against rutting.
+    -- The tractor's wheels can still damage wet soil ahead of the implement.
+    -- Only the *actual* worked geometry receives short-lived protection via
+    -- isRecentlyCultivated(x,z,nowMs), which is checked by the rut writer.
+    -- Keep the legacy combination guard in the isolated older recovery mode.
+    local mods=RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules or nil
+    if mods~=nil and mods.TerrainCausalRecovery==true then
+        Recovery.stats.causalCombinationSpatialOnly =
+            (Recovery.stats.causalCombinationSpatialOnly or 0)+1
+        return false
+    end
+
     local workApi = RealismExtensionsTerrainWorkContext
     local root = workApi ~= nil
         and workApi.getCombinationRoot(vehicle) or vehicle
