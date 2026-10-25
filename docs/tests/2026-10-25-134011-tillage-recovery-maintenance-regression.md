@@ -40,3 +40,12 @@ The earlier assistant statement suggesting NPC/public maintenance lacked impleme
 - **EXTREME wet/mud physical challenge and visible wheel clipping: not validated**. Per-event invariant and MR/Mud diagnostics required to rule out competition/suppression. No user obligation to repeat the whole growing cycle.
 - **REFERENCE-FREE/third-party/natural surface treatment, high-depth ruts, lateral berm mass conservation, multiplayer, release memory/perf** remain outside proven causal v1. The temporary 10/12cm guard is not a final physically derived model. Do not merge PR #64 yet.
 - No physics change or game ZIP generated from this audit alone. Keep main untouched; use issue #63 and this audit as next development specification.
+
+
+## Extra finding: frozen-ground draft path explains part of the reduced challenge
+
+- Previous 09:10 run: RC MRMudDraft summary `hardFrozenReads=0`, `draftCalls=21060`, `samples=443`, `overrides=443`.
+- Current 10:40 run: RC MRMudDraft summary `hardFrozenReads=8042`, `draftCalls=29671`, `samples=0`, `overrides=0`.
+- Verified source `RC/scripts/integrations/MRMudDraft.lua` function `localWetness`: tests `FieldGroundMudPhysics.isHardWinterFrozen()` and, when true, counts `hardFrozenReads` and returns moisture **0** for soil-engaging implement draft rather than sampling actual field wetness.
+- Thus frozen-ground handling was repeatedly exercised during this easier work session, unlike the earlier harder session. That can explain missing wet-draft penalty, even if the visual map shows saturated soil. It does **not** establish wheel contact/sink at the same positions or prove that the actual field is dry; it also does not necessarily model extra draft needed to rip truly frozen soil.
+- Investigate whether return 0 should cause an explicit cold/frozen high soil-hardness draft effect instead of merely ignoring wet-draft penalty, before retuning RE persistent rut strength or asserting the Mud bridge is disabled.
