@@ -296,7 +296,7 @@ function RealismExtensionsCore:update(dt)
                 and RealismExtensionsTerrainCausalRecovery.getDiagnostics() or {}
             local ws=runtime.writer~=nil and runtime.writer.stats or {}
             RealismExtensionsDiagnostics.info(string.format(
-                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeActualMaxSum=%.4fm nativeRequestedSum=%.4fm nativeAmplified=%d frozenContexts=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm missingBaselineVisits=%d untrustedVisits=%d byTool=%d/%d/%d/%d unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d",
+                "TerrainHealth | causal=%s journalReady=%s unit=%s pending=%d journalJobs=%d lowered=%d noEffect=%d wheelAccepted=%d wheelDeferred=%d wheelConfirmed=%d nativeActualMaxSum=%.4fm nativeRequestedSum=%.4fm nativeAmplified=%d frozenContexts=%d nativeGuard=%d cap=%d oldHollow=%d untrusted=%d recoveryCandidates=%d queued=%d callback=%d improved=%d closed=%d gained=%.4fm maxGain=%.4fm maxDeficit=%.4fm missingBaselineVisits=%d untrustedVisits=%d byTool=%d/%d/%d/%d unchanged=%d unsafe=%d collateral=%d failed=%d nativeTargetBrushes=%d nativeFailure=%d isolatedNativePending=%s nativeJobs=%d/%d isolatedPendingSkips=%d",
                 tostring(RealismExtensionsConfig.modules.TerrainCausalRecovery==true),
                 tostring(journal~=nil and journal.unitM~=nil),
                 journal~=nil and tostring(journal.unitM) or "-",
@@ -318,7 +318,11 @@ function RealismExtensionsCore:update(dt)
                 cs.toolCULTIVATOR or 0,cs.toolOTHER or 0,
                 cs.unchanged or 0,cs.unsafe or 0,
                 cs.collateral or 0,cs.failed or 0,
-                ws.recoveryTargetBrushes or 0,ws.failedJobs or 0
+                ws.recoveryTargetBrushes or 0,ws.failedJobs or 0,
+                tostring(runtime.writer~=nil
+                    and runtime.writer.nativeCausalPending==true),
+                ws.causalNativeStarted or 0,ws.causalNativeFinished or 0,
+                ws.causalNativePendingSkips or 0
             ))
             if RealismExtensionsTerrainCausalMaintenance~=nil
                 and RealismExtensionsConfig.modules.TerrainCausalMaintenance==true then
