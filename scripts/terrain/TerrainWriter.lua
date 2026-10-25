@@ -594,11 +594,10 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local strictCausal = RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
-    local causalSingleRut = strictCausal and mode == "LOWER"
-        and brushes ~= nil and #brushes == 1
-        and type(brushes[1].onApplied) == "function"
+    local causalExclusiveJob = strictCausal
+        and brushes ~= nil and #brushes > 0
     local callbackTarget = {
-        causalSingleRut = causalSingleRut,
+        causalExclusiveJob = causalExclusiveJob,
         deformation = deformation,
         owner = self,
         terrain = terrain,
@@ -611,13 +610,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
-        if self.causalSingleRut then
-            -- The queue's native callback, not job submission, ends the
-            -- isolation window. Exactly one RE native job may be in flight.
+        if self.causalExclusiveJob then
+            -- Queue/direct native callback, not submission, ends the
+            -- isolation window. One RE native job may be in flight.
             self.owner.nativeCausalPending=false
             self.owner.stats.causalNativeFinished =
                 self.owner.stats.causalNativeFinished + 1
-            self.causalSingleRut=false
+            self.causalExclusiveJob=false
         end
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
             and RealismExtensionsTerrainPerformance.begin() or nil
@@ -957,6 +956,10 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.stats.recoveryMachineRaiseBrushes =
                 self.stats.recoveryMachineRaiseBrushes + #(brushes or {})
         end
+        if causalExclusiveJob then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
         local ok, err = pcall(
             deformation.apply,
             deformation,
@@ -965,6 +968,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             callbackTarget
         )
         if not ok then
+            if causalExclusiveJob then self.nativeCausalPending=false end
             self.stats.lastSubmitError = tostring(err)
             deformation:delete()
             return false, "machine smoothing apply failed: " .. tostring(err)
@@ -973,13 +977,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if q ~= nil and type(q.queueJob) == "function" then
-        if causalSingleRut then
+        if causalExclusiveJob then
             self.nativeCausalPending=true
             self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
         end
         local ok = pcall(q.queueJob, q, deformation, false, "done", callbackTarget)
         if not ok then
-            if causalSingleRut then self.nativeCausalPending=false end
+            if causalExclusiveJob then self.nativeCausalPending=false end
             deformation:delete()
             return false, "queueJob failed"
         end
@@ -987,13 +991,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if type(deformation.apply) == "function" then
-        if causalSingleRut then
+        if causalExclusiveJob then
             self.nativeCausalPending=true
             self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
         end
         local ok = pcall(deformation.apply, deformation, false, "done", callbackTarget)
         if not ok then
-            if causalSingleRut then self.nativeCausalPending=false end
+            if causalExclusiveJob then self.nativeCausalPending=false end
             deformation:delete()
             return false, "direct apply failed"
         end
