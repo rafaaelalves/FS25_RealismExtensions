@@ -159,12 +159,22 @@ local contactStats=RealismExtensionsLoadedContactRegistry.getStats(0)
 assert(contactStats.activeContacts==2)
 assert(contactStats.maxLoadN>=20000)
 
+-- Exercise the actual specialization's passive bridge call rather than
+-- only unit-testing the bridge in isolation. The harness wheels have no
+-- native shape/scales; observe() must never write, allocate a brush, or
+-- prevent the normal terrain update from proceeding.
+dofile("scripts/terrain/TerrainNativeWheelBridge.lua")
+RealismExtensionsConfig.modules.NativeWheelDisplacementObservation=true
+
 -- Move each wheel forward: only this vehicle's two wheels are processed.
 wheelA.testX = 0.4
 wheelB.testX = 0.9
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == 4)
 assert(enqueued > 2)
+assert(RealismExtensionsTerrainNativeWheelBridge.stats.samples==2)
+assert(RealismExtensionsTerrainNativeWheelBridge.stats.scaleUnavailable==2)
+RealismExtensionsConfig.modules.NativeWheelDisplacementObservation=false
 
 -- Stationary wheelspin must still pass the cheap gate: body at rest, wheel
 -- surface moving. This is the "tractor against a pillar" class of scenario.
