@@ -136,4 +136,11 @@ ok,why=C.enqueueAuthorizedVertex(8,0,0.5,"NEIGHBOR",120000)
 assert(ok==true)
 ok,why=C.enqueueAuthorizedVertex(8,0,0.5,"NEIGHBOR",120000)
 assert(ok==false and why=="ALREADY_PENDING")
+-- Monthly authorization is rechecked just before writer submission, not
+-- trusted merely because the vertex was queued at the start of the month.
+local totalQueued=#queued
+g_currentMission.time=5000
+C.update()  -- no ownership policy present, so execution must fail closed
+assert(#queued==totalQueued)
+assert((C.stats.unauthorized or 0)==1)
 print("terrain_causal_recovery_harness: OK")
