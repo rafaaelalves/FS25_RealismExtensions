@@ -355,10 +355,14 @@ assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
 liveHeights[heightKey(100,0)]=99.988
 callbacks[2].onApplied(1)
 assert(journal.pendingCount==0)
-assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
-assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0)
-assert(RealismExtensionsTerrainRuntime.history:get(100,0).rutDepthM>0.0119,
-    "native 12mm movement MUST NOT become just 3mm historic rut debt")
+-- The 12mm observation is EXCESSIVE relative to the submitted 3mm.
+-- Do not claim somebody else's possibly concurrent native movement,
+-- and do not automatically authorize restoration of that height.
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+assert(RealismExtensionsTerrainRuntime.history:get(100,0)==nil)
+assert(journal.observations["100:0"].owned==false)
+assert(journal:getRecoverablePoint(100,0)==nil)
+assert((journal.stats.anomalousCompletedFootprints or 0)==1)
 -- The simulated native result moved 12mm despite a 3mm maximum command.
 -- This event must be measured from the callback, not inferred from intent.
 assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredExcessEvents or 0)==1)
@@ -368,6 +372,27 @@ local countAfter=RealismExtensionsTerrainRuntime.history.count
 callbacks[2].onApplied(1) -- duplicate callback ignored by journal
 assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
 -- Note: the existing logger sees this case as failed journal confirmation.
+
+-- A clean <=3mm native change remains eligible for verified ownership
+-- and physical debt, proving that the new mismatch gate is not blanket
+-- disabling causal journaling.
+wheelA.testX=140
+wheelB.testX=160
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeClean=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeClean+2)
+callbacks[beforeClean+1].onApplied(false)
+liveHeights[heightKey(160,0)]=99.997
+callbacks[beforeClean+2].onApplied(1)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
+assert(journal.observations["160:0"].owned==true)
+assert(journal:getRecoverablePoint(160,0,0.003)==nil)
+-- 3mm is at the threshold; no claim here about a recovered field.
 
 -- Excessive native movement quarantines all further causal wheel
 -- excavation in this game session. This is an experimental save-safety gate,
@@ -393,6 +418,9 @@ callbacks[preFault+2].onApplied(1)
 assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
 assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineTriggers or 0)==1)
 assert(journal.pendingCount==0)
+assert(journal.observations["320:0"].owned==false)
+assert(journal:getRecoverablePoint(320,0)==nil)
+assert(RealismExtensionsTerrainRuntime.history:get(320,0)==nil)
 
 -- Even before the writer flushes queued wheels, the no-more-writes gate
 -- should block new wheel samples from introducing further native requests.
