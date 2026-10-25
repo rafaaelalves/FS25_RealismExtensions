@@ -34,6 +34,14 @@ https://gdn.giants-software.com/documentation_scripting_fs25.php?category=78&cla
 
 The unit harnesses use mocked GIANTS geometry. A green CI is source integrity evidence, not live diagnosis of the true writer or physical displacement amplitude. The existing experimental additive actuator remains *unsafe for mainline*; this fix addresses provenance of the failure, **not** first-event native overshoot.
 
+### Saved v1 recovery authorization cannot survive this fix
+
+The 20:08 game log showed 937 native journal vertices restored from a pre-fix save. Those saved v1 records were produced **before** large native callbacks were rejected for recovery provenance. A code-only fix to new callbacks would leave old `owned=true` records active and could still automatically regrade suspicious old ground.
+
+The native GeometryJournal snapshot schema therefore advances **v1 → v2**. `importSnapshot` can still read a v1 sidecar and retain its observed heights/reference coordinates only when they match the current map, but **ALL v1 `owned=true` entries downgrade to `owned=false`**. It logs the count as `legacyOwnershipRevoked` on map load. No actual terrain vertex is touched; no v1 entry authorizes a new recovery TARGET. New v2 sidecars preserve trusted ownership normally. This conservative migration leaves old pits to be handled via explicitly validated procedures, not automatic reconstruction from unverifiable attribution.
+
+A `terrain_geometry_journal_harness` migration regression confirms no change to real/sample heights, v1 entries remain untrusted, and verified v2 entries remain trusted.
+
 ## Next technical decision
 
 Do **not** install a global unconditional `TerrainDeformationQueue.queueJob` overwrite in RC/RE based only on this hypothesis. That would alter global engine behavior and might miss direct `TerrainDeformation.apply` calls (e.g. TerraFarm). If continued investigation warrants it, use a strictly optional, pointer-integrity-checked, pass-through observer that records bounded timestamps/owner candidates and warns about overlap with an in-flight RE journal, while recognizing that queue overlap is not proof of same-coordinate write.
