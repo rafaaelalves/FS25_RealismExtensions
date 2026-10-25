@@ -424,4 +424,24 @@ assert(rejectedProbes==2,"deadline must prevent further native probes")
 writer.measureRecoveryAt=oldMeasure
 Recovery.resetRuntimeState()
 
+-- Causal mode: the entire actively-cultivating tractor must remain eligible
+-- to make NEW physical ruts (e.g. heavy tractor ahead of the repair tool).
+-- Only its wheels crossing the ACTUALLY worked patch are protected.
+g_currentMission.time=g_currentMission.time+1000
+Recovery.activeCombinationUntil[rootVehicle]=
+    g_currentMission.time+Recovery.DEFAULTS.activeCombinationGraceMs
+assert(Recovery.isRutGenerationSuppressed(vehicle,g_currentMission.time)==true,
+    "legacy mode preserves old full-combination protection")
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+assert(Recovery.isRutGenerationSuppressed(vehicle,g_currentMission.time)==false,
+    "causal mode must not hide tractor ruts ahead of working implement")
+assert(Recovery.getDiagnostics().causalCombinationSpatialOnly>=1)
+Recovery.protectedCells["1:1"]=g_currentMission.time+8000
+assert(Recovery.isRecentlyCultivated(0.4,0.4,g_currentMission.time)==true,
+    "causal mode still protects the physically cultivated cell")
+assert(Recovery.isRecentlyCultivated(4.0,4.0,g_currentMission.time)==false,
+    "causal mode must not protect non-worked ground ahead of the implement")
+RealismExtensionsConfig.modules.TerrainCausalRecovery=nil
+Recovery.resetRuntimeState()
+
 print("terrain_recovery_r7_tillage_profiles_harness: OK")
