@@ -173,6 +173,74 @@ function C.observeWorkedArea(geometry,profile)
     return count
 end
 
+-- Trusted periodic world-maintenance admission. The authority and eligibility
+-- policy lives in TerrainCausalMaintenance; no arbitrary (x,z) without a
+-- confirmed RE-owned native-vertex baseline may enter this queue.
+function C.enqueueAuthorizedVertex(ix,iz,factor,cause,ttlMs)
+    if not C.enabled() then return false,"NOT_READY" end
+    if type(ix)~="number" or type(iz)~="number"
+        or ix~=math.floor(ix) or iz~=math.floor(iz) then
+        return false,"INVALID_GRID"
+    end
+    if cause~="NEIGHBOR" and cause~="MUNICIPAL" then
+        return false,"UNAUTHORIZED_CAUSE"
+    end
+    local j=journal()
+    local p=j:getRecoverablePoint(ix,iz,C.DEFAULTS.minDeficitM)
+    if p==nil then return false,"NO_TRUSTED_DEBT" end
+    if C.byKey[p.key]~=nil then return false,"ALREADY_PENDING" end
+    if C.queueTail-C.queueHead+1>=C.DEFAULTS.maxPending then
+        return false,"QUEUE_FULL"
+    end
+    local f=math.max(0.10,math.min(1,tonumber(factor) or 0.25))
+    local limit=math.max(C.DEFAULTS.maxPendingAgeMs,
+        tonumber(ttlMs) or C.DEFAULTS.maxPendingAgeMs)
+    C.queueTail=C.queueTail+1
+    C.queue[C.queueTail]={
+        key=p.key,ix=ix,iz=iz,factor=f,profileId=cause,
+        cause=cause,ttlMs=limit,atMs=now(),attempts=0
+    }
+    C.byKey[p.key]=true
+    C.stats.considered=C.stats.considered+1
+    C.stats.maxBeforeDeficitM=math.max(
+        C.stats.maxBeforeDeficitM,p.deficitM
+    )
+    return true,nil
+end
+
+local function authorizedAtExecution(item,point)
+    if item.cause==nil then return true end
+    local policy=RealismExtensionsTerrainMaintenancePolicy
+    if policy==nil or type(policy.classifyAt)~="function"
+        or type(policy.circleHasMaintainer)~="function" then return false end
+    local mission=g_currentMission
+    local farmId=nil
+    if mission~=nil and type(mission.getFarmId)=="function" then
+        local ok,id=pcall(mission.getFarmId,mission)
+        if ok then farmId=id end
+    end
+    local cls=policy.classifyAt(point.x,point.z,farmId)
+    if cls==nil or cls.maintainer~=item.cause then return false end
+    local r=math.max(0.12,journal().unitM*0.35)
+    if policy.circleHasMaintainer(
+        point.x,point.z,r,item.cause,farmId
+    )~=true then return false end
+    if item.cause=="MUNICIPAL" then
+        local surface=RealismExtensionsTerrainSurfaceResponse
+        if surface==nil
+            or type(surface.isMunicipalMaintenanceSurface)~="function" then
+            return false
+        end
+        local off=r*0.75
+        for _,v in ipairs({{0,0},{off,0},{-off,0},{0,off},{0,-off}}) do
+            if surface.isMunicipalMaintenanceSurface(
+                point.x+v[1],point.z+v[2]
+            )~=true then return false end
+        end
+    end
+    return true
+end
+
 local function pop()
     local p=C.queue[C.queueHead]
     C.queue[C.queueHead]=nil
@@ -220,7 +288,7 @@ function C.update()
     for _=1,math.min(5,C.queueTail-C.queueHead+1) do
         local item=pop()
         if item==nil then return end
-        if clock>item.atMs+C.DEFAULTS.maxPendingAgeMs
+        if clock>item.atMs+(item.ttlMs or C.DEFAULTS.maxPendingAgeMs)
             or item.attempts>=C.DEFAULTS.maxAttemptsPerVertex then
             C.byKey[item.key]=nil
             C.stats.expired=C.stats.expired+1
@@ -228,6 +296,12 @@ function C.update()
             local point=j:getRecoverablePoint(item.ix,item.iz,C.DEFAULTS.minDeficitM)
             if point==nil then
                 C.byKey[item.key]=nil
+            elseif not authorizedAtExecution(item,point) then
+                -- Land owner, boundary or public-surface paint may have
+                -- changed since the month began. Never grade on stale auth.
+                C.byKey[item.key]=nil
+                C.stats.unauthorized=
+                    (C.stats.unauthorized or 0)+1
             else
                 local radius=j.unitM*C.DEFAULTS.radiusUnitFraction
                 local contact=RealismExtensionsLoadedContactRegistry
