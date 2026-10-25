@@ -413,8 +413,31 @@ local preFault=#callbacks
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert(#callbacks==preFault+2)
 callbacks[preFault+1].onApplied(false)
+-- A parallel GIANTS queue job is visible *as a submission*, but without a
+-- per-brush area we MUST NOT claim it dug the measured rut.
+local recordedInfo={}
+RealismExtensionsDiagnostics={
+    info=function(message)
+        recordedInfo[#recordedInfo+1]=message
+    end
+}
+RealismExtensionsTerrainNativeQueueProbe={
+    enabled=true,stats={externalDuringREPending=7}
+}
+callbacks[preFault+2].onSubmitted()
+RealismExtensionsTerrainNativeQueueProbe.stats.externalDuringREPending=8
 liveHeights[heightKey(320,0)]=99.945
 callbacks[preFault+2].onApplied(1)
+local anomalyLog=false
+for _,line in ipairs(recordedInfo) do
+    if line:find("TerrainNativeQuarantine",1,true)
+        and line:find("otherQueuedWhilePending=1",1,true) then
+        anomalyLog=true
+    end
+end
+assert(anomalyLog==true)
+RealismExtensionsTerrainNativeQueueProbe=nil
+RealismExtensionsDiagnostics=nil
 assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
 assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineTriggers or 0)==1)
 assert(journal.pendingCount==0)
