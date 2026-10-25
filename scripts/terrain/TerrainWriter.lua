@@ -191,6 +191,7 @@ function Writer:enqueue(brush)
         recoveryPreProbe = brush.recoveryPreProbe,
         skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
         onApplied = brush.onApplied,
+        beforeSubmit = brush.beforeSubmit,
         onSubmitted = brush.onSubmitted
     }
     self.queueCount = (self.queueCount or 0) + 1
@@ -457,6 +458,21 @@ local function configureDeformationConstraints(deformation)
 end
 
 function Writer:_submitBatch(depthM, brushes, mode)
+    -- Executed just before allocating the GIANTS native operation: a wheel
+    -- brush can wait in this writer's queue after its first-touch sample.
+    -- Fail closed if the ground moved during that wait; flush() releases its
+    -- geometry-journal lock through the existing onApplied(false) path.
+    for _, brush in ipairs(brushes or {}) do
+        if type(brush.beforeSubmit) == "function" then
+            local ok, valid, reason = pcall(brush.beforeSubmit)
+            if not ok or valid ~= true then
+                self.stats.nativePreflightRejected =
+                    (self.stats.nativePreflightRejected or 0) + 1
+                self.stats.lastSubmitError = tostring(reason or valid)
+                return false, "native preflight rejected: " .. tostring(reason or valid)
+            end
+        end
+    end
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
     if TerrainDeformation == nil or terrain == nil or terrain == 0 then
