@@ -553,3 +553,31 @@ assert(asyncW:getQueueSize()==0)
 RealismExtensionsConfig.modules.TerrainCausalRecovery=false
 g_terrainDeformationQueue.queueJob=nativeQ
 print("terrain_writer_causal_async_exclusion_harness: OK")
+
+-- Fail closed BEFORE a native handle is constructed if a wheel's
+-- enqueue-time geometry sample is stale; always release causal locks via
+-- the ordinary callback-on-submission-failure path.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+local guardW=RealismExtensionsTerrainWriter.new()
+local nativeCreated=#created
+local guardCalled=0
+local callbackFailed=false
+assert(guardW:enqueue({
+    x=193,z=193,depthM=0.0024,radiusM=0.23,
+    beforeSubmit=function()
+        guardCalled=guardCalled+1
+        return false,"QUEUED_GEOMETRY_DRIFT"
+    end,
+    onApplied=function(state)
+        callbackFailed=(state==false)
+    end
+}))
+local guardBrushes,guardJobs=guardW:flush()
+assert(guardBrushes==0 and guardJobs==0)
+assert(guardW:getQueueSize()==0)
+assert(guardCalled==1 and callbackFailed==true)
+assert(#created==nativeCreated)
+assert(guardW.stats.nativePreflightRejected==1)
+assert(guardW.nativeCausalPending~=true)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+print("terrain_writer_native_preflight_harness: OK")
