@@ -125,4 +125,15 @@ assert(C.stats.toolSUBSOILER==1)
 assert(C.observeWorkedArea({xs=8.60,zs=-0.20,ux=0.2,uz=0,
     vx=0,vz=0.4},sub)==0) -- beyond the half-grid support margin
 assert(C.stats.noBaselineVisits>=0)
+-- Periodic recovery must not accept arbitrary owners, absent references
+-- or duplicate scheduling on the same verified native vertex.
+C.reset()
+local ok,why=C.enqueueAuthorizedVertex(8,0,0.5,"PLAYER",120000)
+assert(ok==false and why=="UNAUTHORIZED_CAUSE")
+ok,why=C.enqueueAuthorizedVertex(9,0,0.5,"NEIGHBOR",120000)
+assert(ok==false and why=="NO_TRUSTED_DEBT")
+ok,why=C.enqueueAuthorizedVertex(8,0,0.5,"NEIGHBOR",120000)
+assert(ok==true)
+ok,why=C.enqueueAuthorizedVertex(8,0,0.5,"NEIGHBOR",120000)
+assert(ok==false and why=="ALREADY_PENDING")
 print("terrain_causal_recovery_harness: OK")
