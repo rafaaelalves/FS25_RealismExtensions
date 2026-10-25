@@ -590,14 +590,14 @@ function Engine.processSample(
             local physical = journal:complete(journalToken, success)
             if physical ~= nil and physical.success
                 and physical.loweredVertices > 0 then
-                -- Mechanical wear remains a separate model. Its physical rut
-                -- component is now limited to observed native height movement
-                -- instead of a queued 3mm request whose brush may be a no-op.
-                -- Geometry truth is the journal, not this 0.20m proxy depth.
-                local observed = math.min(
-                    appliedDepth,
-                    math.max(0, physical.maxLowerM)
-                )
+                -- Maintain a physical debt consistent with the REAL native
+                -- height change rather than the requested 2-3mm command.
+                -- Before this correction a 148mm native rut received only
+                -- 2.4mm of SpatialHistory debt, making passive NPC/public
+                -- maintenance wrongly skip even a deep, journal-owned rut.
+                -- This is a coarse 0.20m proxy: the immutable per-native-
+                -- vertex GeometryJournal remains the recovery authority.
+                local observed=math.max(0,physical.maxLowerM)
                 if observed > 0.00005 then
                     local current = historyStore:get(x, z)
                     local currentDepth = current ~= nil
