@@ -51,7 +51,9 @@ function Journal.new(terrain, options)
             movedVertices = 0,loweredVertices = 0,raisedVertices = 0,
             noEffect = 0,untrustedRise = 0,
             submitChecks = 0,submitDriftRejected = 0,
-            submitHeightUnavailable = 0,submitMaxDriftM = 0
+            submitHeightUnavailable = 0,submitMaxDriftM = 0,
+            anomalousCompletedFootprints = 0,
+            anomalousOwnershipInvalidated = 0
         }
     }, {__index=Journal})
 end
@@ -167,7 +169,8 @@ function Journal:begin(logicalKey,x,z,radiusM)
         end
     end
     self.nextId=self.nextId+1
-    local token={id=self.nextId,key=logicalKey,points=before,active=true}
+    local token={id=self.nextId,key=logicalKey,points=before,
+        active=true,journal=self,completed=false}
     for _,p in ipairs(before) do self.pendingByVertex[p.key]=token end
     self.pendingByLogicalKey[logicalKey]=token
     self.pendingCount=self.pendingCount+1
@@ -296,12 +299,43 @@ function Journal:complete(token,successful)
             self.observations[p.key]=entry
         end
     end
+    token.completed=true
     self.stats.completed=self.stats.completed+1
     if result.movedVertices==0 then self.stats.noEffect=self.stats.noEffect+1 end
     self.stats.movedVertices=self.stats.movedVertices+result.movedVertices
     self.stats.loweredVertices=self.stats.loweredVertices+result.loweredVertices
     self.stats.raisedVertices=self.stats.raisedVertices+result.raisedVertices
     return result,nil
+end
+
+-- An anomalous LOWER outcome must NEVER become recovery authority merely
+-- because it happened before the RE callback. Other writers may have changed
+-- the same terrain during the asynchronous native operation, and a large
+-- amplitude may exceed our own requested delta. This after-completion veto
+-- invalidates *all* possibly affected native vertices, including previously
+-- trusted baselines, but does not undo or raise any physical ground.
+-- Must be called synchronously in the callback after complete(token,true).
+function Journal:invalidateCompletedFootprint(token,reason)
+    if type(token)~="table" or token.journal~=self
+        or token.active==true or token.completed~=true
+        or token.ownershipInvalidated==true then
+        return false,"COMPLETED_TOKEN_UNAVAILABLE"
+    end
+    local invalidated=0
+    for _,point in ipairs(token.points or {}) do
+        local e=self.observations[point.key]
+        if e~=nil then
+            if e.owned==true then invalidated=invalidated+1 end
+            e.owned=false
+        end
+    end
+    token.ownershipInvalidated=true
+    token.ownershipInvalidationReason=tostring(reason or "UNTRUSTED_NATIVE_OUTCOME")
+    self.stats.anomalousCompletedFootprints=
+        (self.stats.anomalousCompletedFootprints or 0)+1
+    self.stats.anomalousOwnershipInvalidated=
+        (self.stats.anomalousOwnershipInvalidated or 0)+invalidated
+    return true,invalidated
 end
 
 -- Experimental causal restitution applies only to a geometry vertex with
