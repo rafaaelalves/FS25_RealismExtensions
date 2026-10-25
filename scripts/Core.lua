@@ -160,6 +160,11 @@ function RealismExtensionsCore:loadMap()
         and type(RealismExtensionsTerrainMaintenance.initialize) == "function" then
         RealismExtensionsTerrainMaintenance.initialize()
     end
+    if RealismExtensionsTerrainCausalMaintenance ~= nil
+        and type(RealismExtensionsTerrainCausalMaintenance.initialize)
+            == "function" then
+        RealismExtensionsTerrainCausalMaintenance.initialize()
+    end
 
     RealismExtensionsDiagnostics.info(
         "v" .. tostring(RealismExtensionsConfig.version)
@@ -315,6 +320,18 @@ function RealismExtensionsCore:update(dt)
                 cs.collateral or 0,cs.failed or 0,
                 ws.recoveryTargetBrushes or 0,ws.failedJobs or 0
             ))
+            if RealismExtensionsTerrainCausalMaintenance~=nil
+                and RealismExtensionsConfig.modules.TerrainCausalMaintenance==true then
+                local m=RealismExtensionsTerrainCausalMaintenance.getDiagnostics()
+                RealismExtensionsDiagnostics.info(string.format(
+                    "TerrainWorldMaintenance | periods=%d scanned=%d neighborEligible=%d municipalEligible=%d neighborQueued=%d municipalQueued=%d boundaryRejected=%d surfaceRejected=%d noTrustedNative=%d queueRejected=%d",
+                    m.periods or 0,m.scanned or 0,
+                    m.eligibleNeighbor or 0,m.eligibleMunicipal or 0,
+                    m.queuedNeighbor or 0,m.queuedMunicipal or 0,
+                    m.boundaryRejected or 0,m.surfaceRejected or 0,
+                    m.notTrusted or 0,m.queueRejected or 0
+                ))
+            end
         end
 
         if RealismExtensionsConfig.diagnostics ~= nil
@@ -1022,6 +1039,11 @@ function RealismExtensionsCore:deleteMap()
     if RealismExtensionsTerrainMaintenance ~= nil
         and type(RealismExtensionsTerrainMaintenance.shutdown) == "function" then
         RealismExtensionsTerrainMaintenance.shutdown()
+    end
+    if RealismExtensionsTerrainCausalMaintenance ~= nil
+        and type(RealismExtensionsTerrainCausalMaintenance.shutdown)
+            == "function" then
+        RealismExtensionsTerrainCausalMaintenance.shutdown()
     end
 
     if RealismExtensionsTerrainCausalRecovery ~= nil then
