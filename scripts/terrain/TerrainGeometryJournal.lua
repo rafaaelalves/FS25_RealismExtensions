@@ -49,7 +49,9 @@ function Journal.new(terrain, options)
             requested = 0,started = 0,overlapRejected = 0,
             unavailable = 0,aborted = 0,completed = 0,
             movedVertices = 0,loweredVertices = 0,raisedVertices = 0,
-            noEffect = 0,untrustedRise = 0
+            noEffect = 0,untrustedRise = 0,
+            submitChecks = 0,submitDriftRejected = 0,
+            submitHeightUnavailable = 0,submitMaxDriftM = 0
         }
     }, {__index=Journal})
 end
@@ -173,6 +175,54 @@ function Journal:begin(logicalKey,x,z,radiusM)
     return token,nil
 end
 
+-- A journal token is captured when a wheel sample is ENQUEUED, not when
+-- TerrainWriter submits the native GIANTS operation. The queued ground may
+-- change meanwhile (other mods, gameplay or a long deformation queue).
+-- Resample immediately before submission, reject changed ground, and rebase
+-- the callback delta to these just-in-time heights. This is NOT a global
+-- lock on third-party writers while GIANTS executes the native queue job.
+function Journal:validateBeforeSubmit(token)
+    if type(token)~="table" or token.active~=true
+        or self.pendingByLogicalKey[token.key]~=token then
+        return false,"STALE_OR_INVALID_TOKEN"
+    end
+    local afterQueue={}
+    local largestDrift=0
+    for i,p in ipairs(token.points) do
+        local y=self:getHeight(p.x,p.z)
+        if not finite(y) then
+            self.stats.submitHeightUnavailable =
+                self.stats.submitHeightUnavailable+1
+            return false,"SUBMISSION_HEIGHT_UNAVAILABLE"
+        end
+        afterQueue[i]=y
+        largestDrift=math.max(largestDrift,math.abs(y-p.beforeY))
+    end
+    self.stats.submitChecks=self.stats.submitChecks+1
+    self.stats.submitMaxDriftM=math.max(
+        self.stats.submitMaxDriftM,largestDrift)
+    if largestDrift>0.002 then
+        -- Do not dig into an altered patch or count queue-wait changes as a
+        -- new RE rut. Invalidate any trusted first-touch baseline affected.
+        for i,p in ipairs(token.points) do
+            if math.abs(afterQueue[i]-p.beforeY)>0.002 then
+                local entry=self.observations[p.key]
+                if entry~=nil then
+                    entry.owned=false
+                    entry.observedHeightM=afterQueue[i]
+                end
+            end
+        end
+        self.stats.submitDriftRejected=self.stats.submitDriftRejected+1
+        return false,"QUEUED_GEOMETRY_DRIFT"
+    end
+    for i,p in ipairs(token.points) do
+        p.beforeY=afterQueue[i]
+    end
+    token.submissionValidated=true
+    return true,nil
+end
+
 function Journal:complete(token,successful)
     if type(token)~="table" or token.active~=true
         or self.pendingByLogicalKey[token.key]~=token then
@@ -220,7 +270,11 @@ function Journal:complete(token,successful)
             if delta<0 then
                 local lowering=-delta
                 result.loweredVertices=result.loweredVertices+1
-                result.maxLowerM=math.max(result.maxLowerM,lowering)
+                if lowering>result.maxLowerM then
+                    result.maxLowerM=lowering
+                    result.maxLowerPoint={key=p.key,x=p.x,z=p.z,
+                        beforeY=p.beforeY,afterY=y}
+                end
                 if entry==nil then
                     entry={x=p.x,z=p.z,preREHeightM=p.beforeY,observedHeightM=y,owned=true}
                 else
