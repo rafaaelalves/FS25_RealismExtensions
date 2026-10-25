@@ -622,7 +622,24 @@ function Engine.processSample(
                 -- This is a coarse 0.20m proxy: the immutable per-native-
                 -- vertex GeometryJournal remains the recovery authority.
                 local observed=math.max(0,physical.maxLowerM)
-                if observed > 0.00005 then
+                -- Detection must PRECEDE any physical debt commit. The
+                -- callback interval is not globally exclusive to RE; a
+                -- concurrent native writer or a nonlinear GIANTS brush can
+                -- make the observed delta larger than this request. In that
+                -- case do not grant RE authority to restore that terrain.
+                local excess=observed>appliedDepth+0.002
+                local unexpectedRise=(physical.raisedVertices or 0)>0
+                local untrustedOutcome=excess or unexpectedRise
+                if untrustedOutcome then
+                    if type(journal.invalidateCompletedFootprint)=="function" then
+                        journal:invalidateCompletedFootprint(
+                            journalToken,
+                            unexpectedRise and "UNEXPECTED_LOWER_RISE"
+                                or "EXCESS_NATIVE_LOWERING")
+                    end
+                    diagCount("geometryJournalOwnershipQuarantined",1)
+                end
+                if observed > 0.00005 and not untrustedOutcome then
                     local current = historyStore:get(x, z)
                     local currentDepth = current ~= nil
                         and tonumber(current.rutDepthM) or previousDepth
@@ -636,14 +653,16 @@ function Engine.processSample(
                     )
                     diagCount("geometryJournalConfirmedDepthM", observed)
                 end
-                diagCount("geometryJournalConfirmed", 1)
+                if not untrustedOutcome then
+                    diagCount("geometryJournalConfirmed", 1)
+                end
                 -- Geometry outcome is the engine result, not the 3mm request.
                 -- Compare the SAME brush's pre-/post-heightmap delta with
                 -- its submitted amount to catch native amplification.
                 diagCount("nativeMeasuredLowerEvents",1)
                 diagCount("nativeMeasuredLowerMaxSumM",physical.maxLowerM)
                 diagCount("nativeMeasuredRequestedSumM",appliedDepth)
-                if physical.maxLowerM>appliedDepth+0.002 then
+                if excess then
                     diagCount("nativeMeasuredExcessEvents",1)
                     local rt=RealismExtensionsTerrainRuntime
                     -- One 25mm+ response to a 2-3mm request is already an
