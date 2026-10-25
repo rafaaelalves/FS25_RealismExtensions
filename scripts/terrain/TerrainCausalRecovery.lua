@@ -272,11 +272,17 @@ function C.update()
     local clock=now()
     if C.inFlight~=nil then
         local i=C.inFlight
-        if clock>i.startMs+C.DEFAULTS.inFlightTimeoutMs then
-            j:finishRecovery(i.token,false)
-            C.inFlight=nil
-            C.byKey[i.key]=nil
-            C.stats.failed=C.stats.failed+1
+        -- A queued job may wait behind other native work. Its watchdog may
+        -- start ONLY after the real native submission, not at enqueue().
+        -- If GIANTS never invokes the callback, fail CLOSED: keep provenance
+        -- locked instead of releasing and letting a late callback deform
+        -- terrain without a matching journal transaction.
+        if i.startMs~=nil
+            and clock>i.startMs+C.DEFAULTS.inFlightTimeoutMs
+            and i.timeoutAlerted~=true then
+            i.timeoutAlerted=true
+            C.stats.callbackTimeoutAlerts=
+                (C.stats.callbackTimeoutAlerts or 0)+1
         end
         return
     end
@@ -330,6 +336,12 @@ function C.update()
                             targetY=targetY,targetPlaneAx=0,targetPlaneAz=0,
                             targetAmount=C.DEFAULTS.amount,
                             skipRecoveryGeometryProbe=true,
+                            onSubmitted=function()
+                                local current=C.inFlight
+                                if current~=nil and current.token==token then
+                                    current.startMs=now()
+                                end
+                            end,
                             onApplied=function(state)
                                 local current=C.inFlight
                                 if current==nil or current.token~=token then
@@ -382,7 +394,7 @@ function C.update()
                             end
                         })
                         if accepted then
-                            C.inFlight={key=item.key,token=token,startMs=clock}
+                            C.inFlight={key=item.key,token=token,startMs=nil}
                             C.stats.accepted=C.stats.accepted+1
                             return
                         end
