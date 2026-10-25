@@ -879,6 +879,15 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     diagCount("contextAccepted", 1)
     state.hadContext = true
+    -- Per-wheel 250ms-capability sampling is passive and makes NO native
+    -- heightmap or wheel-physics change. Crucially, it records any non-1
+    -- scale already owned by another mod before we plan a future writer.
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.NativeWheelDisplacementObservation == true
+        and RealismExtensionsTerrainNativeWheelBridge ~= nil then
+        RealismExtensionsTerrainNativeWheelBridge.observe(vehicle,wheel)
+    end
     -- Single transition record, NOT per-wheel/per-frame climate spam. This
     -- compares the Mud-provided frozen state with current GIANTS air temp.
     local rt=RealismExtensionsTerrainRuntime
