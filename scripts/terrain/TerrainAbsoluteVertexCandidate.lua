@@ -61,7 +61,9 @@ function Candidate:applyOne(x,z,damageM)
     end
     local ix,iz=math.floor(x/unit+0.5),math.floor(z/unit+0.5)
     local key=tostring(ix)..":"..tostring(iz)
-    local radius=unit*0.15
+    -- Include adjacent 1m vertices in the side-effect check; a too-small
+    -- envelope would "prove" locality while missing a changed neighbor.
+    local radius=unit*0.30
     local remaining,reason=journal:getLoweringBudget(
         x,z,radius,0.10,0.12)
     if not finite(remaining) then
