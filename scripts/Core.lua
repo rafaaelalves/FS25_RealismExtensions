@@ -75,6 +75,20 @@ function RealismExtensionsCore:loadMap()
         RealismExtensionsTerrainGeometryProbe.installCommands()
     end
 
+    -- Optional native queue submission observation: an off-by-default
+    -- pass-through diagnostic, NOT a global terrain writer or mutex.
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
+        and RealismExtensionsTerrainNativeQueueProbe ~= nil
+        and RealismExtensionsTerrainNativeQueueProbe.owner == nil then
+        local queue=g_terrainDeformationQueue or
+            (g_currentMission ~= nil and g_currentMission.terrainDeformationQueue)
+        if queue~=nil then
+            RealismExtensionsTerrainNativeQueueProbe.install(queue)
+        end
+    end
+
     configureTireTrackAdapterProbe()
     if tireTrackAdapterNeeded()
         and RealismExtensionsNativeTireTrackAdapter ~= nil then
