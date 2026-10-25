@@ -59,4 +59,12 @@ assert(chained:queueJob({})=="native")
 local before=P.stats.submissions
 chained:queueJob({})
 assert(P.stats.submissions==before) -- inert but forwarded
+-- Another map load can re-install a NEW wrapper around that older peer
+-- chain. The old generation must remain inert, never count twice.
+assert(P.install(chained)==true)
+chained:queueJob({},false,"anotherCallback",nil)
+assert(P.stats.submissions==before+1)
+P.shutdown()
+chained:queueJob({},false,"anotherCallback",nil)
+assert(P.stats.submissions==before+1)
 print("terrain_native_queue_probe_harness: OK")
