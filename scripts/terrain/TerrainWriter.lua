@@ -190,7 +190,8 @@ function Writer:enqueue(brush)
         targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
         recoveryPreProbe = brush.recoveryPreProbe,
         skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
-        onApplied = brush.onApplied
+        onApplied = brush.onApplied,
+        onSubmitted = brush.onSubmitted
     }
     self.queueCount = (self.queueCount or 0) + 1
     self.stats.enqueued = self.stats.enqueued + 1
@@ -928,6 +929,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
+    local function notifySubmitted()
+        for _,brush in ipairs(brushes or {}) do
+            if type(brush.onSubmitted)=="function" then
+                pcall(brush.onSubmitted)
+            end
+        end
+    end
+
     if machineRecoverySmooth or machineRecoveryTarget or recoveryRaiseMode then
         -- Machine recovery follows TerraFarm's direct landscaping path. It is
         -- serialized by TerrainRecovery, so each callback belongs to exactly
@@ -960,6 +969,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.nativeCausalPending=true
             self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
         end
+        notifySubmitted()
         local ok, err = pcall(
             deformation.apply,
             deformation,
@@ -981,6 +991,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.nativeCausalPending=true
             self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
         end
+        notifySubmitted()
         local ok = pcall(q.queueJob, q, deformation, false, "done", callbackTarget)
         if not ok then
             if causalExclusiveJob then self.nativeCausalPending=false end
@@ -995,6 +1006,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.nativeCausalPending=true
             self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
         end
+        notifySubmitted()
         local ok = pcall(deformation.apply, deformation, false, "done", callbackTarget)
         if not ok then
             if causalExclusiveJob then self.nativeCausalPending=false end
