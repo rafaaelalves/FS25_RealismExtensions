@@ -391,8 +391,8 @@ liveHeights[heightKey(160,0)]=99.997
 callbacks[beforeClean+2].onApplied(1)
 assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
 assert(journal.observations["160:0"].owned==true)
-assert(journal:getRecoverablePoint(160,0,0.003)==nil)
--- 3mm is at the threshold; no claim here about a recovered field.
+assert(journal.observations["160:0"].preREHeightM==100)
+-- Any subsequent repair still requires a distinct causal recovery test.
 
 -- Excessive native movement quarantines all further causal wheel
 -- excavation in this game session. This is an experimental save-safety gate,
