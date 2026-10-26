@@ -193,6 +193,14 @@ function RealismExtensionsCore:loadMap()
 end
 
 function RealismExtensionsCore:update(dt)
+    -- Some saves create the server/console after loadMap. Install once when
+    -- actually available, otherwise the protected trial would be unusable.
+    if RealismExtensionsTerrainControlledWriteTrial~=nil
+        and RealismExtensionsTerrainControlledWriteTrial.enabled()
+        and RealismExtensionsTerrainControlledWriteTrial.commandsInstalled~=true
+        and g_server~=nil then
+        RealismExtensionsTerrainControlledWriteTrial.installCommands()
+    end
     -- Optional native queue submission observation: an off-by-default
     -- pass-through diagnostic, NOT a global terrain writer or mutex.
     if RealismExtensionsConfig ~= nil
