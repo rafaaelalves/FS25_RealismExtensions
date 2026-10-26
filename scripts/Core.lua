@@ -368,6 +368,19 @@ function RealismExtensionsCore:update(dt)
                 ws.causalNativeStarted or 0,ws.causalNativeFinished or 0,
                 ws.causalNativePendingSkips or 0
             ))
+            if RealismExtensionsTerrainControlledWriteTrial~=nil
+                and RealismExtensionsTerrainControlledWriteTrial.enabled() then
+                local t=RealismExtensionsTerrainControlledWriteTrial
+                RealismExtensionsDiagnostics.info(string.format(
+                    "TerrainTrialHealth | mode=%s pending=%s approved=%d rejected=%d completed=%d readOnlyWheelSkips=%d",
+                    t.armed and "ARMED" or "OBSERVE",
+                    tostring(t.pending),
+                    t.stats.nativeApproved or 0,
+                    t.stats.nativeRejected or 0,
+                    t.stats.callbackOutcomes or 0,
+                    d.trialReadOnlyWheelSamples or 0
+                ))
+            end
             if RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
                 and RealismExtensionsTerrainNativeQueueProbe ~= nil then
                 RealismExtensionsDiagnostics.info(
