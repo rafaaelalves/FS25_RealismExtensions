@@ -542,6 +542,9 @@ function Engine.processSample(
     -- Optional coarse queue-concurrency correlation, never proof that
     -- another job changed THIS terrain patch. Direct apply() is invisible.
     local externalQueueBaseline=nil
+    local externalDirectBaseline=nil
+    local overlapQueueBaseline=nil
+    local overlapDirectBaseline=nil
     local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
     if journal ~= nil and causalRequired then
         -- Independent native-grid safety ceiling: once excavation exceeds
@@ -615,6 +618,15 @@ function Engine.processSample(
             if probe~=nil and probe.enabled==true then
                 externalQueueBaseline=
                     (probe.stats or {}).externalDuringREPending or 0
+                local spatial=RealismExtensionsTerrainNativeSpatialProbe
+                if spatial~=nil and spatial.owner~=nil then
+                    externalDirectBaseline=
+                        (spatial.stats or {}).directDuringREPending or 0
+                    overlapQueueBaseline=
+                        (spatial.stats or {}).spatialOverlapQueue or 0
+                    overlapDirectBaseline=
+                        (spatial.stats or {}).spatialOverlapDirect or 0
+                end
             end
         end,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
@@ -625,6 +637,20 @@ function Engine.processSample(
                 otherQueueWhilePending=math.max(0,
                     ((probe.stats or {}).externalDuringREPending or 0)
                     -externalQueueBaseline)
+            end
+            local otherDirectWhilePending=nil
+            local queueEnvelopeOverlaps=nil
+            local directEnvelopeOverlaps=nil
+            local spatial=RealismExtensionsTerrainNativeSpatialProbe
+            if spatial~=nil and spatial.owner~=nil
+                and externalDirectBaseline~=nil then
+                local ds=spatial.stats or {}
+                otherDirectWhilePending=math.max(0,
+                    (ds.directDuringREPending or 0)-externalDirectBaseline)
+                queueEnvelopeOverlaps=math.max(0,
+                    (ds.spatialOverlapQueue or 0)-overlapQueueBaseline)
+                directEnvelopeOverlaps=math.max(0,
+                    (ds.spatialOverlapDirect or 0)-overlapDirectBaseline)
             end
             local success = state ~= false
                 and (state == nil or TerrainDeformation == nil
@@ -695,10 +721,19 @@ function Engine.processSample(
                         if RealismExtensionsDiagnostics~=nil
                             and type(RealismExtensionsDiagnostics.info)=="function" then
                             RealismExtensionsDiagnostics.info(string.format(
-                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING otherQueuedWhilePending=%s (not proof of heightmap ownership)",
+                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s (brush overlap is NOT physical height attribution)",
                                 x,z,appliedDepth,physical.maxLowerM,
                                 otherQueueWhilePending~=nil
                                     and tostring(otherQueueWhilePending)
+                                    or "unobserved",
+                                otherDirectWhilePending~=nil
+                                    and tostring(otherDirectWhilePending)
+                                    or "unobserved",
+                                queueEnvelopeOverlaps~=nil
+                                    and tostring(queueEnvelopeOverlaps)
+                                    or "unobserved",
+                                directEnvelopeOverlaps~=nil
+                                    and tostring(directEnvelopeOverlaps)
                                     or "unobserved"))
                         end
                     end
@@ -707,7 +742,7 @@ function Engine.processSample(
                         and RealismExtensionsDiagnostics~=nil
                         and type(RealismExtensionsDiagnostics.info)=="function" then
                         RealismExtensionsDiagnostics.info(string.format(
-                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f otherQueuedWhilePending=%s",
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s",
                             x,z,appliedDepth,physical.maxLowerM,
                             physical.sampledVertices or 0,physical.loweredVertices or 0,
                             tonumber(context.physicalGroundWetness) or -1,
@@ -723,6 +758,15 @@ function Engine.processSample(
                                 and physical.maxLowerPoint.afterY) or 0,
                             otherQueueWhilePending~=nil
                                 and tostring(otherQueueWhilePending)
+                                or "unobserved",
+                            otherDirectWhilePending~=nil
+                                and tostring(otherDirectWhilePending)
+                                or "unobserved",
+                            queueEnvelopeOverlaps~=nil
+                                and tostring(queueEnvelopeOverlaps)
+                                or "unobserved",
+                            directEnvelopeOverlaps~=nil
+                                and tostring(directEnvelopeOverlaps)
                                 or "unobserved"
                         ))
                     end
