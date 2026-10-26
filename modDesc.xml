@@ -74,6 +74,7 @@
         <sourceFile filename="scripts/terrain/LoadedContactRegistry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainNativeWheelBridge.lua"/>
         <sourceFile filename="scripts/terrain/TerrainNativeQueueProbe.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainNativeSpatialProbe.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
