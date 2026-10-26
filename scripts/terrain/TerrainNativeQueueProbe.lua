@@ -42,8 +42,17 @@ function Probe._record(deformation,preview,callbackName,target)
         and target.owner==writer
         and target.deformation==deformation
     local rePending=writer~=nil and writer.nativeCausalPending==true
+    -- The optional class-level companion observes direct apply() and
+    -- brush footprints. Queue and direct events remain separate.
+    local spatial=RealismExtensionsTerrainNativeSpatialProbe
+    if spatial~=nil and spatial.owner~=nil then
+        pcall(spatial.onQueueSubmission,deformation,not isRE and rePending)
+    end
     if isRE then
         counter("reSubmissions")
+        if spatial~=nil and spatial.owner~=nil then
+            pcall(spatial.captureRE,target)
+        end
         Probe.lastRE=shortName(callbackName)
     else
         counter("externalSubmissions")
