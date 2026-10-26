@@ -581,3 +581,64 @@ assert(guardW.stats.nativePreflightRejected==1)
 assert(guardW.nativeCausalPending~=true)
 RealismExtensionsConfig.modules.TerrainCausalRecovery=false
 print("terrain_writer_native_preflight_harness: OK")
+
+-- Real TerrainWriter integration of the one-shot protective boundary.
+-- Runs *after* legacy writer tests: no production behavior is affected if
+-- TerrainControlledWriteTrial was not explicitly selected.
+dofile("scripts/terrain/TerrainControlledWriteTrial.lua")
+local Trial=RealismExtensionsTerrainControlledWriteTrial
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=true
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsConfig.modules.SoilMassTransport=false
+g_server={}
+g_currentMission.missionInfo={isMultiplayer=false}
+g_currentMission.missionDynamicInfo={isMultiplayer=false}
+RealismExtensionsTerrainRuntime={
+    nativeDamageQuarantined=false,geometryJournal={unitM=1}
+}
+RealismExtensionsTerrainNativeQueueProbe={
+    owner={},enabled=true,pollIntegrity=function()return true end
+}
+RealismExtensionsTerrainNativeSpatialProbe={
+    owner={},checkIntegrity=function()return true end
+}
+local pilot=RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=1,maxJobsPerFrame=1,maxBrushesPerJob=1,
+    coalesceDistanceFactor=0,minDepthM=0.0004
+})
+local beforePilot=#created
+local fakeCallback=function() end
+assert(pilot:enqueue({
+    x=900,z=900,depthM=0.002,radiusM=0.4,
+    onApplied=fakeCallback,trialTicket=1234
+}))
+local observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0)
+assert(#created==beforePilot and #queued>=1)
+assert(Trial.stats.nativeRejected>=1)
+
+Trial:consoleCommand("arm")
+local ticket=assert(Trial.tryReserve())
+assert(pilot:enqueue({
+    x=901,z=901,depthM=0.002,radiusM=0.4,
+    trialTicket=ticket,
+    onApplied=function(state)
+        assert(state==TerrainDeformation.STATE_SUCCESS)
+        assert(Trial.callback(ticket)==true)
+    end
+}))
+observed,jobs=pilot:flush()
+assert(observed==1 and jobs==1)
+assert(#created==beforePilot+1)
+assert(Trial.stats.nativeApproved==1 and Trial.pending==false)
+assert(Trial.armed==false)
+assert(pilot:enqueue({
+    x=902,z=902,depthM=0.002,radiusM=0.4,
+    trialTicket=ticket,onApplied=fakeCallback
+}))
+observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0)
+assert(#created==beforePilot+1)
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=false
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+print("terrain_writer_protected_one_shot_harness: OK")
