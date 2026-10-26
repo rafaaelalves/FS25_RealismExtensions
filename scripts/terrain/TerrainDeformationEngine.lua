@@ -483,6 +483,14 @@ function Engine.processSample(
     appliedDepth = appliedDepth
         * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if trial~=nil and trial.enabled() and not trial.isArmed() then
+        -- Read-only A/B baseline: compute wheel state, demand, and ground
+        -- context, but never commit SpatialHistory or request native edits.
+        diagCount("trialReadOnlyWheelSamples",1)
+        return false
+    end
+
     if appliedDepth <= writer.options.minDepthM then
         -- Preserve shear/pass history even when the geometric delta is too
         -- small to justify a brush.
@@ -587,7 +595,16 @@ function Engine.processSample(
         end
     end
 
+    local trialTicket=nil
+    if trial~=nil and trial.enabled() then
+        trialTicket=trial.tryReserve()
+        if trialTicket==nil then
+            if journalToken~=nil then journal:complete(journalToken,false) end
+            return false
+        end
+    end
     local accepted = writer:enqueue({
+        trialTicket=trialTicket,
         x = x,
         z = z,
         depthM = appliedDepth,
@@ -631,6 +648,7 @@ function Engine.processSample(
         end,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
         onApplied = journalToken ~= nil and function(state,deltaY,beforeY,afterY,callbackVolume)
+            if trialTicket~=nil then trial.callback(trialTicket) end
             local otherQueueWhilePending=nil
             local probe=RealismExtensionsTerrainNativeQueueProbe
             if externalQueueBaseline~=nil and probe~=nil then
