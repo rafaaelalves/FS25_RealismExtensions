@@ -501,6 +501,13 @@ RealismExtensionsTerrainControlledWriteTrial={
     enabled=function()return true end,
     isArmed=function()return false end
 }
+local observedPatch={context=0,eligible=0}
+RealismExtensionsTerrainGeometryProbe={
+    observeWheelContact=function(x,z,stage)
+        assert(type(x)=="number" and type(z)=="number")
+        observedPatch[stage]=observedPatch[stage]+1
+    end
+}
 bodySpeedKph=5
 RealismExtensionsTerrainRecovery.active=false
 RealismExtensionsTerrainRecovery.protected=false
@@ -517,7 +524,9 @@ RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert(#callbacks==beforeObserveWrites)
 assert(RealismExtensionsTerrainRuntime.history.count==beforeObserveHistory)
 assert((RealismExtensionsTerrainRuntime.stats.trialReadOnlyWheelSamples or 0)>=1)
+assert(observedPatch.context>=1 and observedPatch.eligible>=1)
 RealismExtensionsTerrainControlledWriteTrial=nil
+RealismExtensionsTerrainGeometryProbe=nil
 
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
