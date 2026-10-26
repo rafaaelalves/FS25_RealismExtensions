@@ -18,6 +18,14 @@ end
 
 Probe.writeEvents = newWriteEvents()
 
+local function newContactEvents()
+    return {
+        context={total=0,near2m=0,near4m=0,minDistanceM=nil},
+        eligible={total=0,near2m=0,near4m=0,minDistanceM=nil}
+    }
+end
+Probe.contactEvents = newContactEvents()
+
 local function finite(value)
     return type(value) == "number"
         and value == value and value ~= math.huge and value ~= -math.huge
@@ -49,6 +57,7 @@ function Probe.reset()
     Probe.previous = nil
     Probe.captureIndex = 0
     Probe.writeEvents = newWriteEvents()
+    Probe.contactEvents = newContactEvents()
 end
 
 -- GIANTS FS25 Player uses g_localPlayer:getPosition() on foot;
@@ -121,6 +130,7 @@ function Probe:consoleMark(xText, zText)
     self.previous = nil
     self.captureIndex = 0
     self.writeEvents = newWriteEvents()
+    self.contactEvents = newContactEvents()
     return speak(string.format(
         "MARK x=%.3f z=%.3f origin=%s | 4m x 4m main grid; 2m x 2m sampled every 0.125m; READ ONLY",
         x, z, origin
@@ -130,6 +140,34 @@ end
 -- Callback-based *proximity* telemetry from RE's own TerrainWriter only.
 -- It is not a native write attribution for every measured heightmap sample.
 -- Called after a successful native writer callback; no new terrain writes.
+-- Read-only evidence that a moving grounded RE wheel really touched
+-- the *marked patch* between snapshots. Mere global wheel ticks are not
+-- evidence of a pass through the marked coordinates. Both stages require
+-- the experimental observe-only profile and change no terrain state.
+function Probe.observeWheelContact(x,z,stage)
+    local p=Probe.position
+    if p==nil or not finite(x) or not finite(z) then return end
+    local c=Probe.contactEvents
+    local e=c~=nil and c[stage] or nil
+    if e==nil then return end
+    local dx,dz=x-p.x,z-p.z
+    local dist=math.sqrt(dx*dx+dz*dz)
+    e.total=e.total+1
+    e.minDistanceM=e.minDistanceM==nil and dist
+        or math.min(e.minDistanceM,dist)
+    if dist<=2 then e.near2m=e.near2m+1 end
+    if dist<=4 then e.near4m=e.near4m+1 end
+end
+
+local function formatContactEvents(stage,event,interval)
+    return string.format(
+        "WHEEL_CONTACT interval=%s stage=%s total=%d near2m=%d near4m=%d nearest=%s (contact sample, NOT proof of native height edit)",
+        tostring(interval),stage,event.total or 0,
+        event.near2m or 0,event.near4m or 0,
+        event.minDistanceM~=nil
+            and string.format("%.3fm",event.minDistanceM) or "none")
+end
+
 local function overlapsSquare(px, pz, brush, halfWidthM)
     local radius = tonumber(brush.radiusM) or 0
     local dx = math.max(0, math.abs(brush.x - px) - halfWidthM)
@@ -298,6 +336,9 @@ function Probe.capture(label)
     for _,area in ipairs({"near2m","near4m"}) do
         speak(formatWriterEvents(area, Probe.writeEvents[area], interval))
     end
+    for _,stage in ipairs({"context","eligible"}) do
+        speak(formatContactEvents(stage,Probe.contactEvents[stage],interval))
+    end
     if previous ~= nil then
         speak(string.format(
             "SHAPE from=%s to=%s valleyResidualChange=%+.4fm peakResidualChange=%+.4fm centerResidualChange=%+.4fm (relative to measured patch corner surface, NOT restoration proof)",
@@ -319,6 +360,7 @@ function Probe.capture(label)
     end
     Probe.previous = current
     Probe.writeEvents = newWriteEvents()
+    Probe.contactEvents = newContactEvents()
     return current
 end
 
