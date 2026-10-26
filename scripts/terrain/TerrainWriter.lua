@@ -192,7 +192,8 @@ function Writer:enqueue(brush)
         skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
         onApplied = brush.onApplied,
         beforeSubmit = brush.beforeSubmit,
-        onSubmitted = brush.onSubmitted
+        onSubmitted = brush.onSubmitted,
+        trialTicket = brush.trialTicket
     }
     self.queueCount = (self.queueCount or 0) + 1
     self.stats.enqueued = self.stats.enqueued + 1
