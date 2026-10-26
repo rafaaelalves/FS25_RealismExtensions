@@ -899,6 +899,9 @@ function Engine.processSample(
         return true
     end
 
+    if trialTicket~=nil and trial~=nil then
+        trial.abandon(trialTicket)
+    end
     if journalToken ~= nil then journal:complete(journalToken, false) end
     diagCount("writerRejects", 1)
     return false
