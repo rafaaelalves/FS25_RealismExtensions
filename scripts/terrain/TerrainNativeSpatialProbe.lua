@@ -39,9 +39,47 @@ function Probe.reset()
         spatialOverlapDirect=0,broadEnvelopeQueue=0,
         broadEnvelopeDirect=0,unknownGeometry=0,
         directRESubmissions=0,hookInstalls=0,
-        hookDrifts=0,hookUnavailable=0,hookErrors=0
+        hookDrifts=0,hookUnavailable=0,hookErrors=0,
+        sourceHints={},sourceHintOverflows=0,
+        sourceHintsUnavailable=0
     }
     Probe.activeRE=nil
+end
+
+-- Capture only sanitized MOD FOLDER + Lua basename, never a full path.
+-- Stack callsite is a hint: third-party wrappers may appear as the caller.
+-- If Lua debug support is disabled, fail silently and keep geometry counts.
+function Probe.callsiteHint(level)
+    if type(debug)~="table" or type(debug.getinfo)~="function" then
+        return nil
+    end
+    local ok,info=pcall(debug.getinfo,level or 3,"S")
+    if not ok or type(info)~="table" then return nil end
+    local src=type(info.source)=="string" and info.source or ""
+    src=src:gsub("\\","/")
+    local mod=src:match("/mods/([%w_%-]+)/")
+        or src:match("^@?mods/([%w_%-]+)/")
+    if mod==nil or #mod>65 then return nil end
+    local file=src:match("/([%w_%-]+%.lua)$")
+    if file==nil or #file>40 then return nil end
+    return mod.."/"..file
+end
+
+local function recordSourceHint(hint)
+    if type(hint)~="string" or #hint>110
+        or not hint:match("^[%w_%-]+/[%w_%-]+%.lua$") then
+        inc("sourceHintsUnavailable")
+        return
+    end
+    local counts=Probe.stats.sourceHints
+    if counts[hint]~=nil then
+        counts[hint]=counts[hint]+1
+        return
+    end
+    local n=0
+    for _ in pairs(counts) do n=n+1 end
+    if n<12 then counts[hint]=1
+    else inc("sourceHintOverflows") end
 end
 
 function Probe.capture(def,x,z,extent)
@@ -118,9 +156,10 @@ function Probe.classify(def)
 end
 
 -- Called from native queue observer for jobs not owned by RE.
-function Probe.onQueueSubmission(def,externalDuringRE)
+function Probe.onQueueSubmission(def,externalDuringRE,hint)
     inc("queueSubmissions")
     if not externalDuringRE then return end
+    recordSourceHint(hint)
     local kind=Probe.classify(def)
     if kind=="overlap" then inc("spatialOverlapQueue")
     elseif kind=="broad" then inc("broadEnvelopeQueue")
@@ -134,7 +173,7 @@ local function isRE(def,target)
         and target.owner==w and target.deformation==def
 end
 
-function Probe.onDirectSubmission(def,preview,callbackName,target)
+function Probe.onDirectSubmission(def,preview,callbackName,target,hint)
     inc("directSubmissions")
     if isRE(def,target) then
         inc("directRESubmissions")
@@ -145,6 +184,7 @@ function Probe.onDirectSubmission(def,preview,callbackName,target)
     local writer=rt~=nil and rt.writer or nil
     if writer==nil or writer.nativeCausalPending~=true then return end
     inc("directDuringREPending")
+    recordSourceHint(hint)
     local kind=Probe.classify(def)
     if kind=="overlap" then inc("spatialOverlapDirect")
     elseif kind=="broad" then inc("broadEnvelopeDirect")
@@ -189,7 +229,8 @@ function Probe.install(nativeClass)
         if name=="apply" then
             wrappers[name]=function(self,preview,cbName,target,...)
                 if hookState.active then
-                    pcall(Probe.onDirectSubmission,self,preview,cbName,target)
+                    local hint=Probe.callsiteHint(3)
+                    pcall(Probe.onDirectSubmission,self,preview,cbName,target,hint)
                 end
                 return original(self,preview,cbName,target,...)
             end
@@ -260,15 +301,21 @@ end
 
 function Probe.formatSnapshot()
     local s=Probe.stats
+    local sources={}
+    for hint,count in pairs(s.sourceHints or {}) do
+        sources[#sources+1]=hint.."="..tostring(count)
+    end
+    table.sort(sources)
     return string.format(
-        "TerrainSpatialProbe | passive=true circleBrushes=%d direct=%d directWhileRE=%d queuedObserved=%d overlappingBrushEnvelopesQueued=%d overlappingBrushEnvelopesDirect=%d broadOverlapQueued=%d broadOverlapDirect=%d geometryUnknown=%d truncated=%d hooks=%d drifts=%d unavailable=%d (overlap is NOT physical authorship)",
+        "TerrainSpatialProbe | passive=true circleBrushes=%d direct=%d directWhileRE=%d queuedObserved=%d overlappingBrushEnvelopesQueued=%d overlappingBrushEnvelopesDirect=%d broadOverlapQueued=%d broadOverlapDirect=%d geometryUnknown=%d truncated=%d hooks=%d drifts=%d unavailable=%d callerHints=[%s] unavailableHints=%d (caller is NOT proof of author or physical height change)",
         s.capturedBrushes or 0,s.directSubmissions or 0,
         s.directDuringREPending or 0,s.queueSubmissions or 0,
         s.spatialOverlapQueue or 0,s.spatialOverlapDirect or 0,
         s.broadEnvelopeQueue or 0,s.broadEnvelopeDirect or 0,
         s.unknownGeometry or 0,s.tooManyBrushes or 0,
         s.hookInstalls or 0,s.hookDrifts or 0,
-        s.hookUnavailable or 0
+        s.hookUnavailable or 0,
+        table.concat(sources,","),s.sourceHintsUnavailable or 0
     )
 end
 
