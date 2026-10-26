@@ -437,10 +437,14 @@ RealismExtensionsTerrainNativeSpatialProbe.stats.directDuringREPending=6
 RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapQueue=9
 RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapDirect=12
 liveHeights[heightKey(320,0)]=99.945
-callbacks[preFault+2].onApplied(1)
+-- Native displacement volume is an independent callback measurement.
+callbacks[preFault+2].onApplied(1,nil,nil,nil,0.00014)
 local anomalyLog=false
 for _,line in ipairs(recordedInfo) do
     if line:find("TerrainNativeQuarantine",1,true)
+        and line:find("nativeCallbackVolumeM3=0.0001400",1,true)
+        and line:find("nominalCylinderM3=",1,true)
+        and line:find("volumeRatio=",1,true)
         and line:find("otherQueuedWhilePending=1",1,true)
         and line:find("otherDirectWhilePending=2",1,true)
         and line:find("overlappingQueueBrushes=1",1,true)
