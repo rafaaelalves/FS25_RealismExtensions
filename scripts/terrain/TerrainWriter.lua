@@ -459,6 +459,19 @@ local function configureDeformationConstraints(deformation)
 end
 
 function Writer:_submitBatch(depthM, brushes, mode)
+    -- Absolute safety boundary: the trial observes first. Only a verified
+    -- single RE causal wheel LOWER may pass when explicitly armed; every
+    -- recovery/maintenance/other heightmap job is also blocked in test mode.
+    if RealismExtensionsTerrainControlledWriteTrial~=nil then
+        local approved,reason=
+            RealismExtensionsTerrainControlledWriteTrial.beforeNative(
+                mode,brushes,math.abs(depthM))
+        if not approved then
+            self.stats.trialNativeBlocked=
+                (self.stats.trialNativeBlocked or 0)+1
+            return false,reason
+        end
+    end
     -- Executed just before allocating the GIANTS native operation: a wheel
     -- brush can wait in this writer's queue after its first-touch sample.
     -- Fail closed if the ground moved during that wait; flush() releases its
