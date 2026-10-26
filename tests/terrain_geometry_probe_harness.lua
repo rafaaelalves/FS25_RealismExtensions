@@ -96,9 +96,6 @@ assert(p.contactEvents.context.total==0 and p.contactEvents.eligible.total==0)
 local combined=table.concat(log,"\n")
 assert(combined:find("WHEEL_CONTACT interval=before%->after stage=context total=3 near2m=1 near4m=2"))
 assert(combined:find("WHEEL_CONTACT interval=before%->after stage=eligible total=1 near2m=1 near4m=1"))
--- Zero-contact snapshots must still emit the explicit absence of contact.
-assert(p.capture("still")~=nil)
-assert(table.concat(log,"\n"):find("WHEEL_CONTACT interval=after%->still stage=context total=0 near2m=0 near4m=0 nearest=none"))
 assert(table.concat(log,"\n"):find("HISTORY_NEAR radius=1.5m cells=2"))
 assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near2m wheelLower=1"))
 assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near4m wheelLower=2"))
@@ -117,6 +114,9 @@ for _,line in ipairs(log) do
     end
 end
 assert(foundMain and foundDense and not written)
+-- Zero-contact snapshots must still emit the explicit absence of contact.
+assert(p.capture("still")~=nil)
+assert(table.concat(log,"\n"):find("WHEEL_CONTACT interval=after%->still stage=context total=0 near2m=0 near4m=0 nearest=none"))
 
 -- Driver position should be the occupied vehicle, not the stale player's
 -- last foot position.
