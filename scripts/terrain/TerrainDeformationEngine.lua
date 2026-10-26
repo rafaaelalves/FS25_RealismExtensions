@@ -630,7 +630,7 @@ function Engine.processSample(
             end
         end,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
-        onApplied = journalToken ~= nil and function(state)
+        onApplied = journalToken ~= nil and function(state,deltaY,beforeY,afterY,callbackVolume)
             local otherQueueWhilePending=nil
             local probe=RealismExtensionsTerrainNativeQueueProbe
             if externalQueueBaseline~=nil and probe~=nil then
@@ -667,6 +667,20 @@ function Engine.processSample(
                 -- This is a coarse 0.20m proxy: the immutable per-native-
                 -- vertex GeometryJournal remains the recovery authority.
                 local observed=math.max(0,physical.maxLowerM)
+                -- GIANTS callback displacedVolume is a second, independent
+                -- outcome signal. It is NOT a per-vertex depth measurement;
+                -- a soft brush also does not excavate a full cylinder.
+                local nominalCylinderM3=math.pi*brushRadius*brushRadius*appliedDepth
+                local nativeVolumeM3=type(callbackVolume)=="number"
+                    and callbackVolume==callbackVolume
+                    and callbackVolume>=0 and callbackVolume<math.huge
+                    and callbackVolume or nil
+                local nativeVolumeLabel=nativeVolumeM3~=nil
+                    and string.format("%.7f",nativeVolumeM3) or "missing"
+                local volumeRatioLabel=nativeVolumeM3~=nil
+                    and nominalCylinderM3>0
+                    and string.format("%.2f",nativeVolumeM3/nominalCylinderM3)
+                    or "missing"
                 -- Detection must PRECEDE any physical debt commit. The
                 -- callback interval is not globally exclusive to RE; a
                 -- concurrent native writer or a nonlinear GIANTS brush can
@@ -721,8 +735,9 @@ function Engine.processSample(
                         if RealismExtensionsDiagnostics~=nil
                             and type(RealismExtensionsDiagnostics.info)=="function" then
                             RealismExtensionsDiagnostics.info(string.format(
-                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s (brush overlap is NOT physical height attribution)",
+                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING nativeCallbackVolumeM3=%s nominalCylinderM3=%.7f volumeRatio=%s otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s (brush overlap is NOT physical height attribution)",
                                 x,z,appliedDepth,physical.maxLowerM,
+                                nativeVolumeLabel,nominalCylinderM3,volumeRatioLabel,
                                 otherQueueWhilePending~=nil
                                     and tostring(otherQueueWhilePending)
                                     or "unobserved",
@@ -742,7 +757,7 @@ function Engine.processSample(
                         and RealismExtensionsDiagnostics~=nil
                         and type(RealismExtensionsDiagnostics.info)=="function" then
                         RealismExtensionsDiagnostics.info(string.format(
-                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s",
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f nativeCallbackVolumeM3=%s nominalCylinderM3=%.7f volumeRatio=%s otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s",
                             x,z,appliedDepth,physical.maxLowerM,
                             physical.sampledVertices or 0,physical.loweredVertices or 0,
                             tonumber(context.physicalGroundWetness) or -1,
@@ -756,6 +771,7 @@ function Engine.processSample(
                                 and physical.maxLowerPoint.beforeY) or 0,
                             tonumber(physical.maxLowerPoint ~= nil
                                 and physical.maxLowerPoint.afterY) or 0,
+                            nativeVolumeLabel,nominalCylinderM3,volumeRatioLabel,
                             otherQueueWhilePending~=nil
                                 and tostring(otherQueueWhilePending)
                                 or "unobserved",
