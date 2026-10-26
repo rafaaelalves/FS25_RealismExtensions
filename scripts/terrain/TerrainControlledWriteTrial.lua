@@ -81,15 +81,24 @@ function Trial.beforeNative(mode,brushes,amount)
     Trial.armed=false
     Trial.pending=true
     Trial.stats.nativeApproved=Trial.stats.nativeApproved+1
+    speak(string.format(
+        "TerrainTrialNativeSubmit | ticket=%d x=%.3f z=%.3f depth=%.5fm radius=%.3fm (one-shot consumed BEFORE native call)",
+        b.trialTicket,tonumber(b.x) or 0,tonumber(b.z) or 0,
+        amount,tonumber(b.radiusM) or 0
+    ))
     return true,nil
 end
 
-function Trial.callback(id)
+function Trial.callback(id,state,volume)
     if type(id)=="number" and Trial.reserved==id then
         Trial.reserved=nil
         Trial.pending=false
         Trial.armed=false
         Trial.stats.callbackOutcomes=Trial.stats.callbackOutcomes+1
+        speak(string.format(
+            "TerrainTrialNativeCallback | ticket=%d state=%s volumeM3=%s disarmed=true",
+            id,tostring(state),
+            type(volume)=="number" and tostring(volume) or "unknown"))
         return true
     end
     return false
