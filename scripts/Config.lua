@@ -52,6 +52,10 @@ RealismExtensionsConfig = {
         -- methods, to detect direct jobs (TerraFarm-like) and footprint
         -- overlap candidates. No physical writes, NEVER source proof.
         TerrainQueueSubmissionProbe = false,
+        -- Experimental test profile: defaults to OBSERVE ONLY, blocks every
+        -- RE native heightmap write until a single wheel stroke is armed.
+        -- Intended for a disposable save, not normal play or production.
+        TerrainControlledWriteTrial = true,
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
