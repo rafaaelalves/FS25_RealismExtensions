@@ -424,19 +424,33 @@ RealismExtensionsDiagnostics={
 RealismExtensionsTerrainNativeQueueProbe={
     enabled=true,stats={externalDuringREPending=7}
 }
+RealismExtensionsTerrainNativeSpatialProbe={
+    owner={},stats={
+        directDuringREPending=4,
+        spatialOverlapQueue=8,
+        spatialOverlapDirect=10
+    }
+}
 callbacks[preFault+2].onSubmitted()
 RealismExtensionsTerrainNativeQueueProbe.stats.externalDuringREPending=8
+RealismExtensionsTerrainNativeSpatialProbe.stats.directDuringREPending=6
+RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapQueue=9
+RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapDirect=12
 liveHeights[heightKey(320,0)]=99.945
 callbacks[preFault+2].onApplied(1)
 local anomalyLog=false
 for _,line in ipairs(recordedInfo) do
     if line:find("TerrainNativeQuarantine",1,true)
-        and line:find("otherQueuedWhilePending=1",1,true) then
+        and line:find("otherQueuedWhilePending=1",1,true)
+        and line:find("otherDirectWhilePending=2",1,true)
+        and line:find("overlappingQueueBrushes=1",1,true)
+        and line:find("overlappingDirectBrushes=2",1,true) then
         anomalyLog=true
     end
 end
 assert(anomalyLog==true)
 RealismExtensionsTerrainNativeQueueProbe=nil
+RealismExtensionsTerrainNativeSpatialProbe=nil
 RealismExtensionsDiagnostics=nil
 assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
 assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineTriggers or 0)==1)
