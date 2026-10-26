@@ -34,7 +34,7 @@ function Probe.reset()
     Probe.lastRE=nil
 end
 
-function Probe._record(deformation,preview,callbackName,target)
+function Probe._record(deformation,preview,callbackName,target,sourceHint)
     counter("submissions")
     local rt=RealismExtensionsTerrainRuntime
     local writer=rt~=nil and rt.writer or nil
@@ -46,7 +46,8 @@ function Probe._record(deformation,preview,callbackName,target)
     -- brush footprints. Queue and direct events remain separate.
     local spatial=RealismExtensionsTerrainNativeSpatialProbe
     if spatial~=nil and spatial.owner~=nil then
-        pcall(spatial.onQueueSubmission,deformation,not isRE and rePending)
+        pcall(spatial.onQueueSubmission,deformation,
+            not isRE and rePending,sourceHint)
     end
     if isRE then
         counter("reSubmissions")
@@ -104,7 +105,12 @@ function Probe.install(queue)
         if hookState.active and Probe.enabled then
             -- Observability MUST NOT be able to prevent a native job even
             -- if a diagnostic writer crashes.
-            pcall(Probe._record,deformation,preview,callbackName,target)
+            local spatial=RealismExtensionsTerrainNativeSpatialProbe
+            local sourceHint=spatial~=nil and spatial.owner~=nil
+                and type(spatial.callsiteHint)=="function"
+                and spatial.callsiteHint(3) or nil
+            pcall(Probe._record,deformation,preview,callbackName,target,
+                sourceHint)
         end
         -- Preserve exact arg order, multiple return values, native errors
         -- and asynchronous completion behavior.
