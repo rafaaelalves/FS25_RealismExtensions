@@ -68,6 +68,17 @@ local before=assert(p.capture("before"))
 assert(before.fine.count==289 and before.main.count==25)
 assert(before.unitM==1 and before.rutDepthM==0.04)
 assert(before.preDeformHeightM==124)
+-- Wheel attribution on the marked patch must be explicit, not inferred
+-- from global movement counters. Context and actual soil eligibility differ.
+p.observeWheelContact(10.3,20.4,"context")
+p.observeWheelContact(10.3,20.4,"eligible")
+p.observeWheelContact(12.7,20,"context")
+p.observeWheelContact(30,50,"context")
+assert(p.contactEvents.context.total==3)
+assert(p.contactEvents.context.near2m==1)
+assert(p.contactEvents.context.near4m==2)
+assert(p.contactEvents.eligible.total==1)
+assert(p.contactEvents.eligible.near2m==1)
 -- Writer callback associations are spatially bounded and are NOT assumed
 -- to be exact native vertex ownership. Cover both nested rectangles.
 p.observeWriterCallback({x=10.1,z=20.1,radiusM=0.20},"LOWER",nil,-0.030)
@@ -81,6 +92,13 @@ assert(p.writeEvents.near4m.target==1)
 variation=0.055
 local after=assert(p.capture("after"))
 assert(p.writeEvents.near2m.lower==0 and p.writeEvents.near4m.target==0)
+assert(p.contactEvents.context.total==0 and p.contactEvents.eligible.total==0)
+local combined=table.concat(log,"\n")
+assert(combined:find("WHEEL_CONTACT interval=before%->after stage=context total=3 near2m=1 near4m=2"))
+assert(combined:find("WHEEL_CONTACT interval=before%->after stage=eligible total=1 near2m=1 near4m=1"))
+-- Zero-contact snapshots must still emit the explicit absence of contact.
+assert(p.capture("still")~=nil)
+assert(table.concat(log,"\n"):find("WHEEL_CONTACT interval=after%->still stage=context total=0 near2m=0 near4m=0 nearest=none"))
 assert(table.concat(log,"\n"):find("HISTORY_NEAR radius=1.5m cells=2"))
 assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near2m wheelLower=1"))
 assert(table.concat(log,"\n"):find("WRITER_NEAR interval=before%->after area=near4m wheelLower=2"))
