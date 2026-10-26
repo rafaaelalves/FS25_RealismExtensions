@@ -1087,6 +1087,9 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsTerrainControlledWriteTrial~=nil then
+        RealismExtensionsTerrainControlledWriteTrial.uninstallCommands()
+    end
     if RealismExtensionsTerrainNativeSpatialProbe~=nil then
         RealismExtensionsTerrainNativeSpatialProbe.shutdown()
         RealismExtensionsTerrainNativeSpatialProbe.reset()
