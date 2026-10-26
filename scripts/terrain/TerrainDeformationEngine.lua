@@ -485,6 +485,16 @@ function Engine.processSample(
         * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
     local trial=RealismExtensionsTerrainControlledWriteTrial
+    if trial~=nil and trial.enabled() then
+        -- Only counts soil-accepted contexts that reach a potential RE
+        -- persistent rut demand. No history or terrain change.
+        if RealismExtensionsTerrainGeometryProbe~=nil
+            and type(RealismExtensionsTerrainGeometryProbe.observeWheelContact)
+                =="function" then
+            RealismExtensionsTerrainGeometryProbe.observeWheelContact(
+                x,z,"eligible")
+        end
+    end
     if trial~=nil and trial.enabled() and not trial.isArmed() then
         -- Read-only A/B baseline: compute wheel state, demand, and ground
         -- context, but never commit SpatialHistory or request native edits.
@@ -1007,6 +1017,17 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     diagCount("contextAccepted", 1)
     state.hadContext = true
+    -- A marked-patch context sample is not a terrain write. It distinguishes
+    -- "some wheel moved anywhere" from "a grounded wheel crossed our exact
+    -- measurement zone" in the read-only baseline.
+    if RealismExtensionsTerrainControlledWriteTrial~=nil
+        and RealismExtensionsTerrainControlledWriteTrial.enabled()
+        and RealismExtensionsTerrainGeometryProbe~=nil
+        and type(RealismExtensionsTerrainGeometryProbe.observeWheelContact)
+            =="function" then
+        RealismExtensionsTerrainGeometryProbe.observeWheelContact(
+            context.worldX,context.worldZ,"context")
+    end
     -- Per-wheel 250ms-capability sampling is passive and makes NO native
     -- heightmap or wheel-physics change. Crucially, it records any non-1
     -- scale already owned by another mod before we plan a future writer.
