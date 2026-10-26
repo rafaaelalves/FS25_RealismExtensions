@@ -48,6 +48,25 @@ unknownDef:apply(false,"terrainCallback",{})
 assert(P.stats.directDuringREPending==3)
 assert(P.stats.unknownGeometry==1)
 
+-- Best-effort Lua stack hints are restricted to sanitized mod folder and
+-- filename only. A wrapper may be the caller, not the original mod.
+local getInfo=debug.getinfo
+debug.getinfo=function() return {
+    source="@C:/Users/Somebody/Documents/My Games/FarmingSimulator2025/mods/FS25_TerraFarm/scripts/landscaping/LandscapingInput.lua"
+} end
+local site=P.callsiteHint(3)
+assert(site=="FS25_TerraFarm/LandscapingInput.lua")
+local hintDef=setmetatable({}, {__index=Native})
+hintDef:addSoftCircleBrush(700,700,0.5,0.8,1,-1)
+hintDef:apply(false,"callback",{})
+assert(P.stats.sourceHints[site]==1)
+assert(P.formatSnapshot():find("FS25_TerraFarm/LandscapingInput.lua",1,true))
+assert(not P.formatSnapshot():find("Somebody",1,true))
+debug.getinfo=nil
+hintDef:apply(false,"callback",{})
+assert(P.stats.sourceHintsUnavailable>=1)
+debug.getinfo=getInfo
+
 -- Native queue submission uses already-captured geometry and the RE writer's
 -- window but must never assume spatial overlap means an actual height change.
 P.onQueueSubmission(theirDef,true)
@@ -59,12 +78,12 @@ assert(P.stats.unknownGeometry==2)
 local square=setmetatable({}, {__index=Native})
 square:addSoftSquareBrush(101,100,2,0.4,0.8,-1)
 assert(P.classify(square)=="overlap") -- square corner covers rut envelope
-assert(P.stats.capturedBrushes==3)
+assert(P.stats.capturedBrushes==4)
 
 -- Only explicit writer-owned direct calls count as RE. Never as external.
 reDef:apply(false,"done",reTarget)
 assert(P.stats.directRESubmissions==1)
-assert(P.stats.directDuringREPending==3)
+assert(P.stats.directDuringREPending==5)
 
 -- A native method throwing must throw unchanged through the pass-through.
 function Native.badApply(self) error("native-failure") end
