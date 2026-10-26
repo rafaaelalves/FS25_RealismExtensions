@@ -61,6 +61,7 @@ function RealismExtensionsCore:loadMap()
     self.terrainDiagElapsedMs = 0
     self.terrainHealthElapsedMs = 0
     self.terrainDiagPrevious = nil
+    self.nativeSpatialProbeElapsedMs = 1000
 
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
@@ -195,6 +196,23 @@ function RealismExtensionsCore:update(dt)
             (g_currentMission ~= nil and g_currentMission.terrainDeformationQueue)
         if queue~=nil then
             RealismExtensionsTerrainNativeQueueProbe.install(queue)
+        end
+    end
+
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe == true
+        and RealismExtensionsTerrainNativeSpatialProbe ~= nil
+        and RealismExtensionsTerrainNativeSpatialProbe.owner == nil then
+        -- GIANTS may expose TerrainDeformation after loadMap; throttle the
+        -- capability check to 1Hz, never patch 60 times per second.
+        self.nativeSpatialProbeElapsedMs =
+            (self.nativeSpatialProbeElapsedMs or 1000)
+            + math.max(tonumber(dt) or 0,0)
+        if self.nativeSpatialProbeElapsedMs>=1000 then
+            self.nativeSpatialProbeElapsedMs=0
+            RealismExtensionsTerrainNativeSpatialProbe.install(
+                TerrainDeformation)
         end
     end
 
@@ -347,6 +365,11 @@ function RealismExtensionsCore:update(dt)
                 RealismExtensionsDiagnostics.info(
                     RealismExtensionsTerrainNativeQueueProbe.formatSnapshot()
                 )
+                if RealismExtensionsTerrainNativeSpatialProbe~=nil then
+                    RealismExtensionsDiagnostics.info(
+                        RealismExtensionsTerrainNativeSpatialProbe.formatSnapshot()
+                    )
+                end
             end
             if RealismExtensionsConfig.modules.NativeWheelDisplacementObservation==true
                 and RealismExtensionsTerrainNativeWheelBridge~=nil then
@@ -1056,6 +1079,11 @@ function RealismExtensionsCore:update(dt)
 end
 
 function RealismExtensionsCore:deleteMap()
+    if RealismExtensionsTerrainNativeSpatialProbe~=nil then
+        RealismExtensionsTerrainNativeSpatialProbe.shutdown()
+        RealismExtensionsTerrainNativeSpatialProbe.reset()
+    end
+    self.nativeSpatialProbeElapsedMs=1000
     if RealismExtensionsTerrainNativeQueueProbe~=nil then
         RealismExtensionsTerrainNativeQueueProbe.shutdown()
         RealismExtensionsTerrainNativeQueueProbe.reset()
