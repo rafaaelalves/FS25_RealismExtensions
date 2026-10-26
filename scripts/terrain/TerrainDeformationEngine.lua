@@ -106,6 +106,7 @@ local HEALTH_COUNTERS={
     nativeMeasuredLowerMaxSumM=true,
     nativeMeasuredRequestedSumM=true,
     nativeMeasuredExcessEvents=true,
+    trialReadOnlyWheelSamples=true,
     freezeContextSamples=true
 }
 local function diagCount(name, delta)
