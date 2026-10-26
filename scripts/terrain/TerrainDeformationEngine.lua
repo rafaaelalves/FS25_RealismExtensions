@@ -649,7 +649,9 @@ function Engine.processSample(
         end,
         -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
         onApplied = journalToken ~= nil and function(state,deltaY,beforeY,afterY,callbackVolume)
-            if trialTicket~=nil then trial.callback(trialTicket) end
+            if trialTicket~=nil then
+                trial.callback(trialTicket,state,callbackVolume)
+            end
             local otherQueueWhilePending=nil
             local probe=RealismExtensionsTerrainNativeQueueProbe
             if externalQueueBaseline~=nil and probe~=nil then
