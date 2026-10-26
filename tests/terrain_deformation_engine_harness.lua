@@ -495,6 +495,30 @@ assert(#callbacks==beforeUnavailable)
 assert((RealismExtensionsTerrainRuntime.stats.geometryJournalFailClosed or 0)>0)
 RealismExtensionsConfig.modules.TerrainCausalRecovery=false
 
+-- Observe-only mode must be enforced in the REAL vehicle-specialization
+-- path before any history or native writer enqueue, even with no journal.
+RealismExtensionsTerrainControlledWriteTrial={
+    enabled=function()return true end,
+    isArmed=function()return false end
+}
+bodySpeedKph=5
+RealismExtensionsTerrainRecovery.active=false
+RealismExtensionsTerrainRecovery.protected=false
+wheelA.testX=610
+wheelB.testX=650
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeObserveWrites=#callbacks
+local beforeObserveHistory=RealismExtensionsTerrainRuntime.history.count
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeObserveWrites)
+assert(RealismExtensionsTerrainRuntime.history.count==beforeObserveHistory)
+assert((RealismExtensionsTerrainRuntime.stats.trialReadOnlyWheelSamples or 0)>=1)
+RealismExtensionsTerrainControlledWriteTrial=nil
+
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
