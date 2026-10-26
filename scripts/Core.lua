@@ -75,6 +75,14 @@ function RealismExtensionsCore:loadMap()
             == "function" then
         RealismExtensionsTerrainGeometryProbe.installCommands()
     end
+    if RealismExtensionsTerrainControlledWriteTrial~=nil then
+        RealismExtensionsTerrainControlledWriteTrial.reset()
+        RealismExtensionsTerrainControlledWriteTrial.installCommands()
+        if RealismExtensionsTerrainControlledWriteTrial.enabled() then
+            RealismExtensionsDiagnostics.info(
+                "TerrainTrial | OBSERVE_ONLY active; RE native writes blocked. Use console reTerrainTrial probe then reTerrainTrial arm on COPIED save.")
+        end
+    end
 
     configureTireTrackAdapterProbe()
     if tireTrackAdapterNeeded()
