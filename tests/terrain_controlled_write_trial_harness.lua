@@ -42,6 +42,7 @@ Trial:consoleCommand("arm")
 assert(Trial.isArmed()==true and Trial.armCenter.x==100)
 -- Foreign wheel samples cannot consume the one-shot permission.
 assert(Trial.tryReserve(104,104)==nil)
+assert(Trial.tryReserve(101.36,100)==nil) -- 1.35m bound matters
 assert(Trial.armed==true and Trial.reserved==nil)
 local id=assert(Trial.tryReserve(100.1,100.2))
 assert(Trial.tryReserve()==nil) -- never two queued requests
