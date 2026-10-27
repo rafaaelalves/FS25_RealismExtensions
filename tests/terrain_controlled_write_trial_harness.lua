@@ -34,10 +34,18 @@ Trial:consoleCommand("arm")
 assert(Trial.isArmed()==false and Trial.stats.deniedArm==1)
 sp.owner={}
 Trial:consoleCommand("arm")
-assert(Trial.isArmed()==true)
-local id=assert(Trial.tryReserve())
+assert(Trial.isArmed()==false) -- cannot arm without a marked base snapshot
+RealismExtensionsTerrainGeometryProbe={
+    position={x=100,z=100},previous={x=100,z=100,label="beforeOneShot"}
+}
+Trial:consoleCommand("arm")
+assert(Trial.isArmed()==true and Trial.armCenter.x==100)
+-- Foreign wheel samples cannot consume the one-shot permission.
+assert(Trial.tryReserve(104,104)==nil)
+assert(Trial.armed==true and Trial.reserved==nil)
+local id=assert(Trial.tryReserve(100.1,100.2))
 assert(Trial.tryReserve()==nil) -- never two queued requests
-local brush={radiusM=0.50,trialTicket=id,onApplied=function()end}
+local brush={x=100.1,z=100.2,radiusM=0.50,trialTicket=id,onApplied=function()end}
 assert(Trial.beforeNative("TARGET",{brush},0.002)==false)
 assert(Trial.armed==true and Trial.reserved==id)
 assert(Trial.beforeNative("LOWER",{brush},0.002)==true)
@@ -51,26 +59,26 @@ assert(Trial.stats.callbackOutcomes==1)
 
 -- A missing native response cannot rearm automatically.
 Trial:consoleCommand("arm")
-local n=assert(Trial.tryReserve())
+local n=assert(Trial.tryReserve(100.1,100.2))
 assert(Trial.beforeNative("LOWER",{
-    {radiusM=2,trialTicket=n,onApplied=function()end}},0.002)==false)
+    {x=100.1,z=100.2,radiusM=2,trialTicket=n,onApplied=function()end}},0.002)==false)
 assert(Trial.abandon(n)==true)
 assert(Trial.armed==false)
 Trial:consoleCommand("arm")
-n=assert(Trial.tryReserve())
+n=assert(Trial.tryReserve(100.1,100.2))
 assert(Trial.beforeNative("LOWER",{
-    {radiusM=0.5,trialTicket=n,onApplied=function()end}},0.004)==false)
+    {x=100.1,z=100.2,radiusM=0.5,trialTicket=n,onApplied=function()end}},0.004)==false)
 assert(Trial.abandon(n)==true)
 
 -- Cancel is immediate before native submission; cannot erase in-flight work.
 Trial:consoleCommand("arm")
-n=assert(Trial.tryReserve())
+n=assert(Trial.tryReserve(100.1,100.2))
 Trial:consoleCommand("cancel")
 assert(Trial.armed==false and Trial.reserved==nil)
 Trial:consoleCommand("arm")
-n=assert(Trial.tryReserve())
+n=assert(Trial.tryReserve(100.1,100.2))
 assert(Trial.beforeNative("LOWER",{
-    {radiusM=0.5,trialTicket=n,onApplied=function()end}},0.002)==true)
+    {x=100.1,z=100.2,radiusM=0.5,trialTicket=n,onApplied=function()end}},0.002)==true)
 Trial:consoleCommand("cancel")
 assert(Trial.pending==true)
 assert(Trial.callback(n)==true)
