@@ -32,8 +32,8 @@ No terrain-code main merge; PR #64 still experimental draft.
 
 Earlier trial `reTerrainTrial arm` would reserve the **first** eligible wheel anywhere. Changed in experimental branch on 2026-10-27:
 - Requires an explicit `reGeoMark` and valid `reGeoSnap beforeOneShot` at same coordinates in current map.
-- Snapshots exact marked x/z in `Trial.armCenter`; `tryReserve(x,z)` refuses eligible wheel centers farther than **1.75 m** without consuming one-shot permission.
-- `beforeNative` independently verifies brush x/z is inside the same 1.75m radius, and retains the single LOWER, <=3.001mm, <=0.60m brush limit with native queue/direct observer integrity and session quarantine.
+- Snapshots exact marked x/z in `Trial.armCenter`; `tryReserve(x,z)` refuses eligible wheel centers farther than **1.35 m** without consuming one-shot permission.
+- `beforeNative` independently verifies brush x/z is inside the same 1.35m radius, and retains the single LOWER, <=3.001mm, <=0.60m brush limit with native queue/direct observer integrity and session quarantine.
 - No automatic retry after a valid ticket is consumed; callback disarms. No increase in map deformation, no new native writer.
 
 Unit and real-writer harness coverage includes non-writing default, missing source probes, required mark/snapshot, off-site refusal, one-attempt lifecycle, and native callback. Mock CI is **not** GIANTS terrain correctness.
@@ -44,7 +44,7 @@ A new standalone test **only on disposable save** can now isolate ONE RE ADDITIV
 
 1. `reTerrainTrial probe`; `reTerrainTrial status` confirms `mode=OBSERVE queueProbe=true spatialProbe=true`.
 2. `reGeoMark` while standing on the selected future wheel track; `reGeoSnap beforeOneShot`.
-3. `reTerrainTrial arm`; verify marker-scoped confirmation. Tractor wheel pass within 1.75m of mark; do not use TerraFarm machinery or implement geometry editing during the pass.
+3. `reTerrainTrial arm`; verify marker-scoped confirmation. Tractor wheel pass within 1.35m of mark; do not use TerraFarm machinery or implement geometry editing during the pass.
 4. `reTerrainTrial status` afterwards; `reGeoSnap afterOneShot`; quit WITHOUT saving, especially if overshoot visible.
 5. Collect RE log / ModMixer logs. Important lines `TerrainTrialNativeSubmit`, `TerrainTrialNativeCallback`, `TerrainNativeDelta`, `TerrainNativeQuarantine`, `TerrainSpatialProbe`, `WHEEL_CONTACT`, `REGeoProbe DELTA`.
 
