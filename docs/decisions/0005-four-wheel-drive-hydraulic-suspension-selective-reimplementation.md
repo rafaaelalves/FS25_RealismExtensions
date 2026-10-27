@@ -76,3 +76,11 @@ Evidence: prior **exact-package source audits** of both versions were discussed 
 ## Status
 
 **Decision recorded. No RE/RC runtime files, tests, build, feature branch, or experimental implementation created by this ADR.** Reassess after a focused one-tractor hardware/actuator feasibility spike; preserve historical exact ZIP/source notes if retrieved.
+
+## Update: exact 4x4 Traction System 2.0.0.0 source audit (2026-10-26)
+
+The 2.0 ZIP was source-inspected and subjected to isolated Lua tests in [4x4 v2 full-stack audit](../audits/realistic-4x4/2026-10-26-4x4-traction-system-2.0.0.0-full-stack-audit.md). This supersedes the 1.7-derived *evidence* for the newest package, **not** the ADR's ownership decision. The previous 1.7 ZIP was not recovered for a bytewise diff; comparison is against the 1.7 architectural record.
+
+**Positive changes:** separation of traction sensors/policy, vehicle classes/layouts, VCA-owned actuation delegation, contextual UI schematic and telemetry, server-authoritative automatic state broadcast, per-vehicle mode/save state. These are worthwhile candidates for independent RE UI or policy research and for an upstream RMS capability interface.
+
+**Source-proven physical blockers for the user's existing stack:** v2 still rebuilds the entire GIANTS differential graph, overlapping RMS/RC-MRRMS graph ownership; CTIS still writes/restores captured wheel radii, overlapping Reifen/Mud/RC structural versus transient radius authority. Isolated Lua checks also found a foreign-farm authorization omission in pressure/CTIS events and a steered-front 6×4-like truck classification weakness. Therefore **do not install unchanged v2 into primary MR/Mud/Reifen/RMS stack**, nor absorb its physics or UI assets; any future 4WD decision policy should operate above RMS through a documented capability request contract, or be proposed upstream. No modifications to runtime or builds in this audit.
