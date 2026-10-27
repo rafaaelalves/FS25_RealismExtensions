@@ -7,7 +7,9 @@ local Trial=RealismExtensionsTerrainControlledWriteTrial
 Trial.VERSION=1
 Trial.MAX_REQUEST_M=0.003001
 Trial.MAX_RADIUS_M=0.60
-Trial.MAX_MARK_OFFSET_M=1.75
+-- Max brush radius 0.60m + 1.35m center offset stays inside
+-- the +/-2m per-axis before/after main-terrain snapshot window.
+Trial.MAX_MARK_OFFSET_M=1.35
 
 local function finite(v)
     return type(v)=="number" and v==v
