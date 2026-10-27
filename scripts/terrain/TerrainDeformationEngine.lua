@@ -608,7 +608,7 @@ function Engine.processSample(
 
     local trialTicket=nil
     if trial~=nil and trial.enabled() then
-        trialTicket=trial.tryReserve()
+        trialTicket=trial.tryReserve(x,z)
         if trialTicket==nil then
             if journalToken~=nil then journal:complete(journalToken,false) end
             return false
