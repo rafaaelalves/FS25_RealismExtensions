@@ -602,6 +602,9 @@ RealismExtensionsTerrainNativeQueueProbe={
 RealismExtensionsTerrainNativeSpatialProbe={
     owner={},checkIntegrity=function()return true end
 }
+RealismExtensionsTerrainGeometryProbe={
+    position={x=901,z=901},previous={x=901,z=901,label="beforeOneShot"}
+}
 local pilot=RealismExtensionsTerrainWriter.new({
     maxBrushesPerFrame=1,maxJobsPerFrame=1,maxBrushesPerJob=1,
     coalesceDistanceFactor=0,minDepthM=0.0004
@@ -618,7 +621,8 @@ assert(#created==beforePilot and #queued>=1)
 assert(Trial.stats.nativeRejected>=1)
 
 Trial:consoleCommand("arm")
-local ticket=assert(Trial.tryReserve())
+assert(Trial.tryReserve(910,910)==nil) -- out-of-patch wheel cannot win
+local ticket=assert(Trial.tryReserve(901,901))
 assert(pilot:enqueue({
     x=901,z=901,depthM=0.002,radiusM=0.4,
     trialTicket=ticket,
