@@ -7,6 +7,18 @@ local Trial=RealismExtensionsTerrainControlledWriteTrial
 Trial.VERSION=1
 Trial.MAX_REQUEST_M=0.003001
 Trial.MAX_RADIUS_M=0.60
+Trial.MAX_MARK_OFFSET_M=1.75
+
+local function finite(v)
+    return type(v)=="number" and v==v
+        and v~=math.huge and v~=-math.huge
+end
+local function inMarkedRegion(x,z)
+    local p=Trial.armCenter
+    if p==nil or not finite(x) or not finite(z) then return false end
+    local dx,dz=x-p.x,z-p.z
+    return dx*dx+dz*dz<=Trial.MAX_MARK_OFFSET_M^2
+end
 
 local function speak(s)
     local msg="RE Terrain Trial | "..tostring(s)
@@ -25,6 +37,7 @@ function Trial.reset()
     Trial.reserved=nil
     Trial.pending=false
     Trial.nextId=0
+    Trial.armCenter=nil
     Trial.stats={intents=0,intentsDenied=0,reservations=0,
         nativeApproved=0,nativeRejected=0,callbackOutcomes=0,
         armRequests=0,deniedArm=0}
@@ -35,8 +48,8 @@ function Trial.isArmed()
         and Trial.pending~=true
 end
 
-function Trial.tryReserve()
-    if not Trial.isArmed() then
+function Trial.tryReserve(x,z)
+    if not Trial.isArmed() or not inMarkedRegion(x,z) then
         Trial.stats.intentsDenied=Trial.stats.intentsDenied+1
         return nil,"TRIAL_NOT_ARMED_OR_RESERVED"
     end
@@ -53,6 +66,7 @@ function Trial.abandon(id)
         Trial.reserved=nil
         -- A failed enqueue does not grant permission to retry endlessly.
         Trial.armed=false
+        Trial.armCenter=nil
         return true
     end
     return false
@@ -71,6 +85,7 @@ function Trial.beforeNative(mode,brushes,amount)
         and amount<=Trial.MAX_REQUEST_M
         and type(b.radiusM)=="number" and b.radiusM>0
         and b.radiusM<=Trial.MAX_RADIUS_M
+        and inMarkedRegion(b.x,b.z)
         and g_server~=nil
     if not validRequest then
         Trial.stats.nativeRejected=Trial.stats.nativeRejected+1
@@ -94,6 +109,7 @@ function Trial.callback(id,state,volume)
         Trial.reserved=nil
         Trial.pending=false
         Trial.armed=false
+        Trial.armCenter=nil
         Trial.stats.callbackOutcomes=Trial.stats.callbackOutcomes+1
         speak(string.format(
             "TerrainTrialNativeCallback | ticket=%d state=%s volumeM3=%s disarmed=true",
@@ -127,14 +143,17 @@ function Trial:consoleCommand(action)
         local q=RealismExtensionsTerrainNativeQueueProbe
         local sp=RealismExtensionsTerrainNativeSpatialProbe
         return speak(string.format(
-            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s. OBSERVE is non-writing; arm allows ONE native RE wheel job on a COPIED save.",
+            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s markedCenter=%s scopeRadius=%.2fm. OBSERVE is non-writing; arm allows ONE native RE wheel job on a COPIED save.",
             Trial.armed and "ONE_SHOT_ARMED" or "OBSERVE",
             tostring(Trial.armed),tostring(Trial.reserved or "-"),
             tostring(Trial.pending),Trial.stats.nativeApproved or 0,
             Trial.stats.nativeRejected or 0,
             Trial.stats.callbackOutcomes or 0,
             tostring(q~=nil and q.owner~=nil),
-            tostring(sp~=nil and sp.owner~=nil)
+            tostring(sp~=nil and sp.owner~=nil),
+            Trial.armCenter~=nil
+                and string.format("%.2f,%.2f",Trial.armCenter.x,Trial.armCenter.z)
+                or "none",Trial.MAX_MARK_OFFSET_M
         ))
     elseif action=="probe" then
         RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe=true
@@ -151,6 +170,7 @@ function Trial:consoleCommand(action)
         end
         Trial.armed=false
         Trial.reserved=nil
+        Trial.armCenter=nil
         return speak("OBSERVE: native terrain writes from RE are blocked")
     elseif action=="arm" then
         Trial.stats.armRequests=Trial.stats.armRequests+1
@@ -175,8 +195,22 @@ function Trial:consoleCommand(action)
             Trial.stats.deniedArm=Trial.stats.deniedArm+1
             return speak("ARM REFUSED: causal native journal unavailable")
         end
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local mark=gp~=nil and gp.position or nil
+        local snap=gp~=nil and gp.previous or nil
+        if mark==nil or snap==nil or not finite(mark.x)
+            or not finite(mark.z) or not finite(snap.x)
+            or not finite(snap.z)
+            or math.abs(mark.x-snap.x)>0.001
+            or math.abs(mark.z-snap.z)>0.001 then
+            Trial.stats.deniedArm=Trial.stats.deniedArm+1
+            return speak("ARM REFUSED: run reGeoMark and reGeoSnap beforeOneShot at the chosen patch first; no native write permission granted.")
+        end
+        Trial.armCenter={x=mark.x,z=mark.z}
         Trial.armed=true
-        return speak("ONE-SHOT ARMED: next eligible RE wheel sample may submit ONE <=3mm, <=0.60m-radius native LOWER. Then automatically disarmed. COPIED SAVE ONLY.")
+        return speak(string.format(
+            "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
+            mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
     return speak("Usage: reTerrainTrial [status|probe|arm|cancel]")
 end
