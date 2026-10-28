@@ -393,8 +393,20 @@ function Engine.processSample(
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
 
-    local history = historyStore:get(x, z)
-    local previousDepth = history ~= nil and tonumber(history.rutDepthM) or 0
+    local persistedHistory=historyStore:get(x,z)
+    local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
+    local shadowOnly=shadow~=nil and RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW"
+    local sourceKey=type(historyStore.getKey)=="function"
+        and historyStore:getKey(x,z) or nil
+    -- The virtual history progresses physical *model* exposure even while
+    -- native geometry remains entirely untouched. Keep it separate from
+    -- recorded history, which is the only authoritative saved rut state.
+    local history=shadowOnly and sourceKey~=nil
+        and shadow:getModelHistory(sourceKey,x,z,persistedHistory)
+        or persistedHistory
+    local previousDepth=history~=nil and tonumber(history.rutDepthM) or 0
 
     -- Observability only: estimate how much currently observed instantaneous
     -- sink is already represented by RE's logical persistent-rut history.
@@ -506,11 +518,12 @@ function Engine.processSample(
     -- changing terrain, geometry ownership or SpatialHistory. Each logical
     -- wheel cell contributes only when its target increases; repeated frames
     -- with the same target cannot fabricate further physical excavation.
-    local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
-    if shadow~=nil and type(historyStore.getKey)=="function" then
-        shadow:observe(historyStore:getKey(x,z),x,z,
+    if shadowOnly and sourceKey~=nil then
+        shadow:observe(sourceKey,x,z,
             math.max(0,tonumber(response.rutDepthM) or 0),
-            math.max(0,previousDepth or 0))
+            math.max(0,tonumber(persistedHistory~=nil
+                and persistedHistory.rutDepthM) or 0),
+            response.nextHistory)
     end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
