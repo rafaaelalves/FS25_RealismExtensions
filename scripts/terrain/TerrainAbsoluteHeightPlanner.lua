@@ -375,7 +375,7 @@ function Planner:summary()
         if v.sourceCount>=2 then supportedVertices=supportedVertices+1 end
     end
     return string.format(
-        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d rejected=%d capacityRefusals=%d",
+        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d virtualReads=%d virtualUpdates=%d virtualRejects=%d workedAreas=%d workedSourcesCleared=%d workedShadowClearedM=%.6f workedRejects=%d rejected=%d capacityRefusals=%d",
         self.unitM,self.verifiedQuantumM~=nil
             and string.format("%.6fm",self.verifiedQuantumM) or "UNVERIFIED",
         self.sourceCount,vertices,self.stats.observations,
@@ -383,6 +383,10 @@ function Planner:summary()
         self.stats.accumulatedM,vertexDemandSumM,supportedVertices,
         self.stats.vertexCrossings,self.stats.recoveries,
         self.stats.recoveredDemandM,self.stats.unverifiedTargetDrops,
+        self.stats.virtualHistoryReads,self.stats.virtualHistoryUpdates,
+        self.stats.virtualHistoryRejects,self.stats.workedAreas,
+        self.stats.workAreaSourcesCleared,
+        self.stats.workAreaDemandClearedM,self.stats.workAreaRejects,
         self.stats.rejected,self.stats.capacityRefusals)
 end
 return Planner
