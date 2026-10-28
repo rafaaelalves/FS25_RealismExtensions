@@ -108,7 +108,11 @@ function Candidate:applyOne(x,z,damageM)
     -- Absolute height request is bounded to ONE verified quantum. Unlike
     -- ADDITIVE SOFT CIRCLE, this proposes no change to other height vertices.
     local target=before-plan.stepM
-    local ok,err=pcall(self.writeHeight,x,z,target)
+    local ok,writeResult=pcall(self.writeHeight,x,z,target)
+    -- A native setter adapter can signal refusal via boolean false without
+    -- raising. Treat it as failure, never as a successful geometry write.
+    if ok and writeResult==false then ok=false end
+    local err=writeResult
     if not ok then
         budget.quarantined=true
         self.stats.writeErrors=self.stats.writeErrors+1
