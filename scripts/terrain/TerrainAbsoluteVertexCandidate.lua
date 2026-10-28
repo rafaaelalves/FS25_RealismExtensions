@@ -71,9 +71,12 @@ function Candidate:applyOne(x,z,damageM)
     end
     local ix,iz=math.floor(x/unit+0.5),math.floor(z/unit+0.5)
     local key=tostring(ix)..":"..tostring(iz)
-    -- Include adjacent 1m vertices in the side-effect check; a too-small
-    -- envelope would "prove" locality while missing a changed neighbor.
-    local radius=unit*0.30
+    -- Cover the complete 3x3 1m vertex neighborhood, including the
+    -- DIAGONALS. Journal adds 0.75*unit to radius: 0.70+0.75=1.45,
+    -- beyond sqrt(2) and thus all eight immediate neighbors. The former
+    -- 0.30+0.75=1.05 envelope missed diagonal collateral entirely.
+    -- A setter that silently alters a diagonal must NEVER be certified.
+    local radius=unit*0.70
     local remaining,reason=journal:getLoweringBudget(
         x,z,radius,0.10,0.12)
     if not finite(remaining) then
