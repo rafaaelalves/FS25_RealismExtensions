@@ -56,6 +56,29 @@ The 1m principal-height shadow ledger must evolve with **real accepted recovery*
 
 Crucial safety boundary: these are **logical-history notifications only**, not evidence that GIANTS repaired main or fine displacement geometry. The `SHADOW` profile still blocks all automatic RE native height writes; the planner's in-memory debt must never be passed to a setter before map-specific vertical quantum and physical synchronization are independently verified. In particular, a future calibrated permanent writer must reconcile proven native height changes with the same journal and must **not** grant recovery ownership from this shadow counter.
 
+## 2026-10-28 further development: virtual model exposure and worked-area reset
+
+### The missing feedback loop was real
+
+With `TerrainPermanentActuator="SHADOW"`, `TerrainDeformationEngine.processSample` returned before `SpatialHistory:commit`, correctly avoiding fake persistent rut ownership. However, `TerrainResponseModel.compute` uses the previous history's `deformationExposure`, shear distance and slip-excavation distance to advance over successive contact passes. Reading only the real persisted history on each call therefore recreated near-first-pass behavior and prevented convergence of the predicted model.
+
+**Now** `TerrainAbsoluteHeightPlanner` holds a volatile per-logical-source `modelHistory` with selected scalar model fields (rut depth, exposure, longitudinal/lateral shear distance, slip-excavation distance and pass count). On a SHADOW wheel contact, `TerrainDeformationEngine` reads a *copy* of that virtual history, invokes the unchanged response model, and feeds its `nextHistory` back into the shadow. The physical `SpatialHistory` remains untouched until a real, independently verified actuator response exists. This is NOT committed to saves and is not treated as geometric provenance.
+
+Importantly, the model's possible rut target (bounded here to 1.0m for virtual validation) is **not** the maximum permitted geometry lowering (the separate demand budget still caps at 0.10m). A real model target beyond 10cm must not be silently discarded merely because the RE persistent writer is constrained to 10cm.
+
+### Containing stale memories across work areas
+
+The existing logical-history recovery event still clears the shadow's prior exposure after confirmed logical repair. But SHADOW's predictions may exist without a single native or persisted RE rut. Physical tillage can therefore leave no logical-history cell to reconcile. `TerrainRecovery.recoverWorkedArea` now calls the planner's `onWorkedArea` after a **GIANTS-verified physically working + processedArea>0** work-area callback. Only the planner's **volatile** per-source model state/demand inside the actual parallelogram is removed; no height setter, saved history, recovery ownership or first-touch journal field changes. The calculation checks the rotated basis (not a bounding-box approximation), includes a half-0.20m-cell interior clearance and refuses unbounded work-area scans (default 4096 principal vertices). A rejected/nonworking implement cannot clear model exposure.
+
+### Verification coverage
+
+- `terrain_shadow_model_progression_harness.lua` uses the actual pure `TerrainResponseModel` over 10 sequential wheel passes; depth and exposure increase from a previous virtual state, while 10 calls with nil persisted history would otherwise repeat the first prediction. Copy isolation and recovery invalidation are asserted.
+- `terrain_absolute_height_workarea_harness.lua` checks polygon-only virtual retirement, conservative border exclusion, rotated work-area shape, virtual memory reset and large-area refusal.
+- The existing `terrain_recovery_harness.lua` verifies that only a physically processed GIANTS work-area **mock** calls the shadow observer; an idle/rejected work-area is ignored.
+- `TerrainAbsoluteHeightPlanner:summary()` now differentiates virtual model reads/writes, work-area resets and pending coarse-vertex demand. No native-write claims are made.
+
+**Boundary:** Passing these pure Lua / mocked GIANTS callbacks cannot prove wheel-track physics, absolute setter fidelity, map persistence, collision synchronization, or multiplayer. The `SHADOW` config still blocks all automatic native wheel and recovery writes. A single disposable-save absolute-height API test remains required later, before any physical actuator promotion. This iteration does **not** require repeating an agricultural play cycle now.
+
 ## Remaining engineering / validation gates
 
 1. Verify actual FS25 `setTerrainHeightAtWorldPos` availability and exact effect in live gameplay (not only GE/editor), syncer, collisions, persistence across save/reload and true singleplayer/multiplayer semantics. An exposed API name does not prove appropriate ownership/synchronization.
