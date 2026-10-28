@@ -2031,6 +2031,23 @@ local function recoverWorkedArea(
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
     protectWorkArea(g, nowMs)
+    -- Tillage may prepare a worked field even when the SHADOW profile has
+    -- no real RE rut to grade. Retire only its VOLATILE model exposure
+    -- within the verified GIANTS processed footprint; never mark a native
+    -- height as recovered or change saved SpatialHistory ownership.
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW"
+        and runtime.absoluteShadow~=nil
+        and type(runtime.absoluteShadow.onWorkedArea)=="function" then
+        local ok=pcall(runtime.absoluteShadow.onWorkedArea,
+            runtime.absoluteShadow,g)
+        if not ok then
+            runtime.stats=runtime.stats or {}
+            runtime.stats.absoluteShadowTillageErrors=
+                (runtime.stats.absoluteShadowTillageErrors or 0)+1
+        end
+    end
     if RealismExtensionsConfig ~= nil
         and RealismExtensionsConfig.modules ~= nil
         and RealismExtensionsConfig.modules.TerrainCausalRecovery == true then
