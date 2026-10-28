@@ -4,6 +4,13 @@ local P=RealismExtensionsTerrainAbsoluteHeightPlanner
 assert(P.new({})==nil)
 assert(P.new({unitM=0})==nil)
 local shadow=assert(P.new({unitM=1,maxSources=3}))
+-- Thousands of no-yield or unchanged saved cells must not consume
+-- the bounded shadow source pool before one real plastic rut occurs.
+for i=1,100 do
+    assert(shadow:observe("no-debt-"..i,i,0,0,0).state=="UNCHANGED")
+    assert(shadow:observe("saved-"..i,i,0,0.024,0.024).state=="UNCHANGED")
+end
+assert(shadow.sourceCount==0 and next(shadow.vertices)==nil)
 local a=assert(shadow:observe("cell-1",10.25,20.20,0.0017))
 assert(a.state=="QUANTUM_UNVERIFIED")
 assert(a.vertexKey=="10:20" and a.doesNotWrite==true)
