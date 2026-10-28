@@ -24,7 +24,8 @@ local disabled=assert(C.new({budget=b,journal=j,writeHeight=setter}))
 assert(disabled:applyOne(10,10,2*q)==nil)
 assert(writes==0 and b:getDebt("10:10")==0)
 local c=assert(C.new({
-    budget=b,journal=j,writeHeight=setter,explicitWrite=true
+    budget=b,journal=j,writeHeight=setter,explicitWrite=true,
+    verifyExclusive=function()return true end
 }))
 assert(c:applyOne(10.2,10,q)==nil)
 assert(writes==0)
@@ -53,6 +54,7 @@ local j2=J.new(999,{unitM=1,sample=read})
 local b2=assert(B.new({quantumM=q,toleranceM=0.00005}))
 local bad=assert(C.new({
     budget=b2,journal=j2,explicitWrite=true,
+    verifyExclusive=function()return true end,
     writeHeight=function(x,z,y)
         set(x,z,y)
         set(x+1,z,read(x+1,z)-q)
@@ -72,6 +74,7 @@ local j3=J.new(999,{unitM=1,sample=read})
 local b3=assert(B.new({quantumM=q,toleranceM=0.00005}))
 local burst=assert(C.new({
     budget=b3,journal=j3,explicitWrite=true,
+    verifyExclusive=function()return true end,
     writeHeight=function(x,z,y) set(x,z,read(x,z)-15*q) end
 }))
 local blown,reasonBurst=burst:applyOne(90,90,q)
@@ -80,4 +83,24 @@ assert(b3.quarantined==true)
 assert(j3.observations["90:90"].owned==false)
 assert(j3.pendingCount==0)
 
+-- Even an explicitly enabled setter may never bypass queue/session isolation.
+local isolated=assert(C.new({budget=assert(B.new({quantumM=q})),
+    journal=J.new(999,{unitM=1,sample=read}),
+    explicitWrite=true,writeHeight=setter}))
+local beforeGuardWrites=writes
+local refused,guardReason=isolated:applyOne(120,120,q)
+assert(refused==nil and guardReason=="EXCLUSIVITY_UNAVAILABLE")
+assert(writes==beforeGuardWrites)
+local exclusivityCalls=0
+local lost=assert(C.new({budget=assert(B.new({quantumM=q})),
+    journal=J.new(999,{unitM=1,sample=read}),
+    explicitWrite=true,writeHeight=setter,
+    verifyExclusive=function()
+        exclusivityCalls=exclusivityCalls+1
+        return exclusivityCalls==1
+    end}))
+local lostResult,lostWhy=lost:applyOne(130,130,q)
+assert(lostResult==nil and lostWhy=="EXCLUSIVITY_CHANGED")
+assert(writes==beforeGuardWrites)
+assert(lost.budget.stats.pending==0)
 print("terrain_absolute_vertex_candidate_harness: OK")
