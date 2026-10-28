@@ -1292,6 +1292,7 @@ RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     history = nil,
     writer = nil,
     geometryJournal = nil,
+    absoluteShadow = nil,
     stats = {}
 }
 
