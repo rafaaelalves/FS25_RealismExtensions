@@ -66,6 +66,30 @@ assert(fails.quarantined==true and journal2.pendingCount==0)
 assert(journal2.observations["50:50"]==nil
     or journal2.observations["50:50"].owned==false)
 
+-- A late multiplayer transition after the first approval, but
+-- before the native setter, must also be rejected with zero writes.
+local journal3=J.new(999,{unitM=1,sample=read})
+local baseCheck=journal3.validateBeforeSubmit
+journal3.validateBeforeSubmit=function(self,token)
+    local yes,why=baseCheck(self,token)
+    g_currentMission.missionDynamicInfo.isMultiplayer=true
+    return yes,why
+end
+local runtime3={geometryJournal=journal3,nativeDamageQuarantined=false}
+local available={nativeCausalPending=false,
+    getQueueSize=function()return 0 end}
+local late=assert(B.new({
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    quantumVerified=true,quantumM=q,
+    journal=journal3,runtime=runtime3,writer=available,nativeSetter=set
+}))
+local beforeLate=calls
+local lateResult,lateReason=late:applyOnce(60,60,q)
+assert(lateResult==nil and lateReason=="EXCLUSIVITY_CHANGED")
+assert(calls==beforeLate and journal3.pendingCount==0)
+assert(late.consumed==true and late.quarantined==true)
+g_currentMission.missionDynamicInfo.isMultiplayer=false
+
 -- Confirm documented five-argument GIANTS binding is not guessed from
 -- a four-argument wrapper. This is an injected mock, not a native call.
 local original=setTerrainHeightAtWorldPos
