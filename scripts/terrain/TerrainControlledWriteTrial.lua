@@ -171,6 +171,14 @@ function Trial:consoleCommand(action)
         if q~=nil and queue~=nil then q.install(queue) end
         if sp~=nil then sp.install(TerrainDeformation) end
         return speak("Pass-through queue/direct observers requested. Check reTerrainTrial status; they can be unavailable if GIANTS class methods cannot be hooked.")
+    elseif action=="calibrate" then
+        local c=RealismExtensionsTerrainNativeBrushCalibration
+        if c==nil or type(c.run)~="function" then
+            return speak("CALIBRATION_UNAVAILABLE")
+        end
+        local ok,reason=c.run()
+        return ok and speak("Calibration queued with isolated native writer")
+            or speak("Calibration refused; check native journal and RE Terrain Calibration output")
     elseif action=="cancel" or action=="observe" then
         if Trial.pending then
             return speak("A native RE job is already in flight; cannot undo it. Further RE writes remain disarmed.")
