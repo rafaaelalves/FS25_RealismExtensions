@@ -31,6 +31,11 @@ function Planner.new(options)
         maxSources=math.max(1,math.floor(options.maxSources or 50000)),
         maxDemandPerSourceM=math.max(0.0001,
             math.min(0.10,tonumber(options.maxDemandPerSourceM) or 0.10)),
+        -- Virtual predicted rut target may exceed the independent 10cm
+        -- native-excavation budget; NEVER conflate model state with a
+        -- safe executable height command.
+        maxModelTargetM=math.max(0.10,
+            math.min(2.0,tonumber(options.maxModelTargetM) or 1.0)),
         sources={},sourceCount=0,vertices={},
         stats={observations=0,sourceIncreases=0,duplicates=0,
             accumulatedM=0,vertexCrossings=0,rejected=0,
@@ -98,10 +103,10 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
     if type(sourceKey)~="string" or sourceKey==""
         or not finite(x) or not finite(z)
         or not finite(cumulativeTargetM)
-        or cumulativeTargetM<0 or cumulativeTargetM>self.maxDemandPerSourceM
+        or cumulativeTargetM<0 or cumulativeTargetM>self.maxModelTargetM
         or (existingDepthM~=nil and (not finite(existingDepthM)
             or existingDepthM<0
-            or existingDepthM>self.maxDemandPerSourceM)) then
+            or existingDepthM>self.maxModelTargetM)) then
         st.rejected=st.rejected+1
         return nil,"INVALID_WHEEL_TARGET"
     end
