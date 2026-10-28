@@ -46,11 +46,15 @@ local count,depth=h:recoverParallelogram(
         cooldownMs=0,nowMs=3000,maxCells=4
     },function()return true end)
 assert(count==1 and math.abs(depth-0.002)<1e-8)
-assert(math.abs(p:getVertex(0,0).demandM)<1e-8)
+assert(p:getVertex(0,0)==nil)
+assert(p.sourceCount==0)
 assert(#events==3 and events[3].key==a)
 assert(p.stats.recoveries==3)
 assert(math.abs(p.stats.recoveredDemandM-0.01)<1e-8)
+-- A new post-tillage wheel passage creates a fresh epoch; old max target
+-- must not block new damage and no stale 1m vertex remains allocated.
 assert(p:observe(a,0,0,0.003,0).state=="SUB_QUANTUM_SHADOW")
+assert(p.sourceCount==1)
 assert(math.abs(p:getVertex(0,0).demandM-0.003)<1e-8)
 assert(p:observe(a,0,0,0.002,0).state=="TARGET_DECREASE_UNVERIFIED")
 assert(math.abs(p:getVertex(0,0).demandM-0.003)<1e-8)
@@ -61,6 +65,21 @@ assert(h:applyRecoveryAt(0,0,0.001,{minRutM=0})==0)
 assert(#events==before)
 assert(p:onHistoryRecovered("missing",0,0.001)==false)
 assert(p:onHistoryRecovered(a,0,0)==false)
+
+-- A low maxSources planner cannot be permanently exhausted by
+-- years of fully recovered cells. Each recovered source is reclaimed.
+local churn=assert(P.new({unitM=1,maxSources=1}))
+for i=1,30 do
+    local key=string.format("%d:%d",i,i)
+    local x=i*2
+    local z=i*3
+    assert(churn:observe(key,x,z,0.005))
+    assert(churn.sourceCount==1)
+    assert(churn:onHistoryRecovered(key,0,0.005)==true)
+    assert(churn.sourceCount==0)
+    assert(next(churn.vertices)==nil)
+end
+assert(churn.stats.recoveries==30 and churn.stats.capacityRefusals==0)
 
 -- Observer failures must not undo a completed SpatialHistory recovery.
 h:commit(3,3,{rutDepthM=0.005,longitudinalShearDistanceM=0.001})
