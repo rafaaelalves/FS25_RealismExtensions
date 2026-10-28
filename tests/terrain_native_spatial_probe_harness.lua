@@ -75,6 +75,22 @@ P.onQueueSubmission(unknownDef,true)
 assert(P.stats.queueSubmissions==3)
 assert(P.stats.spatialOverlapQueue==1)
 assert(P.stats.unknownGeometry==2)
+-- Regression from the 2026-10-27 real GIANTS calibration log: GIANTS
+-- queue-backed processing invokes :apply with an internal callback target.
+-- This is NOT an additional external direct job just because target.owner
+-- differs from the original queued RE writer callback.
+P.onQueueSubmission(reDef,false,nil,true)
+local directBefore=P.stats.directDuringREPending
+local overlapsBefore=P.stats.spatialOverlapDirect
+reDef:apply(false,"internalQueueApply",{internalCallback=true})
+assert(P.stats.queueBackedREApply==1)
+assert(P.stats.directRESubmissions==1)
+assert(P.stats.directDuringREPending==directBefore)
+assert(P.stats.spatialOverlapDirect==overlapsBefore)
+theirDef:apply(false,"otherQueuedExecution",{internal=true})
+assert(P.stats.queueBackedOtherApply==1)
+assert(P.stats.directDuringREPending==directBefore)
+assert(P.stats.spatialOverlapDirect==overlapsBefore)
 local square=setmetatable({}, {__index=Native})
 square:addSoftSquareBrush(101,100,2,0.4,0.8,-1)
 assert(P.classify(square)=="overlap") -- square corner covers rut envelope
@@ -82,7 +98,7 @@ assert(P.stats.capturedBrushes==4)
 
 -- Only explicit writer-owned direct calls count as RE. Never as external.
 reDef:apply(false,"done",reTarget)
-assert(P.stats.directRESubmissions==1)
+assert(P.stats.directRESubmissions==2)
 assert(P.stats.directDuringREPending==5)
 
 -- A native method throwing must throw unchanged through the pass-through.
