@@ -53,19 +53,24 @@ function Backend.new(options)
     return self,nil
 end
 
+local function safeSinglePlayer()
+    if g_server==nil or g_currentMission==nil then return false end
+    local mission=g_currentMission
+    local dynamic=mission.missionDynamicInfo
+    local info=mission.missionInfo
+    -- This does not certify every possible MP flag in GIANTS. Fail closed
+    -- on known MP markers and again if the mission changes before the setter.
+    if dynamic~=nil and dynamic.isMultiplayer==true then return false end
+    if info~=nil and info.isMultiplayer==true then return false end
+    return true
+end
+
 function Backend:exclusive()
     if self.consumed or self.quarantined or self.budget.quarantined
         or self.runtime.nativeDamageQuarantined==true
         or self.writer.nativeCausalPending==true
-        or self.writer:getQueueSize()~=0 then
-        return false
-    end
-    -- API availability and server authority must be rechecked at commit.
-    if g_server==nil or g_currentMission==nil then return false end
-    local dynamic=g_currentMission.missionDynamicInfo
-    local info=g_currentMission.missionInfo
-    if dynamic~=nil and dynamic.isMultiplayer==true then return false end
-    if info~=nil and info.isMultiplayer==true then return false end
+        or self.writer:getQueueSize()~=0 then return false end
+    if not safeSinglePlayer() then return false end
     if self.journal~=self.runtime.geometryJournal then return false end
     return true
 end
@@ -81,17 +86,19 @@ function Backend:applyOnce(x,z,damageM)
     if not finite(x) or not finite(z) or not finite(damageM)
         or damageM<=0 then return nil,"INVALID_EXPERIMENT_REQUEST" end
 
-    -- The actual Candidate rechecks exclusivity before the setter; its
-    -- verifyExclusive callback cannot reuse :exclusive after consumed=true.
+    -- The candidate repeats ALL environmental checks immediately before
+    -- invoking the setter, not just checking the RE writer queue once.
+    -- A mission/MP switch during preparation must fail closed.
     local started=false
+    local ownerMission=g_currentMission
     local function recheck()
-        if started then return false end
+        if started or not safeSinglePlayer()
+            or g_currentMission~=ownerMission then return false end
         if self.quarantined or self.budget.quarantined
             or self.runtime.nativeDamageQuarantined==true
             or self.writer.nativeCausalPending==true
             or self.writer:getQueueSize()~=0 then return false end
-        return g_server~=nil and g_currentMission~=nil
-            and self.runtime.geometryJournal==self.journal
+        return self.runtime.geometryJournal==self.journal
     end
     local candidate,why=RealismExtensionsTerrainAbsoluteVertexCandidate.new({
         budget=self.budget,journal=self.journal,
