@@ -502,6 +502,15 @@ function Engine.processSample(
     appliedDepth = appliedDepth
         * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
+    -- Compare model demand with native MAIN-grid resolution without
+    -- changing terrain, geometry ownership or SpatialHistory. Each logical
+    -- wheel cell contributes only when its target increases; repeated frames
+    -- with the same target cannot fabricate further physical excavation.
+    local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
+    if shadow~=nil and type(historyStore.getKey)=="function" then
+        shadow:observe(historyStore:getKey(x,z),x,z,
+            math.max(0,tonumber(response.rutDepthM) or 0))
+    end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
     if trial~=nil and trial.enabled() and not trial.isArmed() then
