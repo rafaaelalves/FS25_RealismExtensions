@@ -1364,7 +1364,10 @@ function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
         and RealismExtensionsTerrainAbsoluteHeightPlanner~=nil then
         RealismExtensionsTerrainRuntime.absoluteShadow =
             RealismExtensionsTerrainAbsoluteHeightPlanner.new({
-                unitM=candidate.unitM,maxSources=50000
+                unitM=candidate.unitM,maxSources=50000,
+                logicalCellSizeM=RealismExtensionsTerrainRuntime.history~=nil
+                    and RealismExtensionsTerrainRuntime.history.cellSizeM
+                    or 0.20
             })
         -- Bind to the actual SpatialHistory that owns recovered cells, so
         -- confirmed tillage/municipal recovery drops outstanding SHADOW
