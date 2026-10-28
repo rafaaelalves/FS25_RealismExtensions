@@ -79,9 +79,12 @@ function Candidate:applyOne(x,z,damageM)
     local radius=unit*0.70
     local remaining,reason=journal:getLoweringBudget(
         x,z,radius,0.10,0.12)
-    if not finite(remaining) then
+    if not finite(remaining) or remaining<=0 then
+        -- An untrusted/external height edit is not a budget that may
+        -- silently accumulate more native rut debt for a later retry.
+        -- Refuse BEFORE modifying the quantized write ledger.
         self.stats.refused=self.stats.refused+1
-        return nil,reason or "UNVERIFIED_NATIVE_HEIGHT_BUDGET"
+        return nil,reason or "NO_TRUSTED_NATIVE_HEIGHT_BUDGET"
     end
     local plan,why=budget:request(key,damageM,remaining)
     if plan==nil then
