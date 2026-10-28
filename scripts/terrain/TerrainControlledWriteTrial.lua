@@ -50,6 +50,11 @@ function Trial.isArmed()
         and Trial.pending~=true
 end
 
+function Trial.isWithinMarkedRegion(x,z)
+    return Trial.enabled() and Trial.armed==true
+        and inMarkedRegion(x,z)
+end
+
 function Trial.tryReserve(x,z)
     if not Trial.isArmed() or not inMarkedRegion(x,z) then
         Trial.stats.intentsDenied=Trial.stats.intentsDenied+1
