@@ -154,12 +154,11 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
     if confirmed<=0 then return false,"NO_CONFIRMED_DECREASE" end
     source.targetM=remainingRutM
     source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
-    -- Completed restoration closes a logical rut epoch. Release the old
-    -- source key when there is no remaining shadow demand. Otherwise a
-    -- long-running farm eventually hits maxSources and new ruts stop being
-    -- observed despite all old physical ruts having been repaired.
-    local retired=remainingRutM<=0.000001
-        and source.unappliedDemandM<=0.000001
+    -- Even partial restoration can settle every unit of NEW shadow
+    -- demand. Release the inactive source then: future observations seed
+    -- their baseline from the CURRENT real SpatialHistory cell, preserving
+    -- legacy rut depth without retaining an unlimited number of idle keys.
+    local retired=source.unappliedDemandM<=0.000001
     self.stats.recoveries=self.stats.recoveries+1
     self.stats.recoveredDemandM=self.stats.recoveredDemandM+confirmed
     local vertex=self.vertices[source.vertexKey]
