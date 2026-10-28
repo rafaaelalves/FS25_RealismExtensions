@@ -93,7 +93,6 @@ function Backend:applyOnce(x,z,damageM)
         return g_server~=nil and g_currentMission~=nil
             and self.runtime.geometryJournal==self.journal
     end
-    local native=CandidateGuardedWriter
     local candidate,why=RealismExtensionsTerrainAbsoluteVertexCandidate.new({
         budget=self.budget,journal=self.journal,
         explicitWrite=true,
