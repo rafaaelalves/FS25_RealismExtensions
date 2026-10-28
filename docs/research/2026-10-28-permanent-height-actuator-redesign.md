@@ -23,7 +23,9 @@ If a verified quantum is supplied, this planner can classify whether accumulated
 - native adapter returning boolean `false` is failure, not successful write;
 - no spontaneous fallback to ADDITIVE after any native setter or readback failure.
 
-The unit-tested alternative is NOT wired into production or mapped to the wheel response yet. A forced switch without runtime proof would merely exchange a known unstable actuator for an unproven one.
+The research-only `TerrainAbsoluteHeightExperimentalBackend.lua` now loads the budget and candidate modules with the RE and provides an actual injectable engine-setter bridge, accepting only a caller-supplied, externally verified quantum, explicit research permission, disposable-save confirmation, an idle local singleplayer writer, and a single-use budget. It passes `terrainNode, x, 0, z, absoluteHeight` to the GIANTS absolute-height setter and reads back affected vertices. Even a successful mock-verified write is marked **untrusted for automatic recovery**. No ordinary gameplay path instantiates this backend or calls `applyOnce` yet.
+
+The unit-tested alternative is **NOT wired into production or mapped to wheel responses**. Merely having an available scripting API cannot prove its multiplayer/save synchronization, collision safety, or visual compatibility. A forced switch without runtime proof would replace a known unstable actuator with an unproven one.
 
 ## Remaining engineering / validation gates
 
