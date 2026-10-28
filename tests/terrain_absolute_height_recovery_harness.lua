@@ -81,6 +81,18 @@ for i=1,30 do
 end
 assert(churn.stats.recoveries==30 and churn.stats.capacityRefusals==0)
 
+-- Recovering only the NEW 3mm over a persisted 24mm rut settles the
+-- shadow contribution without pretending the older 24mm native geometry
+-- has been repaired. A later pass seeds from the remaining 24mm.
+local legacy=assert(P.new({unitM=1,maxSources=1}))
+local x=assert(legacy:observe("old",20,20,0.027,0.024))
+assert(math.abs(x.demandM-0.003)<1e-8)
+assert(legacy:onHistoryRecovered("old",0.024,0.003)==true)
+assert(legacy.sourceCount==0 and legacy:getVertex(20,20)==nil)
+local x2=assert(legacy:observe("old",20,20,0.026,0.024))
+assert(math.abs(x2.demandM-0.002)<1e-8)
+assert(legacy.sourceCount==1)
+
 -- Observer failures must not undo a completed SpatialHistory recovery.
 h:commit(3,3,{rutDepthM=0.005,longitudinalShearDistanceM=0.001})
 h.onRecovery=function()error("diagnostic-observer-should-not-break-soil")end
