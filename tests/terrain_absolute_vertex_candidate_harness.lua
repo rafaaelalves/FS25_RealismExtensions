@@ -103,4 +103,17 @@ local lostResult,lostWhy=lost:applyOne(130,130,q)
 assert(lostResult==nil and lostWhy=="EXCLUSIVITY_CHANGED")
 assert(writes==beforeGuardWrites)
 assert(lost.budget.stats.pending==0)
+-- A setter adapter returning false is failure, even without an exception.
+local j4=J.new(999,{unitM=1,sample=read})
+local b4=assert(B.new({quantumM=q}))
+local adapterFailure=assert(C.new({
+    budget=b4,journal=j4,explicitWrite=true,
+    writeHeight=function()return false end,
+    verifyExclusive=function()return true end
+}))
+local resultFailure,reasonFailure=adapterFailure:applyOne(140,140,q)
+assert(resultFailure~=nil and resultFailure.verified==false)
+assert(reasonFailure=="false")
+assert(b4.quarantined==true and j4.pendingCount==0)
+assert(adapterFailure.stats.writeErrors==1 and adapterFailure.stats.verified==0)
 print("terrain_absolute_vertex_candidate_harness: OK")
