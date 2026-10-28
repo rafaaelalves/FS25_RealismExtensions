@@ -90,6 +90,23 @@ assert(bd.quarantined==true and jd.pendingCount==0)
 assert(jd.observations["60:60"].owned==false)
 assert(jd.observations["61:61"].owned==false)
 
+-- Pre-existing foreign/invalidated geometry must not create latent
+-- quantized damage that could unexpectedly apply when ownership changes.
+local untrustedJournal=J.new(999,{unitM=1,sample=read})
+untrustedJournal.observations["80:80"]={
+    x=80,z=80,preREHeightM=base,observedHeightM=base,owned=false
+}
+local untrustedBudget=assert(B.new({quantumM=q}))
+local untrustedWriter=assert(C.new({
+    budget=untrustedBudget,journal=untrustedJournal,
+    explicitWrite=true,writeHeight=setter,
+    verifyExclusive=function()return true end
+}))
+local refusedUntrusted,whyUntrusted=untrustedWriter:applyOne(80,80,q)
+assert(refusedUntrusted==nil and whyUntrusted=="UNTRUSTED_EDIT")
+assert(untrustedBudget:getDebt("80:80")==0)
+assert(untrustedJournal.pendingCount==0)
+
 -- A fake engine that lowers the center by 15 steps instead of one:
 -- quarantine, but do not automatically raise it back on a live save.
 local j3=J.new(999,{unitM=1,sample=read})
