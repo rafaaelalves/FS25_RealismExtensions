@@ -145,10 +145,20 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
     if confirmed<=0 then return false,"NO_CONFIRMED_DECREASE" end
     source.targetM=remainingRutM
     source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
+    -- Completed restoration closes a logical rut epoch. Release the old
+    -- source key when there is no remaining shadow demand. Otherwise a
+    -- long-running farm eventually hits maxSources and new ruts stop being
+    -- observed despite all old physical ruts having been repaired.
+    local retired=remainingRutM<=0.000001
+        and source.unappliedDemandM<=0.000001
     self.stats.recoveries=self.stats.recoveries+1
     self.stats.recoveredDemandM=self.stats.recoveredDemandM+confirmed
     local vertex=self.vertices[source.vertexKey]
     if vertex~=nil then
+        if retired and vertex.members[sourceKey] then
+            vertex.members[sourceKey]=nil
+            vertex.sourceCount=math.max(0,vertex.sourceCount-1)
+        end
         local largest=0
         for key in pairs(vertex.members) do
             local member=self.sources[key]
@@ -159,6 +169,10 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
         vertex.demandM=largest
         local q=self.verifiedQuantumM
         vertex.crossed=q~=nil and largest>=q or false
+    end
+    if retired then
+        self.sources[sourceKey]=nil
+        self.sourceCount=math.max(0,self.sourceCount-1)
     end
     return true,nil
 end
