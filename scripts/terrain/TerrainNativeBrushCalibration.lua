@@ -104,14 +104,23 @@ function Cal.run()
         end
         journal:complete(token,false)
         trial.callback(ticket,state,volume)
-        local excess=lower>math.max(0.025,Cal.DEPTH_M*8)
-        if excess then rt.nativeDamageQuarantined=true end
+        -- The older 25mm/8x emergency ceiling misses a real 7.78mm
+        -- result from a 1.5mm request. In a diagnostic one-shot, ANY
+        -- >2x (and >4mm) height amplitude is unacceptable evidence:
+        -- block the rest of this disposable session, not just >25mm pits.
+        -- This does not prove the cause (quantization vs native brush).
+        local ratio=lower/math.max(Cal.DEPTH_M,0.000001)
+        local mismatch=lower>math.max(0.004,Cal.DEPTH_M*2)
+        if mismatch or not success or valid~=#(token.points or {}) then
+            rt.nativeDamageQuarantined=true
+        end
         report(string.format(
-            "CALLBACK ticket=%d nativeSuccess=%s nativeVolumeM3=%s depthRequestedM=%.5f maxLowerM=%.5f maxRaiseM=%.5f movedVertices=%d sampled=%d/%d excessQuarantine=%s (calibration is NOT owned rut geometry)",
+            "CALLBACK ticket=%d nativeSuccess=%s nativeVolumeM3=%s depthRequestedM=%.5f maxLowerM=%.5f maxRaiseM=%.5f amplitudeRatio=%.2fx mismatchQuarantine=%s movedVertices=%d sampled=%d/%d (calibration is NOT owned rut geometry)",
             ticket,tostring(success),finite(volume)
                 and string.format("%.7f",volume) or "missing",
-            Cal.DEPTH_M,lower,raise,moved,valid,
-            #(token.points or {}),tostring(excess)))
+            Cal.DEPTH_M,lower,raise,ratio,
+            tostring(rt.nativeDamageQuarantined==true),
+            moved,valid,#(token.points or {})))
     end
 
     local accepted=writer:enqueue({
