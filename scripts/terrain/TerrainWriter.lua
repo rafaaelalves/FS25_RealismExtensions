@@ -459,6 +459,23 @@ local function configureDeformationConstraints(deformation)
 end
 
 function Writer:_submitBatch(depthM, brushes, mode)
+    -- Prevent accidentally unblocking OLD RE native recovery/maintenance
+    -- commands by switching off the trial console. The experimental SHADOW
+    -- profile is a whole-writer protection, not just a wheel generator flag.
+    -- Only the explicitly commanded calibration with its own one-shot
+    -- authorization can pass through, and its native effect is still unproven.
+    local modules=RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules or nil
+    if modules~=nil and modules.TerrainPermanentActuator=="SHADOW" then
+        local explicitCalibration=modules.TerrainControlledWriteTrial==true
+            and type(brushes)=="table" and #brushes==1
+            and brushes[1].source=="CALIBRATION"
+            and mode=="LOWER"
+        if not explicitCalibration then
+            self.stats.shadowNativeBlocked=(self.stats.shadowNativeBlocked or 0)+1
+            return false,"SHADOW_PROFILE_NATIVE_WRITES_DISABLED"
+        end
+    end
     -- Absolute safety boundary: the trial observes first. Only a verified
     -- single RE causal wheel LOWER may pass when explicitly armed; every
     -- recovery/maintenance/other heightmap job is also blocked in test mode.
