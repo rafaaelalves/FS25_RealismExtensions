@@ -101,7 +101,24 @@ assert(journal.observations["250:350"].observedHeightM==postHeight)
 local joined=table.concat(lines,"\n")
 assert(joined:find("ONE_NATIVE_ACTUATOR_QUEUED",1,true))
 assert(joined:find("maxLowerM=0.05500",1,true))
-assert(joined:find("excessQuarantine=true",1,true))
+assert(joined:find("mismatchQuarantine=true",1,true))
+assert(joined:find("amplitudeRatio=36.67x",1,true))
+
+-- Regression from 2026-10-27 GIANTS runtime: 1.5mm native brush became
+-- 7.78mm at one vertex, not 25mm. It is still a severe ~5.19x mismatch
+-- and must be quarantined during a disposable diagnostic session.
+pending=nil
+Trial.reset()
+RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
+RealismExtensionsTerrainGeometryProbe.previous={
+    x=250,z=350,label="beforeOneShot"}
+ok=Cal.run()
+assert(ok==true and pending~=nil)
+assert(Trial.beforeNative("LOWER",{pending},pending.depthM)==true)
+postHeight=10-0.007782
+pending.onApplied(TerrainDeformation.STATE_SUCCESS,nil,10,postHeight,0.005859375)
+assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
+assert(table.concat(lines,"\n"):find("amplitudeRatio=5.19x",1,true))
 
 -- Busy writer or missing verified baseline refuses before touching terrain.
 pending=nil
