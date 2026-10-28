@@ -509,7 +509,8 @@ function Engine.processSample(
     local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
     if shadow~=nil and type(historyStore.getKey)=="function" then
         shadow:observe(historyStore:getKey(x,z),x,z,
-            math.max(0,tonumber(response.rutDepthM) or 0))
+            math.max(0,tonumber(response.rutDepthM) or 0),
+            math.max(0,previousDepth or 0))
     end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
