@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=2
+Planner.VERSION=3
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -32,7 +32,9 @@ function Planner.new(options)
         sources={},sourceCount=0,vertices={},
         stats={observations=0,sourceIncreases=0,duplicates=0,
             accumulatedM=0,vertexCrossings=0,rejected=0,
-            capacityRefusals=0,unverifiedQuantumEvents=0}
+            capacityRefusals=0,unverifiedQuantumEvents=0,
+            recoveries=0,recoveredDemandM=0,recoveryNoSource=0,
+            unverifiedTargetDrops=0}
     },{__index=Planner})
 end
 
@@ -62,7 +64,7 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
         -- the existing save. Otherwise first encounter would count an old
         -- persistent rut as *new* demand and duplicate its geometry.
         source={vertexKey=vertexKey,targetM=existingDepthM or 0,
-            baselineM=existingDepthM or 0}
+            unappliedDemandM=0}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
     elseif source.vertexKey~=vertexKey then
@@ -71,6 +73,13 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
         st.rejected=st.rejected+1
         return nil,"SOURCE_VERTEX_DRIFT"
     end
+    if cumulativeTargetM+0.0000001<source.targetM then
+        -- Only a confirmed logical History recovery may lower the shadow
+        -- source's baseline. A silent decrease could be stale model input.
+        st.unverifiedTargetDrops=st.unverifiedTargetDrops+1
+        return {state="TARGET_DECREASE_UNVERIFIED",vertexKey=vertexKey,
+            x=sx,z=sz,addedM=0,targetM=source.targetM}
+    end
     local delta=math.max(0,cumulativeTargetM-source.targetM)
     if delta<=0.0000001 then
         st.duplicates=st.duplicates+1
@@ -78,9 +87,12 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
             x=sx,z=sz,addedM=0,targetM=source.targetM}
     end
     source.targetM=cumulativeTargetM
+    source.unappliedDemandM=math.min(self.maxDemandPerSourceM,
+        source.unappliedDemandM+delta)
     local vertex=self.vertices[vertexKey]
     if vertex==nil then
-        vertex={x=sx,z=sz,demandM=0,crossed=false,sourceCount=0}
+        vertex={x=sx,z=sz,demandM=0,crossed=false,
+            sourceCount=0,members={}}
         self.vertices[vertexKey]=vertex
     end
     -- CRITICAL: one native 1m main-height vertex covers many logical 0.2m
@@ -89,11 +101,12 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
     -- A geometry vertex represents a HEIGHT, not the integral of source
     -- depths. For now use the largest NEW depth observed per source;
     -- future footprint/area weighting is a separate calibrated model.
-    local sourceDemand=math.max(0,source.targetM-source.baselineM)
+    local sourceDemand=source.unappliedDemandM
     vertex.demandM=math.max(vertex.demandM,sourceDemand)
     if delta>0 then
         if source.reportedToVertex~=true then
             source.reportedToVertex=true
+            vertex.members[sourceKey]=true
             vertex.sourceCount=vertex.sourceCount+1
         end
     end
@@ -113,6 +126,43 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
         quantumM=q,doesNotWrite=true}
 end
 
+-- A trusted logical-history recovery is an independent event: it is
+-- propagated only AFTER SpatialHistory has applied a positive recovery.
+-- Never infer recovery from a falling model target alone. Shadow demand is
+-- reduced by the confirmed amount, without inventing native geometry.
+function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
+    if type(sourceKey)~="string" or not finite(remainingRutM)
+        or not finite(appliedM) or appliedM<=0 or remainingRutM<0 then
+        return false,"INVALID_RECOVERY_EVENT"
+    end
+    local source=self.sources[sourceKey]
+    if source==nil then
+        self.stats.recoveryNoSource=self.stats.recoveryNoSource+1
+        return false,"SOURCE_NOT_TRACKED"
+    end
+    local previous=source.targetM
+    local confirmed=math.min(appliedM,math.max(0,previous-remainingRutM))
+    if confirmed<=0 then return false,"NO_CONFIRMED_DECREASE" end
+    source.targetM=remainingRutM
+    source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
+    self.stats.recoveries=self.stats.recoveries+1
+    self.stats.recoveredDemandM=self.stats.recoveredDemandM+confirmed
+    local vertex=self.vertices[source.vertexKey]
+    if vertex~=nil then
+        local largest=0
+        for key in pairs(vertex.members) do
+            local member=self.sources[key]
+            if member~=nil then
+                largest=math.max(largest,member.unappliedDemandM)
+            end
+        end
+        vertex.demandM=largest
+        local q=self.verifiedQuantumM
+        vertex.crossed=q~=nil and largest>=q or false
+    end
+    return true,nil
+end
+
 function Planner:getVertex(ix,iz)
     return self.vertices[tostring(ix)..":"..tostring(iz)]
 end
@@ -126,13 +176,14 @@ function Planner:summary()
         if v.sourceCount>=2 then supportedVertices=supportedVertices+1 end
     end
     return string.format(
-        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d rejected=%d capacityRefusals=%d",
+        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d rejected=%d capacityRefusals=%d",
         self.unitM,self.verifiedQuantumM~=nil
             and string.format("%.6fm",self.verifiedQuantumM) or "UNVERIFIED",
         self.sourceCount,vertices,self.stats.observations,
         self.stats.sourceIncreases,self.stats.duplicates,
         self.stats.accumulatedM,vertexDemandSumM,supportedVertices,
-        self.stats.vertexCrossings,
+        self.stats.vertexCrossings,self.stats.recoveries,
+        self.stats.recoveredDemandM,self.stats.unverifiedTargetDrops,
         self.stats.rejected,self.stats.capacityRefusals)
 end
 return Planner
