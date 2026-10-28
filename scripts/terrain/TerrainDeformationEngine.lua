@@ -1353,6 +1353,16 @@ function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
             RealismExtensionsTerrainAbsoluteHeightPlanner.new({
                 unitM=candidate.unitM,maxSources=50000
             })
+        -- Bind to the actual SpatialHistory that owns recovered cells, so
+        -- confirmed tillage/municipal recovery drops outstanding SHADOW
+        -- demands. All hooks are read-only with respect to native geometry.
+        local history=RealismExtensionsTerrainRuntime.history
+        local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
+        if history~=nil and shadow~=nil then
+            history.onRecovery=function(key,remaining,applied)
+                shadow:onHistoryRecovered(key,remaining,applied)
+            end
+        end
     end
     return true
 end
