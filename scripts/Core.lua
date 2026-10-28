@@ -376,6 +376,11 @@ function RealismExtensionsCore:update(dt)
                 ws.causalNativeStarted or 0,ws.causalNativeFinished or 0,
                 ws.causalNativePendingSkips or 0
             ))
+            if runtime.absoluteShadow~=nil
+                and type(runtime.absoluteShadow.summary)=="function" then
+                RealismExtensionsDiagnostics.info(
+                    runtime.absoluteShadow:summary())
+            end
             if RealismExtensionsTerrainControlledWriteTrial~=nil
                 and RealismExtensionsTerrainControlledWriteTrial.enabled() then
                 local t=RealismExtensionsTerrainControlledWriteTrial
