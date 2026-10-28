@@ -142,6 +142,17 @@ local function diagMin(name, value)
     runtime.stats[name] = current == nil and value or math.min(current, value)
 end
 
+-- Trial-only, read-only stage evidence. The patch distance and counters
+-- live in GeometryProbe; production rut behavior is untouched.
+local function trialStage(stage,x,z)
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if trial==nil or not trial.enabled() then return end
+    local probe=RealismExtensionsTerrainGeometryProbe
+    if probe~=nil and type(probe.observeWheelContact)=="function" then
+        probe.observeWheelContact(x,z,stage)
+    end
+end
+
 function Engine.prerequisitesPresent(specializations)
     return SpecializationUtil.hasSpecialization(Wheels, specializations)
 end
@@ -354,6 +365,7 @@ function Engine.processSample(
             or nil
         if reason ~= nil then
             diagCount("actorSuppressed_" .. tostring(reason), 1)
+            trialStage("actorBlocked",x,z)
             return false
         end
     end
@@ -366,6 +378,7 @@ function Engine.processSample(
         and type(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed) == "function"
         and RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(vehicle, nowMs) then
         diagCount("activeCultivatorRutSkips", 1)
+        trialStage("workBlocked",x,z)
         return false
     end
 
@@ -373,6 +386,7 @@ function Engine.processSample(
         and type(RealismExtensionsTerrainRecovery.isRecentlyCultivated) == "function"
         and RealismExtensionsTerrainRecovery.isRecentlyCultivated(x,z,nowMs) then
         diagCount("cultivationProtectionSkips",1)
+        trialStage("recentWorkBlocked",x,z)
         return false
     end
 
@@ -400,12 +414,14 @@ function Engine.processSample(
     if surface == nil or surface.available ~= true then
         diagCount("surfaceRejects", 1)
         diagCount("surfaceSeen_UNKNOWN", 1)
+        trialStage("surfaceUnavailable",x,z)
         return false
     end
     diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
     if (tonumber(surface.deformability01) or 0) <= 0 then
         diagCount("surfaceRejects", 1)
         diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
+        trialStage("surfaceBlocked",x,z)
         return false
     end
     diagCount("surfaceAccepted", 1)
@@ -436,6 +452,7 @@ function Engine.processSample(
     )
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
+        trialStage("responseUnavailable",x,z)
         return false
     end
 
@@ -448,6 +465,7 @@ function Engine.processSample(
             -- SoilCompaction may densify, but RE must not allocate an empty
             -- SpatialHistory tombstone or a native heightmap write.
             diagCount("plasticSupportedSamples", 1)
+            trialStage("plasticNoYield",x,z)
             return false
         end
         if response.plasticYield01 > 0 then
@@ -485,24 +503,29 @@ function Engine.processSample(
         * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
     local trial=RealismExtensionsTerrainControlledWriteTrial
-    if trial~=nil and trial.enabled() then
-        -- Only counts soil-accepted contexts that reach a potential RE
-        -- persistent rut demand. No history or terrain change.
-        if RealismExtensionsTerrainGeometryProbe~=nil
-            and type(RealismExtensionsTerrainGeometryProbe.observeWheelContact)
-                =="function" then
-            RealismExtensionsTerrainGeometryProbe.observeWheelContact(
-                x,z,"eligible")
-        end
-    end
+    trialStage("eligible",x,z)
     if trial~=nil and trial.enabled() and not trial.isArmed() then
         -- Read-only A/B baseline: compute wheel state, demand, and ground
         -- context, but never commit SpatialHistory or request native edits.
         diagCount("trialReadOnlyWheelSamples",1)
         return false
     end
+    if trial~=nil and trial.enabled()
+        and (type(trial.isWithinMarkedRegion)~="function"
+            or not trial.isWithinMarkedRegion(x,z)) then
+        -- A fully authorized test still MUST NOT commit off-site logical
+        -- history, open a journal transaction or enqueue any native edit.
+        trialStage("outsideTrial",x,z)
+        return false
+    end
 
     if appliedDepth <= writer.options.minDepthM then
+        if trial~=nil and trial.enabled() then
+            -- Test-only: tiny requests are not permission to mutate RE's
+            -- SpatialHistory outside the one native trial job.
+            trialStage("tooShallow",x,z)
+            return false
+        end
         -- Preserve shear/pass history even when the geometric delta is too
         -- small to justify a brush.
         historyStore:commit(x, z, copyHistoryForAppliedDepth(response, previousDepth, 0, history))
@@ -585,11 +608,14 @@ function Engine.processSample(
             else
                 diagCount("nativeRutGuardUntrusted",1)
             end
+            trialStage(reason=="UNTRUSTED_EDIT" and "budgetUntrusted"
+                or "budgetOther",x,z)
             return false
         end
         appliedDepth=math.min(appliedDepth,remaining)
         if appliedDepth<=writer.options.minDepthM then
             diagCount("nativeRutGuardCap",1)
+            trialStage("tooShallow",x,z)
             return false
         end
     end
@@ -602,6 +628,7 @@ function Engine.processSample(
         )
         if journalToken == nil then
             diagCount("geometryJournalDeferred", 1)
+            trialStage("journalDeferred",x,z)
             return false
         end
     end
@@ -609,6 +636,7 @@ function Engine.processSample(
     local trialTicket=nil
     if trial~=nil and trial.enabled() then
         trialTicket=trial.tryReserve(x,z)
+        if trialTicket~=nil then trialStage("ticketReserved",x,z) end
         if trialTicket==nil then
             if journalToken~=nil then journal:complete(journalToken,false) end
             return false
