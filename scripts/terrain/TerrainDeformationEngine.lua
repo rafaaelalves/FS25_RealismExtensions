@@ -1375,6 +1375,7 @@ function RealismExtensionsTerrainRuntime.clear()
     RealismExtensionsTerrainRuntime.history = nil
     RealismExtensionsTerrainRuntime.writer = nil
     RealismExtensionsTerrainRuntime.geometryJournal = nil
+    RealismExtensionsTerrainRuntime.absoluteShadow = nil
     RealismExtensionsTerrainRuntime.stats = {}
     RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
 end
