@@ -555,7 +555,10 @@ RealismExtensionsTerrainGeometryProbe=nil
 -- passes valid model targets to the pure absolute-height planner.
 local shadowObservations=0
 RealismExtensionsTerrainRuntime.absoluteShadow={
-    observe=function(self,key,x,z,target,baseline)
+    getModelHistory=function(self,key,x,z,realHistory)
+        return realHistory
+    end,
+    observe=function(self,key,x,z,target,baseline,nextHistory)
         assert(type(key)=="string")
         assert(type(x)=="number" and type(z)=="number")
         assert(target>=0 and baseline>=0)
