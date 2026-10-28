@@ -44,6 +44,18 @@ The model still never writes the heightmap or changes the persisted RE geometry/
 
 Mock suites cover each regression and the Action build parses Lua. **No run against GIANTS C++ terrain for the new setter has happened yet**; automatic rut geometry remains disabled in SHADOW mode and the draft PR must not merge.
 
+## 2026-10-28 continued implementation: shadow-demand lifecycle after tillage
+
+The 1m principal-height shadow ledger must evolve with **real accepted recovery**, not only with wheel loading. This work adds:
+
+- A reversible `unappliedDemandM` per logical 0.20m source, while each 1m vertex keeps the **maximum** (not sum) of its constituent sources. A source's first observation seeds from its actual existing SpatialHistory depth, avoiding duplicate damage after load.
+- `Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)`, which decreases only the affected source's outstanding *shadow demand* by at most the confirmed logical-history reduction, then recomputes the vertex's maximum from remaining active sources. An unverified falling wheel-response target **cannot** silently clear the ledger.
+- An optional `SpatialHistory.onRecovery` observer emitted only **after** successful `applyRecoveryAt`, `applyRecoveryCircle` and `recoverParallelogram` mutations. The runtime connects that callback to the current map's shadow planner. A callback exception is caught and counted by `recoveryObserverFaults` so diagnostic code cannot interrupt legitimate tillage or change its return value.
+- Capacity control: zero-demand/unchanged wheel targets do not allocate shadow sources. Fully settled demand frees its source and empty vertex even following a **partial** repair of a pre-existing legacy rut. Future wheel traffic creates a fresh epoch using the actual remaining history depth rather than a permanently stale maximum.
+- New integration tests with the REAL `SpatialHistory` Lua implementation (still **not** GIANTS C++) exercise partial point recovery, circular recovery, tillage/parallelogram recovery, two concurrent sources sharing one native vertex, new demand after tillage, failing observers, churn through 30 recovered epochs, and partial restoration of previously persisted ruts.
+
+Crucial safety boundary: these are **logical-history notifications only**, not evidence that GIANTS repaired main or fine displacement geometry. The `SHADOW` profile still blocks all automatic RE native height writes; the planner's in-memory debt must never be passed to a setter before map-specific vertical quantum and physical synchronization are independently verified. In particular, a future calibrated permanent writer must reconcile proven native height changes with the same journal and must **not** grant recovery ownership from this shadow counter.
+
 ## Remaining engineering / validation gates
 
 1. Verify actual FS25 `setTerrainHeightAtWorldPos` availability and exact effect in live gameplay (not only GE/editor), syncer, collisions, persistence across save/reload and true singleplayer/multiplayer semantics. An exposed API name does not prove appropriate ownership/synchronization.
