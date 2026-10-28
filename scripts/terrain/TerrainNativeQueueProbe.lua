@@ -47,7 +47,7 @@ function Probe._record(deformation,preview,callbackName,target,sourceHint)
     local spatial=RealismExtensionsTerrainNativeSpatialProbe
     if spatial~=nil and spatial.owner~=nil then
         pcall(spatial.onQueueSubmission,deformation,
-            not isRE and rePending,sourceHint)
+            not isRE and rePending,sourceHint,isRE)
     end
     if isRE then
         counter("reSubmissions")
