@@ -36,13 +36,16 @@ function Planner.new(options)
     },{__index=Planner})
 end
 
-function Planner:observe(sourceKey,x,z,cumulativeTargetM)
+function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
     local st=self.stats
     st.observations=st.observations+1
     if type(sourceKey)~="string" or sourceKey==""
         or not finite(x) or not finite(z)
         or not finite(cumulativeTargetM)
-        or cumulativeTargetM<0 or cumulativeTargetM>self.maxDemandPerSourceM then
+        or cumulativeTargetM<0 or cumulativeTargetM>self.maxDemandPerSourceM
+        or (existingDepthM~=nil and (not finite(existingDepthM)
+            or existingDepthM<0
+            or existingDepthM>self.maxDemandPerSourceM)) then
         st.rejected=st.rejected+1
         return nil,"INVALID_WHEEL_TARGET"
     end
@@ -55,7 +58,10 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM)
             st.capacityRefusals=st.capacityRefusals+1
             return nil,"SHADOW_SOURCE_CAPACITY"
         end
-        source={vertexKey=vertexKey,targetM=0}
+        -- Seed the per-logical-cell shadow with any history RE loaded from
+        -- the existing save. Otherwise first encounter would count an old
+        -- persistent rut as *new* demand and duplicate its geometry.
+        source={vertexKey=vertexKey,targetM=existingDepthM or 0}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
     elseif source.vertexKey~=vertexKey then
