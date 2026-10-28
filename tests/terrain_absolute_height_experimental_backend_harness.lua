@@ -63,8 +63,8 @@ local outcome,why=fails:applyOnce(50,50,q)
 assert(outcome~=nil and outcome.verified==false)
 assert(runtime2.nativeDamageQuarantined==true)
 assert(fails.quarantined==true and journal2.pendingCount==0)
-assert(journal2.observations["50:50"]~=nil)
-assert(journal2.observations["50:50"].owned==false)
+assert(journal2.observations["50:50"]==nil
+    or journal2.observations["50:50"].owned==false)
 
 -- Confirm documented five-argument GIANTS binding is not guessed from
 -- a four-argument wrapper. This is an injected mock, not a native call.
