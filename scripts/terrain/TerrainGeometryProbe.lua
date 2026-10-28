@@ -18,11 +18,20 @@ end
 
 Probe.writeEvents = newWriteEvents()
 
+-- Each classification describes how far a proposed wheel contact got
+-- through the model. "context" alone does not imply permanent rut demand.
+Probe.CONTACT_STAGES={
+    "context","actorBlocked","workBlocked","recentWorkBlocked",
+    "surfaceUnavailable","surfaceBlocked","responseUnavailable",
+    "plasticNoYield","eligible","tooShallow","outsideTrial",
+    "budgetUntrusted","budgetOther","journalDeferred","ticketReserved"
+}
 local function newContactEvents()
-    return {
-        context={total=0,near2m=0,near4m=0,minDistanceM=nil},
-        eligible={total=0,near2m=0,near4m=0,minDistanceM=nil}
-    }
+    local out={}
+    for _,stage in ipairs(Probe.CONTACT_STAGES) do
+        out[stage]={total=0,near2m=0,near4m=0,minDistanceM=nil}
+    end
+    return out
 end
 Probe.contactEvents = newContactEvents()
 
@@ -336,8 +345,13 @@ function Probe.capture(label)
     for _,area in ipairs({"near2m","near4m"}) do
         speak(formatWriterEvents(area, Probe.writeEvents[area], interval))
     end
-    for _,stage in ipairs({"context","eligible"}) do
-        speak(formatContactEvents(stage,Probe.contactEvents[stage],interval))
+    for _,stage in ipairs(Probe.CONTACT_STAGES) do
+        local e=Probe.contactEvents[stage]
+        -- Context/eligibility are always shown; the other stages are printed
+        -- only when actually observed, keeping the game's console useful.
+        if stage=="context" or stage=="eligible" or e.near4m>0 then
+            speak(formatContactEvents(stage,e,interval))
+        end
     end
     if previous ~= nil then
         speak(string.format(
