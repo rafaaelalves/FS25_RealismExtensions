@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=4
+Planner.VERSION=5
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -26,6 +26,8 @@ function Planner.new(options)
     end
     return setmetatable({
         unitM=u,verifiedQuantumM=quantum,
+        logicalCellSizeM=math.max(0.05,tonumber(options.logicalCellSizeM) or 0.20),
+        maxWorkedVertices=math.max(1,math.floor(tonumber(options.maxWorkedVertices) or 4096)), 
         maxSources=math.max(1,math.floor(options.maxSources or 50000)),
         maxDemandPerSourceM=math.max(0.0001,
             math.min(0.10,tonumber(options.maxDemandPerSourceM) or 0.10)),
@@ -35,7 +37,9 @@ function Planner.new(options)
             capacityRefusals=0,unverifiedQuantumEvents=0,
             recoveries=0,recoveredDemandM=0,recoveryNoSource=0,
             unverifiedTargetDrops=0,virtualHistoryUpdates=0,
-            virtualHistoryReads=0,virtualHistoryRejects=0}
+            virtualHistoryReads=0,virtualHistoryRejects=0,
+            workedAreas=0,workAreaSourcesCleared=0,
+            workAreaDemandClearedM=0,workAreaRejects=0}
     },{__index=Planner})
 end
 
@@ -122,7 +126,12 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
         -- Seed the per-logical-cell shadow with any history RE loaded from
         -- the existing save. Otherwise first encounter would count an old
         -- persistent rut as *new* demand and duplicate its geometry.
+        local sxLogical=math.floor(x/self.logicalCellSizeM+0.5)
+            *self.logicalCellSizeM
+        local szLogical=math.floor(z/self.logicalCellSizeM+0.5)
+            *self.logicalCellSizeM
         source={vertexKey=vertexKey,targetM=existingDepthM or 0,
+            x=sxLogical,z=szLogical,
             unappliedDemandM=0,modelHistory=nil}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
@@ -249,6 +258,103 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
         self.sourceCount=math.max(0,self.sourceCount-1)
     end
     return true,nil
+end
+
+-- A real GIANTS tillage work-area callback can reset *virtual* model
+-- exposure in the exact worked polygon. This does NOT certify any native
+-- geometry restoration or alter saved SpatialHistory.
+-- Bounded O(vertex bbox + active sources in bbox), not a global 50k scan.
+function Planner:onWorkedArea(geometry)
+    local g=geometry
+    local st=self.stats
+    if type(g)~="table" or not finite(g.xs) or not finite(g.zs)
+        or not finite(g.ux) or not finite(g.uz)
+        or not finite(g.vx) or not finite(g.vz) then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_GEOMETRY_UNVERIFIED"
+    end
+    local det=g.ux*g.vz-g.uz*g.vx
+    local lenU=math.sqrt(g.ux*g.ux+g.uz*g.uz)
+    local lenV=math.sqrt(g.vx*g.vx+g.vz*g.vz)
+    local margin=self.logicalCellSizeM*0.5
+    if math.abs(det)<0.00001 or lenU<=0 or lenV<=0
+        or math.abs(det)/lenV<=2*margin
+        or math.abs(det)/lenU<=2*margin then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_FOOTPRINT_TOO_NARROW"
+    end
+    local corners={
+        {g.xs,g.zs},{g.xs+g.ux,g.zs+g.uz},
+        {g.xs+g.vx,g.zs+g.vz},
+        {g.xs+g.ux+g.vx,g.zs+g.uz+g.vz}
+    }
+    local minX,maxX,minZ,maxZ=math.huge,-math.huge,math.huge,-math.huge
+    for _,p in ipairs(corners) do
+        minX=math.min(minX,p[1]);maxX=math.max(maxX,p[1])
+        minZ=math.min(minZ,p[2]);maxZ=math.max(maxZ,p[2])
+    end
+    local u=self.unitM
+    local x0,x1=math.floor(minX/u)-1,math.ceil(maxX/u)+1
+    local z0,z1=math.floor(minZ/u)-1,math.ceil(maxZ/u)+1
+    if (x1-x0+1)*(z1-z0+1)>self.maxWorkedVertices then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_BBOX_TOO_LARGE"
+    end
+    local marginU=margin*lenV/math.abs(det)
+    local marginV=margin*lenU/math.abs(det)
+    local toClear={}
+    for ix=x0,x1 do
+        for iz=z0,z1 do
+            local vertex=self.vertices[tostring(ix)..":"..tostring(iz)]
+            if vertex~=nil then
+                for key in pairs(vertex.members) do
+                    local source=self.sources[key]
+                    if source~=nil then
+                        local dx,dz=source.x-g.xs,source.z-g.zs
+                        local alpha=(dx*g.vz-dz*g.vx)/det
+                        local beta=(g.ux*dz-g.uz*dx)/det
+                        if alpha>=marginU and alpha<=1-marginU
+                            and beta>=marginV and beta<=1-marginV then
+                            toClear[key]=true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local cleared,clearedM=0,0
+    for key in pairs(toClear) do
+        local source=self.sources[key]
+        if source~=nil then
+            cleared=cleared+1
+            clearedM=clearedM+source.unappliedDemandM
+            local vertex=self.vertices[source.vertexKey]
+            if vertex~=nil then
+                vertex.members[key]=nil
+                vertex.sourceCount=math.max(0,vertex.sourceCount-1)
+                local largest=0
+                for other in pairs(vertex.members) do
+                    local remaining=self.sources[other]
+                    if remaining~=nil then
+                        largest=math.max(largest,remaining.unappliedDemandM)
+                    end
+                end
+                if vertex.sourceCount==0 then
+                    self.vertices[source.vertexKey]=nil
+                else
+                    vertex.demandM=largest
+                    vertex.crossed=self.verifiedQuantumM~=nil
+                        and largest>=self.verifiedQuantumM or false
+                end
+            end
+            self.sources[key]=nil
+            self.sourceCount=math.max(0,self.sourceCount-1)
+        end
+    end
+    st.workedAreas=st.workedAreas+1
+    st.workAreaSourcesCleared=st.workAreaSourcesCleared+cleared
+    st.workAreaDemandClearedM=st.workAreaDemandClearedM+clearedM
+    return cleared,nil
 end
 
 function Planner:getVertex(ix,iz)
