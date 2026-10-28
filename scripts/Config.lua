@@ -59,6 +59,10 @@ RealismExtensionsConfig = {
         -- Passive research: predict how much geometry would accumulate on
         -- 1m MAIN vertices. NO writes and no assumed map height quantum.
         TerrainAbsoluteHeightShadow = true,
+        -- Never re-enable the disproportional additive wheel writer simply
+        -- by turning off trial instrumentation. Research profile remains
+        -- NON-WRITING until the replacement actuator is physically proven.
+        TerrainPermanentActuator = "SHADOW",
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
