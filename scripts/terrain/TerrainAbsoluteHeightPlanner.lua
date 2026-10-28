@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=1
+Planner.VERSION=2
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -61,7 +61,8 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
         -- Seed the per-logical-cell shadow with any history RE loaded from
         -- the existing save. Otherwise first encounter would count an old
         -- persistent rut as *new* demand and duplicate its geometry.
-        source={vertexKey=vertexKey,targetM=existingDepthM or 0}
+        source={vertexKey=vertexKey,targetM=existingDepthM or 0,
+            baselineM=existingDepthM or 0}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
     elseif source.vertexKey~=vertexKey then
@@ -79,10 +80,23 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
     source.targetM=cumulativeTargetM
     local vertex=self.vertices[vertexKey]
     if vertex==nil then
-        vertex={x=sx,z=sz,demandM=0,crossed=false}
+        vertex={x=sx,z=sz,demandM=0,crossed=false,sourceCount=0}
         self.vertices[vertexKey]=vertex
     end
-    vertex.demandM=math.min(0.10,vertex.demandM+delta)
+    -- CRITICAL: one native 1m main-height vertex covers many logical 0.2m
+    -- history cells. Summing every cell's depth would multiply the same
+    -- wheel imprint by up to ~25 (or more with path interpolation).
+    -- A geometry vertex represents a HEIGHT, not the integral of source
+    -- depths. For now use the largest NEW depth observed per source;
+    -- future footprint/area weighting is a separate calibrated model.
+    local sourceDemand=math.max(0,source.targetM-source.baselineM)
+    vertex.demandM=math.max(vertex.demandM,sourceDemand)
+    if delta>0 then
+        if source.reportedToVertex~=true then
+            source.reportedToVertex=true
+            vertex.sourceCount=vertex.sourceCount+1
+        end
+    end
     st.sourceIncreases=st.sourceIncreases+1
     st.accumulatedM=st.accumulatedM+delta
     local q=self.verifiedQuantumM
@@ -105,13 +119,20 @@ end
 function Planner:summary()
     local vertices=0
     for _ in pairs(self.vertices) do vertices=vertices+1 end
+    local vertexDemandSumM=0
+    local supportedVertices=0
+    for _,v in pairs(self.vertices) do
+        vertexDemandSumM=vertexDemandSumM+v.demandM
+        if v.sourceCount>=2 then supportedVertices=supportedVertices+1 end
+    end
     return string.format(
-        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d pendingDemandSumM=%.6f quantumReadyVertices=%d rejected=%d capacityRefusals=%d",
+        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d rejected=%d capacityRefusals=%d",
         self.unitM,self.verifiedQuantumM~=nil
             and string.format("%.6fm",self.verifiedQuantumM) or "UNVERIFIED",
         self.sourceCount,vertices,self.stats.observations,
         self.stats.sourceIncreases,self.stats.duplicates,
-        self.stats.accumulatedM,self.stats.vertexCrossings,
+        self.stats.accumulatedM,vertexDemandSumM,supportedVertices,
+        self.stats.vertexCrossings,
         self.stats.rejected,self.stats.capacityRefusals)
 end
 return Planner
