@@ -56,6 +56,9 @@ RealismExtensionsConfig = {
         -- RE native heightmap write until a single wheel stroke is armed.
         -- Intended for a disposable save, not normal play or production.
         TerrainControlledWriteTrial = true,
+        -- Passive research: predict how much geometry would accumulate on
+        -- 1m MAIN vertices. NO writes and no assumed map height quantum.
+        TerrainAbsoluteHeightShadow = true,
         -- Experimental causal geometry ownership: native callbacks before mechanical debt commit.
         -- NOT production-ready until journal save/restore and recovery are validated.
         TerrainGeometryJournal = true,
