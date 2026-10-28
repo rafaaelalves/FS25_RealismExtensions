@@ -13,6 +13,7 @@ Probe.wrappers={}
 Probe.originals={}
 Probe.stats={}
 Probe.envelopes=setmetatable({},{__mode="k"})
+Probe.queuedKinds=setmetatable({},{__mode="k"})
 Probe.MAX_BRUSHES=24
 
 local function valid(n)
@@ -32,13 +33,15 @@ end
 
 function Probe.reset()
     Probe.envelopes=setmetatable({},{__mode="k"})
+    Probe.queuedKinds=setmetatable({},{__mode="k"})
     Probe.stats={
         capturedBrushes=0,skippedBrushes=0,tooManyBrushes=0,
         queueSubmissions=0,directSubmissions=0,
         directDuringREPending=0,spatialOverlapQueue=0,
         spatialOverlapDirect=0,broadEnvelopeQueue=0,
         broadEnvelopeDirect=0,unknownGeometry=0,
-        directRESubmissions=0,hookInstalls=0,
+        directRESubmissions=0,queueBackedREApply=0,
+        queueBackedOtherApply=0,hookInstalls=0,
         hookDrifts=0,hookUnavailable=0,hookErrors=0,
         sourceHints={},sourceHintOverflows=0,
         sourceHintsUnavailable=0
@@ -156,8 +159,15 @@ function Probe.classify(def)
 end
 
 -- Called from native queue observer for jobs not owned by RE.
-function Probe.onQueueSubmission(def,externalDuringRE,hint)
+function Probe.onQueueSubmission(def,externalDuringRE,hint,isRE)
     inc("queueSubmissions")
+    -- GIANTS queue processing may call TerrainDeformation:apply() with a
+    -- different callback target from the original queueJob. The *same*
+    -- deformation object is the reliable identity: count that invocation
+    -- as execution of a queued job, NOT as an independent foreign writer.
+    if object(def) then
+        Probe.queuedKinds[def]=isRE==true and "RE" or "OTHER"
+    end
     if not externalDuringRE then return end
     recordSourceHint(hint)
     local kind=Probe.classify(def)
@@ -175,6 +185,15 @@ end
 
 function Probe.onDirectSubmission(def,preview,callbackName,target,hint)
     inc("directSubmissions")
+    local queuedKind=object(def) and Probe.queuedKinds[def] or nil
+    if queuedKind=="RE" then
+        inc("queueBackedREApply")
+        inc("directRESubmissions")
+        return
+    elseif queuedKind=="OTHER" then
+        inc("queueBackedOtherApply")
+        return
+    end
     if isRE(def,target) then
         inc("directRESubmissions")
         Probe.captureRE(target)
@@ -297,6 +316,7 @@ function Probe.shutdown()
     Probe.hookState=nil
     Probe.activeRE=nil
     Probe.envelopes=setmetatable({},{__mode="k"})
+    Probe.queuedKinds=setmetatable({},{__mode="k"})
 end
 
 function Probe.formatSnapshot()
@@ -307,8 +327,9 @@ function Probe.formatSnapshot()
     end
     table.sort(sources)
     return string.format(
-        "TerrainSpatialProbe | passive=true circleBrushes=%d direct=%d directWhileRE=%d queuedObserved=%d overlappingBrushEnvelopesQueued=%d overlappingBrushEnvelopesDirect=%d broadOverlapQueued=%d broadOverlapDirect=%d geometryUnknown=%d truncated=%d hooks=%d drifts=%d unavailable=%d callerHints=[%s] unavailableHints=%d (caller is NOT proof of author or physical height change)",
+        "TerrainSpatialProbe | passive=true circleBrushes=%d direct=%d queueBackedREApply=%d queueBackedOtherApply=%d directWhileRE=%d queuedObserved=%d overlappingBrushEnvelopesQueued=%d overlappingBrushEnvelopesDirect=%d broadOverlapQueued=%d broadOverlapDirect=%d geometryUnknown=%d truncated=%d hooks=%d drifts=%d unavailable=%d callerHints=[%s] unavailableHints=%d (caller is NOT proof of author or physical height change)",
         s.capturedBrushes or 0,s.directSubmissions or 0,
+        s.queueBackedREApply or 0,s.queueBackedOtherApply or 0,
         s.directDuringREPending or 0,s.queueSubmissions or 0,
         s.spatialOverlapQueue or 0,s.spatialOverlapDirect or 0,
         s.broadEnvelopeQueue or 0,s.broadEnvelopeDirect or 0,
