@@ -444,4 +444,25 @@ assert(Recovery.isRecentlyCultivated(4.0,4.0,g_currentMission.time)==false,
 RealismExtensionsConfig.modules.TerrainCausalRecovery=nil
 Recovery.resetRuntimeState()
 
+-- Regression: only an actually processed GIANTS tillage polygon clears
+-- ephemeral SHADOW model exposure; rejected/idle work must not clear it.
+local shadowWorkCalls=0
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+RealismExtensionsTerrainRuntime.absoluteShadow={
+    onWorkedArea=function(self,g)
+        assert(g.xs==0 and g.zs==0)
+        assert(g.ux==2 and g.vz==1)
+        shadowWorkCalls=shadowWorkCalls+1
+        return 1,nil
+    end
+}
+seedHistory({})
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(shadowWorkCalls==1)
+Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
+assert(shadowWorkCalls==1)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsTerrainRuntime.absoluteShadow=nil
+Recovery.resetRuntimeState()
+
 print("terrain_recovery_r7_tillage_profiles_harness: OK")
