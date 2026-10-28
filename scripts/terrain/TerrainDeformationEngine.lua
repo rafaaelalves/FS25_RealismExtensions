@@ -1327,6 +1327,15 @@ function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
     local candidate = RealismExtensionsTerrainGeometryJournal.new(terrainNode)
     if candidate.unitM == nil then return false end
     RealismExtensionsTerrainRuntime.geometryJournal = candidate
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainAbsoluteHeightShadow==true
+        and RealismExtensionsTerrainAbsoluteHeightPlanner~=nil then
+        RealismExtensionsTerrainRuntime.absoluteShadow =
+            RealismExtensionsTerrainAbsoluteHeightPlanner.new({
+                unitM=candidate.unitM,maxSources=50000
+            })
+    end
     return true
 end
 
