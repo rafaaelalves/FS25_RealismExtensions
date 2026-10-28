@@ -645,4 +645,33 @@ assert(observed==0 and jobs==0)
 assert(#created==beforePilot+1)
 RealismExtensionsConfig.modules.TerrainControlledWriteTrial=false
 RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+-- SHADOW is independently safe even with trial controls disabled. Legacy
+-- causal-maintenance/repair or wheel writes may enqueue, but cannot reach
+-- the GIANTS native deformation constructor.
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+local beforeShadow=#created
+assert(pilot:enqueue({
+    x=903,z=903,depthM=0.01,radiusM=0.4,mode="LOWER",
+    onApplied=function()end
+}))
+observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0 and #created==beforeShadow)
+assert((pilot.stats.shadowNativeBlocked or 0)>=1)
+-- A deliberately commanded calibration still requires the one-shot trial.
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=true
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsTerrainGeometryProbe.position={x=904,z=904}
+RealismExtensionsTerrainGeometryProbe.previous={x=904,z=904}
+Trial:consoleCommand("arm")
+local calibrationTicket=assert(Trial.tryReserve(904,904))
+assert(pilot:enqueue({
+    x=904,z=904,depthM=0.0015,radiusM=0.45,
+    source="CALIBRATION",trialTicket=calibrationTicket,
+    onApplied=function()assert(Trial.callback(calibrationTicket)==true)end
+}))
+observed,jobs=pilot:flush()
+assert(observed==1 and jobs==1 and #created==beforeShadow+1)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=false
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
 print("terrain_writer_protected_one_shot_harness: OK")
