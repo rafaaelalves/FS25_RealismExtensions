@@ -44,6 +44,10 @@ function C.enabled()
         and cfg.modules.TerrainRecovery==true
         and cfg.modules.TerrainGeometryJournal==true
         and cfg.modules.TerrainCausalRecovery==true
+        -- No native heightmap writer is permitted in SHADOW. Avoid
+        -- accumulating causal restoration jobs that can never submit.
+        -- Tillage still retires purely virtual exposure separately.
+        and cfg.modules.TerrainPermanentActuator~="SHADOW"
         and journal()~=nil and journal().unitM~=nil
 end
 local function inside(x,z,g)
