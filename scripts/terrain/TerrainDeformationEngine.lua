@@ -514,6 +514,14 @@ function Engine.processSample(
     end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW" then
+        -- This is an independent permission boundary: disabling the test
+        -- console can NEVER silently reactivate additive wheel excavation.
+        diagCount("permanentActuatorShadowSkips",1)
+        return false
+    end
     if trial~=nil and trial.enabled() and not trial.isArmed() then
         -- Read-only A/B baseline: compute wheel state, demand, and ground
         -- context, but never commit SpatialHistory or request native edits.
