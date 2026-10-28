@@ -68,6 +68,28 @@ assert(j2.observations["50:50"].owned==false)
 assert(j2.observations["51:50"].owned==false)
 assert(bad:applyOne(70,70,q)==nil)
 
+-- Diagonal collateral must be scanned too. Before this protection, the
+-- journal's 1.05m sampling envelope detected cardinal neighbors but not
+-- the vertices at sqrt(2)m distance, falsely certifying a safe write.
+local jd=J.new(999,{unitM=1,sample=read})
+local bd=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local diagonal=assert(C.new({
+    budget=bd,journal=jd,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        set(x,z,y)
+        set(x+1,z+1,read(x+1,z+1)-q)
+    end
+}))
+local footprint=assert(jd:enumerateVertices(60,60,0.70))
+assert(#footprint==9)
+local diagOutcome,diagReason=diagonal:applyOne(60,60,q)
+assert(diagOutcome~=nil and diagOutcome.verified==false)
+assert(diagReason=="UNTRUSTED_NATIVE_SIDE_EFFECT")
+assert(bd.quarantined==true and jd.pendingCount==0)
+assert(jd.observations["60:60"].owned==false)
+assert(jd.observations["61:61"].owned==false)
+
 -- A fake engine that lowers the center by 15 steps instead of one:
 -- quarantine, but do not automatically raise it back on a live save.
 local j3=J.new(999,{unitM=1,sample=read})
