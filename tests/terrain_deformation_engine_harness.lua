@@ -505,7 +505,7 @@ local observedPatch={context=0,eligible=0}
 RealismExtensionsTerrainGeometryProbe={
     observeWheelContact=function(x,z,stage)
         assert(type(x)=="number" and type(z)=="number")
-        observedPatch[stage]=observedPatch[stage]+1
+        observedPatch[stage]=(observedPatch[stage] or 0)+1
     end
 }
 bodySpeedKph=5
@@ -525,6 +525,28 @@ assert(#callbacks==beforeObserveWrites)
 assert(RealismExtensionsTerrainRuntime.history.count==beforeObserveHistory)
 assert((RealismExtensionsTerrainRuntime.stats.trialReadOnlyWheelSamples or 0)>=1)
 assert(observedPatch.context>=1 and observedPatch.eligible>=1)
+
+-- Regression: while an armed one-shot targets a different marked patch,
+-- off-site wheels must not enter journals, mutate logical history or queue
+-- a writer callback even when the model requests plastic yield.
+RealismExtensionsTerrainControlledWriteTrial={
+    enabled=function()return true end,
+    isArmed=function()return true end,
+    isWithinMarkedRegion=function(x,z)return false end
+}
+wheelA.testX=690
+wheelB.testX=710
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeOffsiteHistory=RealismExtensionsTerrainRuntime.history.count
+local beforeOffsiteWrites=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeOffsiteWrites)
+assert(RealismExtensionsTerrainRuntime.history.count==beforeOffsiteHistory)
+assert((observedPatch.outsideTrial or 0)>=1)
 RealismExtensionsTerrainControlledWriteTrial=nil
 RealismExtensionsTerrainGeometryProbe=nil
 
