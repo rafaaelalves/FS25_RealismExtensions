@@ -56,6 +56,15 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
     local vertexKey=tostring(ix)..":"..tostring(iz)
     local source=self.sources[sourceKey]
     if source==nil then
+        local baseline=existingDepthM or 0
+        if cumulativeTargetM<=baseline+0.0000001 then
+            -- No NEW deformational demand: do not allocate a source for
+            -- thousands of inactive/restored wheel cells. Otherwise a
+            -- busy farm can exhaust the 50k source cap without one rut.
+            st.duplicates=st.duplicates+1
+            return {state="UNCHANGED",vertexKey=vertexKey,
+                x=sx,z=sz,addedM=0,targetM=baseline}
+        end
         if self.sourceCount>=self.maxSources then
             st.capacityRefusals=st.capacityRefusals+1
             return nil,"SHADOW_SOURCE_CAPACITY"
