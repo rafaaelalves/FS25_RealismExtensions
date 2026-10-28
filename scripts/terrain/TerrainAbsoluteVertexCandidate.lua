@@ -29,6 +29,7 @@ function Candidate.new(options)
         journal=journal,
         explicitWrite=options.explicitWrite==true,
         writeHeight=options.writeHeight,
+        verifyExclusive=options.verifyExclusive,
         stats={attempts=0,writes=0,verified=0,refused=0,
             noEffect=0,unsafe=0,writeErrors=0}
     },{__index=Candidate})
@@ -50,6 +51,15 @@ function Candidate:applyOne(x,z,damageM)
     if self.explicitWrite~=true or type(self.writeHeight)~="function" then
         self.stats.refused=self.stats.refused+1
         return nil,"RESEARCH_WRITER_DISABLED"
+    end
+    if type(self.verifyExclusive)~="function" then
+        self.stats.refused=self.stats.refused+1
+        return nil,"EXCLUSIVITY_UNAVAILABLE"
+    end
+    local isOk,exclusive=pcall(self.verifyExclusive)
+    if not isOk or exclusive~=true then
+        self.stats.refused=self.stats.refused+1
+        return nil,"EXCLUSIVITY_UNVERIFIED"
     end
     local journal,budget=self.journal,self.budget
     local unit=journal.unitM
@@ -89,6 +99,10 @@ function Candidate:applyOne(x,z,damageM)
     end
     local preflight,preReason=journal:validateBeforeSubmit(token)
     if not preflight then return abort(preReason) end
+    local stillOk,stillExclusive=pcall(self.verifyExclusive)
+    if not stillOk or stillExclusive~=true then
+        return abort("EXCLUSIVITY_CHANGED")
+    end
     local before=journal:getHeight(x,z)
     if not finite(before) then return abort("PRE_HEIGHT_UNAVAILABLE") end
     -- Absolute height request is bounded to ONE verified quantum. Unlike
