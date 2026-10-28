@@ -169,6 +169,11 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
         vertex.demandM=largest
         local q=self.verifiedQuantumM
         vertex.crossed=q~=nil and largest>=q or false
+        if vertex.sourceCount==0 and largest<=0.000001 then
+            -- No active debt or source: avoid keeping every historical 1m
+            -- vertex in RAM for the lifetime of a long-running farm.
+            self.vertices[source.vertexKey]=nil
+        end
     end
     if retired then
         self.sources[sourceKey]=nil
