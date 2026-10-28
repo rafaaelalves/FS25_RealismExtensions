@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=3
+Planner.VERSION=4
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -34,11 +34,61 @@ function Planner.new(options)
             accumulatedM=0,vertexCrossings=0,rejected=0,
             capacityRefusals=0,unverifiedQuantumEvents=0,
             recoveries=0,recoveredDemandM=0,recoveryNoSource=0,
-            unverifiedTargetDrops=0}
+            unverifiedTargetDrops=0,virtualHistoryUpdates=0,
+            virtualHistoryReads=0,virtualHistoryRejects=0}
     },{__index=Planner})
 end
 
-function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
+-- A SHADOW-only model state represents mechanical exposure and predicted
+-- rut depth. It is NOT physically confirmed, never committed to
+-- SpatialHistory and never serialized into the terrain save.
+local MODEL_FIELDS={
+    "rutDepthM","deformationExposure","longitudinalShearDistanceM",
+    "lateralShearDistanceM","slipExcavationDistanceM","passCount"
+}
+function Planner:updateModelHistory(source,nextHistory)
+    local h={}
+    for _,field in ipairs(MODEL_FIELDS) do
+        local value=nextHistory[field]
+        if value~=nil then
+            if not finite(value) or value<0 then
+                self.stats.virtualHistoryRejects=
+                    self.stats.virtualHistoryRejects+1
+                return false,"INVALID_VIRTUAL_MODEL_STATE"
+            end
+            h[field]=value
+        end
+    end
+    if not finite(h.rutDepthM) then
+        return false,"NO_VIRTUAL_RUT_DEPTH"
+    end
+    source.modelHistory=h
+    self.stats.virtualHistoryUpdates=self.stats.virtualHistoryUpdates+1
+    return true,nil
+end
+
+function Planner:getModelHistory(sourceKey,x,z,realHistory)
+    local source=self.sources[sourceKey]
+    if source==nil or not finite(x) or not finite(z) then
+        return realHistory
+    end
+    local _,ix=snap(x,self.unitM)
+    local _,iz=snap(z,self.unitM)
+    if source.vertexKey~=tostring(ix)..":"..tostring(iz) then
+        return realHistory
+    end
+    local virtual=source.modelHistory
+    if type(virtual)~="table" then return realHistory end
+    self.stats.virtualHistoryReads=self.stats.virtualHistoryReads+1
+    local result={}
+    for k,v in pairs(realHistory or {}) do result[k]=v end
+    for _,field in ipairs(MODEL_FIELDS) do
+        if virtual[field]~=nil then result[field]=virtual[field] end
+    end
+    return result
+end
+
+function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHistory)
     local st=self.stats
     st.observations=st.observations+1
     if type(sourceKey)~="string" or sourceKey==""
@@ -73,7 +123,7 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
         -- the existing save. Otherwise first encounter would count an old
         -- persistent rut as *new* demand and duplicate its geometry.
         source={vertexKey=vertexKey,targetM=existingDepthM or 0,
-            unappliedDemandM=0}
+            unappliedDemandM=0,modelHistory=nil}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
     elseif source.vertexKey~=vertexKey then
@@ -91,11 +141,19 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM)
     end
     local delta=math.max(0,cumulativeTargetM-source.targetM)
     if delta<=0.0000001 then
+        if type(nextHistory)=="table" and source.modelHistory~=nil then
+            -- Exposure/shear may progress while the rut target remains at
+            -- its physical cap. Keep this virtual only, never on the save.
+            self:updateModelHistory(source,nextHistory)
+        end
         st.duplicates=st.duplicates+1
         return {state="UNCHANGED",vertexKey=vertexKey,
             x=sx,z=sz,addedM=0,targetM=source.targetM}
     end
     source.targetM=cumulativeTargetM
+    if type(nextHistory)=="table" then
+        self:updateModelHistory(source,nextHistory)
+    end
     source.unappliedDemandM=math.min(self.maxDemandPerSourceM,
         source.unappliedDemandM+delta)
     local vertex=self.vertices[vertexKey]
@@ -153,6 +211,9 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
     local confirmed=math.min(appliedM,math.max(0,previous-remainingRutM))
     if confirmed<=0 then return false,"NO_CONFIRMED_DECREASE" end
     source.targetM=remainingRutM
+    -- A confirmed repair invalidates virtual shear/exposure accumulated
+    -- before tillage. Future model steps restart from real, repaired history.
+    source.modelHistory=nil
     source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
     -- Even partial restoration can settle every unit of NEW shadow
     -- demand. Release the inactive source then: future observations seed
