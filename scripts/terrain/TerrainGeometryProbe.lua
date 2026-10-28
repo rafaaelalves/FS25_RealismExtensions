@@ -11,8 +11,8 @@ Probe.captureIndex = 0
 
 local function newWriteEvents()
     return {
-        near2m={lower=0,target=0,other=0,raise=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0},
-        near4m={lower=0,target=0,other=0,raise=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0}
+        near2m={lower=0,target=0,other=0,raise=0,calibration=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0},
+        near4m={lower=0,target=0,other=0,raise=0,calibration=0,lowerCenterDown=0,targetCenterUp=0,targetCenterDown=0}
     }
 end
 
@@ -190,7 +190,8 @@ function Probe.observeWriterCallback(brush, mode, source, deltaY)
         or not finite(brush.x) or not finite(brush.z) then
         return
     end
-    local kind = mode == "LOWER" and "lower"
+    local kind = source == "CALIBRATION" and "calibration"
+        or mode == "LOWER" and "lower"
         or (mode == "TARGET" and source == "RECOVERY") and "target"
         or mode == "RAISE" and "raise" or "other"
     local events = Probe.writeEvents
@@ -255,9 +256,9 @@ end
 
 local function formatWriterEvents(prefix, events, interval)
     return string.format(
-        "WRITER_NEAR interval=%s area=%s wheelLower=%d (centerDown=%d) recoveryTarget=%d (centerUp=%d centerDown=%d) raise=%d other=%d (callback brush overlap, NOT per-vertex ownership)",
+        "WRITER_NEAR interval=%s area=%s wheelLower=%d (centerDown=%d) calibration=%d recoveryTarget=%d (centerUp=%d centerDown=%d) raise=%d other=%d (callback brush overlap, NOT per-vertex ownership)",
         tostring(interval),prefix,events.lower,events.lowerCenterDown,
-        events.target,events.targetCenterUp,events.targetCenterDown,
+        events.calibration,events.target,events.targetCenterUp,events.targetCenterDown,
         events.raise,events.other
     )
 end
