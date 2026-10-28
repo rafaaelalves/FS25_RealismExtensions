@@ -550,6 +550,35 @@ assert((observedPatch.outsideTrial or 0)>=1)
 RealismExtensionsTerrainControlledWriteTrial=nil
 RealismExtensionsTerrainGeometryProbe=nil
 
+-- Even without the experimental console profile, the branch-wide SHADOW
+-- policy must independently refuse geometry and history writes. It still
+-- passes valid model targets to the pure absolute-height planner.
+local shadowObservations=0
+RealismExtensionsTerrainRuntime.absoluteShadow={
+    observe=function(self,key,x,z,target,baseline)
+        assert(type(key)=="string")
+        assert(type(x)=="number" and type(z)=="number")
+        assert(target>=0 and baseline>=0)
+        shadowObservations=shadowObservations+1
+    end
+}
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+wheelA.testX=730
+wheelB.testX=750
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local shadowHistory=RealismExtensionsTerrainRuntime.history.count
+local shadowNative=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(shadowObservations>0)
+assert(#callbacks==shadowNative)
+assert(RealismExtensionsTerrainRuntime.history.count==shadowHistory)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsTerrainRuntime.absoluteShadow=nil
+
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
 
