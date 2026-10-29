@@ -82,6 +82,20 @@ local function absoluteContext()
         return nil,"MARK_TOO_FAR_FROM_MAIN_GRID_VERTEX"
     end
     local radius=unit*0.70
+    -- A vehicle contact on the intended patch makes the measurement
+    -- ambiguous and can destabilize the collision body if geometry moves.
+    -- Require the existing loaded-wheel registry; don't infer that an
+    -- unavailable registry means the patch is clear.
+    local contacts=RealismExtensionsLoadedContactRegistry
+    if contacts==nil or type(contacts.overlapsCircle)~="function" then
+        return nil,"LOADED_WHEEL_CONTACT_REGISTRY_UNAVAILABLE"
+    end
+    local missionMs=tonumber(g_currentMission.time) or 0
+    local callOk,overlap=pcall(contacts.overlapsCircle,
+        x,z,unit*1.60,missionMs)
+    if not callOk or overlap~=false then
+        return nil,"LOADED_WHEEL_CONTACT_NEAR_CALIBRATION"
+    end
     local vertices=journal:enumerateVertices(x,z,radius)
     if vertices==nil or #vertices~=9 then
         return nil,"COMPLETE_THREE_BY_THREE_NEIGHBORHOOD_UNAVAILABLE"
