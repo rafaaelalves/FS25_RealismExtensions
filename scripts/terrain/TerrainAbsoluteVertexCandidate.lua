@@ -46,7 +46,7 @@ end
 -- A single grid-aligned native 1m vertex, not an arbitrarily centered
 -- 0.2m wheel history cell. No neighborhood blending or fine-geometry claims.
 -- The RE journal owns the just-in-time provenance and nearby side-effect scan.
-function Candidate:applyOne(x,z,damageM)
+function Candidate:applyOne(x,z,damageM,contract)
     self.stats.attempts=self.stats.attempts+1
     if self.explicitWrite~=true or type(self.writeHeight)~="function" then
         self.stats.refused=self.stats.refused+1
@@ -86,7 +86,22 @@ function Candidate:applyOne(x,z,damageM)
         self.stats.refused=self.stats.refused+1
         return nil,reason or "NO_TRUSTED_NATIVE_HEIGHT_BUDGET"
     end
-    local plan,why=budget:request(key,damageM,remaining)
+    -- Future SHADOW integration passes an absolute cumulative vertex
+    -- target. It is NOT an incremental wheel event and must not add again
+    -- every frame. Legacy research harnesses can still pass a true new
+    -- incremental delta; mixed contracts on a vertex fail closed.
+    local plan,why
+    if contract=="CUMULATIVE" then
+        if type(budget.requestTarget)~="function" then
+            return nil,"CUMULATIVE_BUDGET_UNAVAILABLE"
+        end
+        plan,why=budget:requestTarget(key,damageM,remaining)
+    elseif contract==nil or contract=="INCREMENTAL" then
+        plan,why=budget:request(key,damageM,remaining)
+    else
+        self.stats.refused=self.stats.refused+1
+        return nil,"UNSUPPORTED_DAMAGE_CONTRACT"
+    end
     if plan==nil then
         self.stats.refused=self.stats.refused+1
         return nil,why
