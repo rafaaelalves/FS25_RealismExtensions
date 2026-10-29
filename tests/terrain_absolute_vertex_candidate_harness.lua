@@ -48,6 +48,35 @@ assert(another.verified==true)
 assert(writes==2 and j.observations["10:10"].preREHeightM==base)
 assert(read(11,10)==base and read(10,11)==base)
 
+-- Real SHADOW observations are cumulative: a stable 10mm logical
+-- target can request at most two verified ~3.891mm native steps. Feeding
+-- it again 50 frames must never create more than the original desired
+-- 10mm. Incremental and cumulative accounting cannot be mixed.
+local cumulativeJ=J.new(999,{unitM=1,sample=read})
+local cumulativeB=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local cumulativeCalls=0
+local cumulative=assert(C.new({
+    journal=cumulativeJ,budget=cumulativeB,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        cumulativeCalls=cumulativeCalls+1
+        set(x,z,math.floor(y/q+0.5)*q)
+    end
+}))
+for n=1,50 do
+    local result,why=cumulative:applyOne(410,410,0.010,"CUMULATIVE")
+    if result~=nil then
+        assert(result.verified==true)
+    else
+        assert(why=="SUB_QUANTUM_DEBT")
+    end
+end
+assert(cumulativeCalls==2)
+assert(math.abs(read(410,410)-(base-2*q))<0.00005)
+assert(math.abs(cumulativeB:getDebt("410:410")-(0.010-2*q))<0.000001)
+local mixedResult,mixedWhy=cumulative:applyOne(410,410,q,"INCREMENTAL")
+assert(mixedResult==nil and mixedWhy=="MIXED_DEBT_CONTRACT")
+
 -- A 'setter' that changes a neighboring vertex must NOT be certified as
 -- vertex-local even when the requested center vertex moved by exactly q.
 local j2=J.new(999,{unitM=1,sample=read})
