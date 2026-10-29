@@ -237,7 +237,7 @@ function Trial:consoleCommand(action)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|cancel]")
 end
 
 function Trial.installCommands()
