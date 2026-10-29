@@ -114,7 +114,10 @@ function Backend:applyOnce(x,z,damageM)
     -- the first setter might have been executed before a readback fault.
     self.consumed=true
     self.attempted=self.attempted+1
-    local result,err=candidate:applyOne(x,z,damageM)
+    -- This API receives the planner's cumulative vertex target, never a
+    -- delta per wheel tick. Even after explicit opt-in, double submission
+    -- cannot turn one desired rut into many stacked native excavations.
+    local result,err=candidate:applyOne(x,z,damageM,"CUMULATIVE")
     if result~=nil and result.verified==true then
         self.confirmed=self.confirmed+1
         -- Research readback success is NOT proof of savegame synchronization
