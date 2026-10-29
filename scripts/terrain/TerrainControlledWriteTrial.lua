@@ -246,8 +246,8 @@ function Trial.installCommands()
         return false
     end
     addConsoleCommand("reTerrainTrial",
-        "Protected RE terrain A/B test: status, probe, arm, calibrate, cancel",
-        "consoleCommand",Trial,"[status|probe|arm|cancel]")
+        "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|cancel]")
     Trial.commandsInstalled=true
     return true
 end
