@@ -150,7 +150,7 @@ function Trial:consoleCommand(action)
         local q=RealismExtensionsTerrainNativeQueueProbe
         local sp=RealismExtensionsTerrainNativeSpatialProbe
         return speak(string.format(
-            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s markedCenter=%s scopeRadius=%.2fm. OBSERVE is non-writing; arm allows ONE native RE wheel job on a COPIED save.",
+            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s markedCenter=%s scopeRadius=%.2fm absoluteUsed=%s. OBSERVE is non-writing; absolute is a single destructive copied-save diagnostic only.",
             Trial.armed and "ONE_SHOT_ARMED" or "OBSERVE",
             tostring(Trial.armed),tostring(Trial.reserved or "-"),
             tostring(Trial.pending),Trial.stats.nativeApproved or 0,
@@ -160,7 +160,9 @@ function Trial:consoleCommand(action)
             tostring(sp~=nil and sp.owner~=nil),
             Trial.armCenter~=nil
                 and string.format("%.2f,%.2f",Trial.armCenter.x,Trial.armCenter.z)
-                or "none",Trial.MAX_MARK_OFFSET_M
+                or "none",Trial.MAX_MARK_OFFSET_M,
+            tostring(RealismExtensionsTerrainAbsoluteSetterCalibration~=nil
+                and RealismExtensionsTerrainAbsoluteSetterCalibration.used==true)
         ))
     elseif action=="probe" then
         RealismExtensionsConfig.modules.TerrainQueueSubmissionProbe=true
