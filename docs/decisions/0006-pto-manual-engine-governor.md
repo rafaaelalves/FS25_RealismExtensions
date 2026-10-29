@@ -199,3 +199,11 @@ rather than causing every generic powered implement to be guessed as PTO.
 ## Consolidation checkpoint — 2026-10-08
 
 The previous experimental PTO line completed targeted in-game tests for non-PTO cultivator classification and actual 540-RPM PTO consumption, while harnesses covered player/AI/unattended control and mechanical bridges. The selective main-based branches (RE PR #33 and RC PR #16) now pass their CI harness/build gates. The last outstanding acceptance gate is a short **combined in-game smoke on the two clean artifacts**; this ADR is not final-release accepted until that passes. Never merge the experimental terrain history as part of PTO integration.
+
+## Etrigo Hand Throttle 1.4 source cross-audit — 2026-10-29
+
+The independent exact-ZIP [Etrigo Hand Throttle v1.4 audit](../research/2026-10-29-etrigo-hand-throttle-1.4.0.0-full-stack-audit.md) confirms the distinction between our **operator-driven minimum RPM floor** and a **feedback PI servo regulating the accelerator toward a fixed RPM**. The external mod additionally offers manual percent lever, CVT speed-limit lever, requested maximum-RPM limit, per-tractor session pause, analog-axis input and a compact HUD.
+
+**Decision remains unchanged for current PTO release:** no competing engine governor in the primary RE+RC/MR stack. Etrigo globally wraps `VehicleMotor.getRequiredMotorRpmRange` and its RPM limiter can clamp an existing floor downward; it intentionally pauses on operator exit whereas RE keeps unattended non-AI PTO running; its client-origin MP state event has no farm/controller permission guard. These are source and isolated-Lua evidence, not game runtime failure claims.
+
+**New optional design spike:** evaluate whether a clean-room, explicitly single-owner `OperatorEngineGovernor` can offer a manual % lever or a PI target RPM mode with measurable improvement over the current MR governed floor, while retaining MR/GIANTS motor torque/load/fuel, AI authority, the current shaft-ratio/PTO state, RE state persistence and authorization. Require bounded controller gains, target-vs-actual telemetry, engine ceiling/floor arbitration and unattended PTO hold policy. Avoid copying third-party code/assets absent license. **No runtime implementation authorized by this note.**
