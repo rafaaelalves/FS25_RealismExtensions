@@ -30,7 +30,14 @@ RealismExtensionsTerrainNativeSpatialProbe={
     owner={},checkIntegrity=function()return true end
 }
 g_server={}
-g_currentMission={missionInfo={isMultiplayer=false}}
+g_currentMission={time=10000,missionInfo={isMultiplayer=false}}
+local blocked=false
+RealismExtensionsLoadedContactRegistry={
+    overlapsCircle=function(x,z,radius,clock)
+        assert(x==10 and z==20 and radius>1.5 and clock==10000)
+        return blocked
+    end
+}
 local calls=0
 setTerrainHeightAtWorldPos=function(terrain,x,y,z,target)
     calls=calls+1
@@ -44,6 +51,10 @@ assert(select(1,C.inspect())==false)
 assert(select(1,C.run())==false)
 assert(calls==0)
 mark.previous.label="beforeAbsolute"
+blocked=true
+assert(select(1,C.run())==false and calls==0)
+assert(C.used==false)
+blocked=false
 g_currentMission.missionInfo.isMultiplayer=true
 assert(select(1,C.run())==false and calls==0)
 g_currentMission.missionInfo.isMultiplayer=false
