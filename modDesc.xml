@@ -81,6 +81,7 @@
         <sourceFile filename="scripts/terrain/TerrainQuantizedHeightBudget.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteVertexCandidate.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteHeightExperimentalBackend.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainAbsoluteSetterCalibration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWriter.lua"/>
         <sourceFile filename="scripts/terrain/TerrainDeformationRegistration.lua"/>
         <sourceFile filename="scripts/terrain/TerrainRecoveryRegistration.lua"/>
