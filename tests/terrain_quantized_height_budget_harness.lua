@@ -67,4 +67,49 @@ assert(denied==nil and deniedReason=="QUARANTINED")
 local other=assert(B.new({quantumM=0.0015}))
 assert(math.abs(assert(other:request("2:1",0.003,0.009)).stepM-0.0015)<1e-10)
 
+-- The SHADOW planner provides CUMULATIVE native vertex demands, not
+-- additive per-frame debt. Replaying the same 10mm target 500 times cannot
+-- manufacture a 20mm, 50mm, or 100mm rut. Only 2 full ~3.891mm steps
+-- are representable, leaving the sub-quantum remainder unspent.
+local targets=assert(B.new({quantumM=q,toleranceM=0.00012}))
+local targetKey="344:388"
+local steps=0
+for n=1,500 do
+    local plan,reason=targets:requestTarget(targetKey,0.010,0.1)
+    if plan~=nil then
+        steps=steps+1
+        local before=100-(steps-1)*q
+        local settled=assert(targets:settle(plan,before,before-q))
+        assert(settled.verified==true)
+    else
+        assert(reason=="SUB_QUANTUM_DEBT")
+    end
+end
+assert(steps==2)
+assert(math.abs(targets:getDebt(targetKey)-(0.010-2*q))<0.000001)
+assert(math.abs(targets.entries[targetKey].committedM-2*q)<0.000001)
+assert(math.abs(targets.entries[targetKey].demandTargetM-0.010)<0.000001)
+assert(math.abs(targets.stats.requestedM-0.010)<0.000001)
+assert(targets:requestTarget(targetKey,0.009,0.1)==nil)
+local _,decrease=targets:requestTarget(targetKey,0.009,0.1)
+assert(decrease=="TARGET_DECREASE_REQUIRES_RECOVERY_EPOCH")
+local _,mixed=targets:request(targetKey,q,0.1)
+assert(mixed=="MIXED_DEBT_CONTRACT")
+assert(targets:retireTarget(targetKey)==false)
+assert(targets:retireTarget(targetKey,true)==true)
+assert(targets:getDebt(targetKey)==0)
+assert(targets:requestTarget(targetKey,0.004,0.1)~=nil)
+local otherMixed=assert(B.new({quantumM=q}))
+otherMixed:request("INC",q/2,0.1)
+local _,otherReason=otherMixed:requestTarget("INC",q,0.1)
+assert(otherReason=="MIXED_DEBT_CONTRACT")
+
+-- Zero/no-effect native readback retains exactly the existing cumulative
+-- target; next attempts must never add a second copy of that target.
+local noEffect=assert(B.new({quantumM=q}))
+local x=assert(noEffect:requestTarget("x",q,0.1))
+local no,reasonNo=noEffect:settle(x,100,100)
+assert(no.verified==false and reasonNo=="NO_MEASURABLE_EFFECT")
+assert(noEffect:getDebt("x")==q)
+assert(noEffect:requestTarget("x",q,0.1)~=nil)
 print("terrain_quantized_height_budget_harness: OK")
