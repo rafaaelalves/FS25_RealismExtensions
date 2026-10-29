@@ -80,6 +80,36 @@ The existing logical-history recovery event still clears the shadow's prior expo
 
 **Boundary:** Passing these pure Lua / mocked GIANTS callbacks cannot prove wheel-track physics, absolute setter fidelity, map persistence, collision synchronization, or multiplayer. The `SHADOW` config still blocks all automatic native wheel and recovery writes. A single disposable-save absolute-height API test remains required later, before any physical actuator promotion. This iteration does **not** require repeating an agricultural play cycle now.
 
+## 2026-10-29: isolated absolute setter test ready (NOT production)
+
+The main write blocker has moved from code-level preparation to a single native FS25 experiment. A **new**, isolated `TerrainAbsoluteSetterCalibration.lua` has been loaded by `modDesc.xml` and exposed through `reTerrainTrial absoluteCheck` (read-only) and `reTerrainTrial absolute` (one destructive attempt). This is intentionally **not** the legacy additive `reTerrainTrial calibrate` and does not reuse a guessed height quantum or the production `TerrainAbsoluteHeightExperimentalBackend` verified-quantum requirement.
+
+The diagnostic:
+- Requires the SHADOW + experimental trial profile, singleplayer server, intact native queue/direct observers, no armed/in-flight trial, no RE native job and no quarantine.
+- Requires `reGeoMark` plus a matching `reGeoSnap beforeAbsolute` at the marked patch, an accessible native main-height grid, exactly 9 known neighboring vertices, trusted local geometry budget and no nearby loaded-wheel contact.
+- Snaps the marked location to one actual main-heightmap vertex; requests **once** `setTerrainHeightAtWorldPos(terrain,gridX,0,gridZ,beforeY - 0.0015)` and reads the exact center plus eight neighbors directly afterward. This tests **absolute semantics**, not the old additive brush.
+- Consumes the one-shot BEFORE calling native C++; even an exception, setter refusal or zero immediate change cannot trigger an automatic retry.
+- Discards the journal token *without granting owned native rut geometry*, invalidates any earlier trusted observations that visibly changed, and quarantines **all** further RE native edits in that game session regardless of success.
+- Requires a copied, disposable save and immediate quit **WITHOUT SAVING** after capturing the post-test logs and `reGeoSnap afterAbsolute`.
+- No assumption about vertical storage quantum; a 1.5mm request may legitimately yield 0, 1 quantized step, more than 1 step, or a failure. A callback-free immediate height read is not proof of persistence, physics/collision synchronization, or multiplayer replication.
+
+Minimal controlled test sequence on the branch's successful CODE-COMMIT artifact:
+
+```
+reTerrainTrial probe
+reTerrainTrial status
+reGeoMark
+reGeoSnap beforeAbsolute
+reTerrainTrial absoluteCheck
+reTerrainTrial absolute
+reTerrainTrial status
+reGeoSnap afterAbsolute
+```
+
+Only execute `absolute` if `absoluteCheck` reported `CHECK READY`. Stand on foot in a near-flat, unmodified patch, away from vehicles. Do not run `arm` or the old additive `calibrate` first. If a guard refuses, report logs without trying to bypass it.
+
+Coverage: `tests/terrain_absolute_setter_calibration_harness.lua` verifies the no-writing preflight, absent/mismatched snapshot, singleplayer check, untrusted journal refusal, loaded contact veto, exactly one setter call, native exception and after-call quarantine. CI parse/tests/ZIP pass; this is still a **mock**, not real engine validation. This test is the necessary next user action; do NOT ask for a whole field-work cycle.
+
 ## Remaining engineering / validation gates
 
 1. Verify actual FS25 `setTerrainHeightAtWorldPos` availability and exact effect in live gameplay (not only GE/editor), syncer, collisions, persistence across save/reload and true singleplayer/multiplayer semantics. An exposed API name does not prove appropriate ownership/synchronization.
