@@ -5,7 +5,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 1
+Model.VERSION = 2
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -43,7 +43,11 @@ function Model:request(key,damageM,remainingGeometryBudgetM)
         or remainingGeometryBudgetM<0 then
         return nil,"INVALID_REQUEST"
     end
-    local item=self.entries[key] or {debtM=0,pending=nil}
+    local item=self.entries[key] or {debtM=0,pending=nil,mode="INCREMENTAL"}
+    if item.mode~=nil and item.mode~="INCREMENTAL" then
+        return nil,"MIXED_DEBT_CONTRACT"
+    end
+    item.mode="INCREMENTAL"
     if item.pending~=nil then return nil,"VERTEX_PENDING" end
     item.debtM=math.min(self.maxDebtM,item.debtM+damageM)
     self.entries[key]=item
@@ -64,6 +68,71 @@ function Model:request(key,damageM,remainingGeometryBudgetM)
     self.stats.accepted=self.stats.accepted+1
     self.stats.pending=self.stats.pending+1
     return plan,nil
+end
+
+-- This is the contract for the SHADOW planner's cumulative vertex
+-- target. Repeated observation of the SAME logical target MUST NOT turn into
+-- repeated native digging. The target is a requested cumulative depth for a
+-- single verified geometry epoch; only measured successful writes advance
+-- committedM. This is STILL a pure planner and never writes GIANTS terrain.
+function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
+    if self.quarantined then return nil,"QUARANTINED" end
+    if type(key)~="string" or key==""
+        or not finite(cumulativeDepthM) or cumulativeDepthM<0
+        or cumulativeDepthM>self.maxDebtM
+        or not finite(remainingGeometryBudgetM)
+        or remainingGeometryBudgetM<0 then
+        return nil,"INVALID_CUMULATIVE_TARGET"
+    end
+    local item=self.entries[key]
+    if item==nil then
+        item={debtM=0,pending=nil,mode="TARGET",
+            demandTargetM=0,committedM=0}
+        self.entries[key]=item
+    end
+    if item.mode~="TARGET" then return nil,"MIXED_DEBT_CONTRACT" end
+    if item.pending~=nil then return nil,"VERTEX_PENDING" end
+    if cumulativeDepthM+0.000001<(item.demandTargetM or 0) then
+        -- A decrease needs a separately VERIFIED recovery/epoch transition.
+        -- Do not silently rebase onto transient virtual wheel input.
+        return nil,"TARGET_DECREASE_REQUIRES_RECOVERY_EPOCH"
+    end
+    local old=item.demandTargetM or 0
+    item.demandTargetM=math.max(old,cumulativeDepthM)
+    item.debtM=math.max(0,item.demandTargetM-(item.committedM or 0))
+    self.stats.requestedM=self.stats.requestedM
+        +math.max(0,item.demandTargetM-old)
+    if item.debtM+0.000001<self.quantumM then
+        self.stats.belowQuantum=self.stats.belowQuantum+1
+        return nil,"SUB_QUANTUM_DEBT"
+    end
+    if remainingGeometryBudgetM+0.000001<self.quantumM then
+        self.stats.noBudget=self.stats.noBudget+1
+        return nil,"NO_SAFE_GEOMETRY_STEP"
+    end
+    self.nextId=self.nextId+1
+    local plan={id=self.nextId,key=key,stepM=self.quantumM,
+        active=true,mode="TARGET"}
+    item.pending=plan
+    self.stats.pending=self.stats.pending+1
+    self.stats.accepted=self.stats.accepted+1
+    return plan,nil
+end
+
+-- Clearing a target is a caller-authorized event, allowed only after a
+-- separately proven restoration and with no in-flight vertex operation.
+-- This method cannot infer that cultivation physically raised the height.
+function Model:retireTarget(key,verifiedRecovery)
+    local item=self.entries[key]
+    if item==nil or item.mode~="TARGET" then
+        return false,"NO_CUMULATIVE_TARGET"
+    end
+    if item.pending~=nil then return false,"VERTEX_PENDING" end
+    if verifiedRecovery~=true then
+        return false,"RECOVERY_PROOF_REQUIRED"
+    end
+    self.entries[key]=nil
+    return true,nil
 end
 
 -- No-op plans retain their stored demand, so quantization never invents
@@ -98,6 +167,10 @@ function Model:settle(plan,beforeY,afterY)
             debtM=item.debtM},"UNBOUNDED_OBSERVED_DELTA"
     end
     item.debtM=math.max(0,item.debtM-plan.stepM)
+    if item.mode=="TARGET" then
+        item.committedM=(item.committedM or 0)+plan.stepM
+        item.debtM=math.max(0,(item.demandTargetM or 0)-item.committedM)
+    end
     self.stats.verified=self.stats.verified+1
     return {verified=true,loweringM=lowered,debtM=item.debtM},nil
 end
