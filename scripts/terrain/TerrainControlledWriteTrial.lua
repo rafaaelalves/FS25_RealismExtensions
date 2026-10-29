@@ -179,6 +179,16 @@ function Trial:consoleCommand(action)
         local ok,reason=c.run()
         return ok and speak("Calibration queued with isolated native writer")
             or speak("Calibration refused; check native journal and RE Terrain Calibration output")
+    elseif action=="absolutecheck" or action=="absolute" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil then return speak("ABSOLUTE_DIAGNOSTIC_UNAVAILABLE") end
+        if action=="absolutecheck" then
+            c.inspect()
+            return speak("Absolute 3x3 research preflight checked, NO WRITE")
+        end
+        local ok=c.run()
+        return speak(ok and "Absolute one-shot executed; QUARANTINED for this session; quit copied save WITHOUT SAVING"
+            or "Absolute one-shot REFUSED; no write attempted")
     elseif action=="cancel" or action=="observe" then
         if Trial.pending then
             return speak("A native RE job is already in flight; cannot undo it. Further RE writes remain disarmed.")
