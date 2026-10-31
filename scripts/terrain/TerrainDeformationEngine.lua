@@ -13,6 +13,11 @@ Engine.DEFAULTS = {
     inactiveSpeedKph = 0.10,
     inactiveWheelSpeedMps = 0.05,
     maxBrushDepthM = 0.003,
+    -- Temporary physical safety envelope for experimental journal-owned ruts;
+    -- depth cap is relative to the VERIFIED original main-heightmap vertex,
+    -- not to a speculative 0.20m history cell.
+    maxVerifiedNativeRutDepthM = 0.10,
+    maxPreExistingHollowM = 0.12,
     brushHardness = 0.35,
     historyCellSizeM = 0.20,
     maxHistoryCells = 50000
@@ -82,8 +87,30 @@ local function diagnosticsEnabled()
         and RealismExtensionsConfig.diagnostics.verbose == true
 end
 
+-- A few critical ownership counters stay cheap and available when the
+-- high-volume five-second research mode is OFF.
+local HEALTH_COUNTERS={
+    brushesAccepted=true,
+    geometryJournalDeferred=true,
+    geometryJournalConfirmed=true,
+    geometryJournalNoLowering=true,
+    geometryJournalConfirmedDepthM=true,
+    geometryJournalFailClosed=true,
+    geometryJournalFailed=true,
+    nativeRutGuardBlocked=true,
+    nativeRutGuardUnavailable=true,
+    nativeRutGuardCap=true,
+    nativeRutGuardOldHollow=true,
+    nativeRutGuardUntrusted=true,
+    nativeMeasuredLowerEvents=true,
+    nativeMeasuredLowerMaxSumM=true,
+    nativeMeasuredRequestedSumM=true,
+    nativeMeasuredExcessEvents=true,
+    trialReadOnlyWheelSamples=true,
+    freezeContextSamples=true
+}
 local function diagCount(name, delta)
-    if not diagnosticsEnabled() then return end
+    if not diagnosticsEnabled() and HEALTH_COUNTERS[name]~=true then return end
     local runtime = RealismExtensionsTerrainRuntime
     if runtime == nil then return end
     runtime.stats = runtime.stats or {}
@@ -113,6 +140,17 @@ local function diagMin(name, value)
     runtime.stats = runtime.stats or {}
     local current = tonumber(runtime.stats[name])
     runtime.stats[name] = current == nil and value or math.min(current, value)
+end
+
+-- Trial-only, read-only stage evidence. The patch distance and counters
+-- live in GeometryProbe; production rut behavior is untouched.
+local function trialStage(stage,x,z)
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if trial==nil or not trial.enabled() then return end
+    local probe=RealismExtensionsTerrainGeometryProbe
+    if probe~=nil and type(probe.observeWheelContact)=="function" then
+        probe.observeWheelContact(x,z,stage)
+    end
 end
 
 function Engine.prerequisitesPresent(specializations)
@@ -327,6 +365,7 @@ function Engine.processSample(
             or nil
         if reason ~= nil then
             diagCount("actorSuppressed_" .. tostring(reason), 1)
+            trialStage("actorBlocked",x,z)
             return false
         end
     end
@@ -339,6 +378,7 @@ function Engine.processSample(
         and type(RealismExtensionsTerrainRecovery.isRutGenerationSuppressed) == "function"
         and RealismExtensionsTerrainRecovery.isRutGenerationSuppressed(vehicle, nowMs) then
         diagCount("activeCultivatorRutSkips", 1)
+        trialStage("workBlocked",x,z)
         return false
     end
 
@@ -346,14 +386,27 @@ function Engine.processSample(
         and type(RealismExtensionsTerrainRecovery.isRecentlyCultivated) == "function"
         and RealismExtensionsTerrainRecovery.isRecentlyCultivated(x,z,nowMs) then
         diagCount("cultivationProtectionSkips",1)
+        trialStage("recentWorkBlocked",x,z)
         return false
     end
 
     local historyStore = RealismExtensionsTerrainRuntime.history
     local writer = RealismExtensionsTerrainRuntime.writer
 
-    local history = historyStore:get(x, z)
-    local previousDepth = history ~= nil and tonumber(history.rutDepthM) or 0
+    local persistedHistory=historyStore:get(x,z)
+    local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
+    local shadowOnly=shadow~=nil and RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW"
+    local sourceKey=type(historyStore.getKey)=="function"
+        and historyStore:getKey(x,z) or nil
+    -- The virtual history progresses physical *model* exposure even while
+    -- native geometry remains entirely untouched. Keep it separate from
+    -- recorded history, which is the only authoritative saved rut state.
+    local history=shadowOnly and sourceKey~=nil
+        and shadow:getModelHistory(sourceKey,x,z,persistedHistory)
+        or persistedHistory
+    local previousDepth=history~=nil and tonumber(history.rutDepthM) or 0
 
     -- Observability only: estimate how much currently observed instantaneous
     -- sink is already represented by RE's logical persistent-rut history.
@@ -373,12 +426,14 @@ function Engine.processSample(
     if surface == nil or surface.available ~= true then
         diagCount("surfaceRejects", 1)
         diagCount("surfaceSeen_UNKNOWN", 1)
+        trialStage("surfaceUnavailable",x,z)
         return false
     end
     diagCount("surfaceSeen_" .. tostring(surface.category or "UNKNOWN"), 1)
     if (tonumber(surface.deformability01) or 0) <= 0 then
         diagCount("surfaceRejects", 1)
         diagCount("surfaceBlocked_" .. tostring(surface.category or "UNKNOWN"), 1)
+        trialStage("surfaceBlocked",x,z)
         return false
     end
     diagCount("surfaceAccepted", 1)
@@ -409,6 +464,7 @@ function Engine.processSample(
     )
     if response == nil or response.available ~= true then
         diagCount("responseRejects", 1)
+        trialStage("responseUnavailable",x,z)
         return false
     end
 
@@ -421,6 +477,7 @@ function Engine.processSample(
             -- SoilCompaction may densify, but RE must not allocate an empty
             -- SpatialHistory tombstone or a native heightmap write.
             diagCount("plasticSupportedSamples", 1)
+            trialStage("plasticNoYield",x,z)
             return false
         end
         if response.plasticYield01 > 0 then
@@ -457,7 +514,49 @@ function Engine.processSample(
     appliedDepth = appliedDepth
         * math.max(0, math.min(1, tonumber(surface.deformability01) or 1))
 
+    -- Compare model demand with native MAIN-grid resolution without
+    -- changing terrain, geometry ownership or SpatialHistory. Each logical
+    -- wheel cell contributes only when its target increases; repeated frames
+    -- with the same target cannot fabricate further physical excavation.
+    if shadowOnly and sourceKey~=nil then
+        shadow:observe(sourceKey,x,z,
+            math.max(0,tonumber(response.rutDepthM) or 0),
+            math.max(0,tonumber(persistedHistory~=nil
+                and persistedHistory.rutDepthM) or 0),
+            response.nextHistory)
+    end
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    trialStage("eligible",x,z)
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW" then
+        -- This is an independent permission boundary: disabling the test
+        -- console can NEVER silently reactivate additive wheel excavation.
+        diagCount("permanentActuatorShadowSkips",1)
+        return false
+    end
+    if trial~=nil and trial.enabled() and not trial.isArmed() then
+        -- Read-only A/B baseline: compute wheel state, demand, and ground
+        -- context, but never commit SpatialHistory or request native edits.
+        diagCount("trialReadOnlyWheelSamples",1)
+        return false
+    end
+    if trial~=nil and trial.enabled()
+        and (type(trial.isWithinMarkedRegion)~="function"
+            or not trial.isWithinMarkedRegion(x,z)) then
+        -- A fully authorized test still MUST NOT commit off-site logical
+        -- history, open a journal transaction or enqueue any native edit.
+        trialStage("outsideTrial",x,z)
+        return false
+    end
+
     if appliedDepth <= writer.options.minDepthM then
+        if trial~=nil and trial.enabled() then
+            -- Test-only: tiny requests are not permission to mutate RE's
+            -- SpatialHistory outside the one native trial job.
+            trialStage("tooShallow",x,z)
+            return false
+        end
         -- Preserve shear/pass history even when the geometric delta is too
         -- small to justify a brush.
         historyStore:commit(x, z, copyHistoryForAppliedDepth(response, previousDepth, 0, history))
@@ -496,31 +595,317 @@ function Engine.processSample(
         end
     end
 
+    local journal = RealismExtensionsTerrainRuntime.geometryJournal
+    local causalRequired = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    -- Experimental fail-closed protection: if a previous native callback
+    -- observed a severe excess, stop new wheel writes for this session.
+    -- Mud transient physics and causal recovery remain active.
+    if causalRequired and RealismExtensionsTerrainRuntime.nativeDamageQuarantined then
+        diagCount("nativeAmplitudeQuarantineSkips",1)
+        return false
+    end
+    if causalRequired and (journal == nil or journal.unitM == nil) then
+        diagCount("geometryJournalFailClosed", 1)
+        return false
+    end
+    local journalToken = nil
+    local pendingReason = nil
+    -- Optional coarse queue-concurrency correlation, never proof that
+    -- another job changed THIS terrain patch. Direct apply() is invisible.
+    local externalQueueBaseline=nil
+    local externalDirectBaseline=nil
+    local overlapQueueBaseline=nil
+    local overlapDirectBaseline=nil
+    local brushRadius = math.max(0.10, response.rutWidthM * 0.5)
+    if journal ~= nil and causalRequired then
+        -- Independent native-grid safety ceiling: once excavation exceeds
+        -- the confirmed physical budget (or enters an existing deep hollow),
+        -- suppress further RE writes. Mud can still sink temporarily.
+        local remaining,reason=journal:getLoweringBudget(
+            x,z,brushRadius,
+            Engine.DEFAULTS.maxVerifiedNativeRutDepthM,
+            Engine.DEFAULTS.maxPreExistingHollowM
+        )
+        if remaining==nil or remaining<=0 then
+            diagCount("nativeRutGuardBlocked",1)
+            if remaining==nil then
+                diagCount("nativeRutGuardUnavailable",1)
+            elseif reason=="DEPTH_CAP" then
+                diagCount("nativeRutGuardCap",1)
+            elseif reason=="DEEP_EXISTING_HOLLOW" then
+                diagCount("nativeRutGuardOldHollow",1)
+            else
+                diagCount("nativeRutGuardUntrusted",1)
+            end
+            trialStage(reason=="UNTRUSTED_EDIT" and "budgetUntrusted"
+                or "budgetOther",x,z)
+            return false
+        end
+        appliedDepth=math.min(appliedDepth,remaining)
+        if appliedDepth<=writer.options.minDepthM then
+            diagCount("nativeRutGuardCap",1)
+            trialStage("tooShallow",x,z)
+            return false
+        end
+    end
+    if journal ~= nil then
+        -- Explicit per-native-vertex exclusion avoids claiming concurrent
+        -- lower writes as independent geometry. Retry on next wheel sample.
+        local logicalKey = historyStore:getKey(x, z)
+        journalToken, pendingReason = journal:begin(
+            logicalKey, x, z, brushRadius
+        )
+        if journalToken == nil then
+            diagCount("geometryJournalDeferred", 1)
+            trialStage("journalDeferred",x,z)
+            return false
+        end
+    end
+
+    local trialTicket=nil
+    if trial~=nil and trial.enabled() then
+        trialTicket=trial.tryReserve(x,z)
+        if trialTicket~=nil then trialStage("ticketReserved",x,z) end
+        if trialTicket==nil then
+            if journalToken~=nil then journal:complete(journalToken,false) end
+            return false
+        end
+    end
     local accepted = writer:enqueue({
+        trialTicket=trialTicket,
         x = x,
         z = z,
         depthM = appliedDepth,
-        radiusM = math.max(0.10, response.rutWidthM * 0.5),
+        radiusM = brushRadius,
         hardness = Engine.DEFAULTS.brushHardness,
-        massTransport = transport
+        massTransport = transport,
+        -- A journal token is captured at ENQUEUE, and therefore needs a
+        -- second, just-in-time native-vertex check when TerrainWriter submits
+        -- it. A changed patch must never be silently attributed to RE.
+        beforeSubmit = journalToken ~= nil and function()
+            if RealismExtensionsTerrainRuntime.nativeDamageQuarantined then
+                diagCount("nativeAmplitudeQuarantineSkips",1)
+                return false,"NATIVE_AMPLITUDE_QUARANTINE"
+            end
+            local okay,reason=journal:validateBeforeSubmit(journalToken)
+            if not okay then
+                diagCount("geometryJournalSubmitRejected",1)
+                if reason=="QUEUED_GEOMETRY_DRIFT" then
+                    diagCount("geometryJournalQueueDriftRejected",1)
+                end
+            end
+            return okay,reason
+        end or nil,
+        -- Only a submitted RE native job can delimit the observation.
+        -- Submission is notified before the actual GIANTS queue call.
+        onSubmitted = function()
+            local probe=RealismExtensionsTerrainNativeQueueProbe
+            if probe~=nil and probe.enabled==true then
+                externalQueueBaseline=
+                    (probe.stats or {}).externalDuringREPending or 0
+                local spatial=RealismExtensionsTerrainNativeSpatialProbe
+                if spatial~=nil and spatial.owner~=nil then
+                    externalDirectBaseline=
+                        (spatial.stats or {}).directDuringREPending or 0
+                    overlapQueueBaseline=
+                        (spatial.stats or {}).spatialOverlapQueue or 0
+                    overlapDirectBaseline=
+                        (spatial.stats or {}).spatialOverlapDirect or 0
+                end
+            end
+        end,
+        -- Callback-bearing writes MUST stay uncoalesced by TerrainWriter.
+        onApplied = journalToken ~= nil and function(state,deltaY,beforeY,afterY,callbackVolume)
+            if trialTicket~=nil then
+                trial.callback(trialTicket,state,callbackVolume)
+            end
+            local otherQueueWhilePending=nil
+            local probe=RealismExtensionsTerrainNativeQueueProbe
+            if externalQueueBaseline~=nil and probe~=nil then
+                otherQueueWhilePending=math.max(0,
+                    ((probe.stats or {}).externalDuringREPending or 0)
+                    -externalQueueBaseline)
+            end
+            local otherDirectWhilePending=nil
+            local queueEnvelopeOverlaps=nil
+            local directEnvelopeOverlaps=nil
+            local spatial=RealismExtensionsTerrainNativeSpatialProbe
+            if spatial~=nil and spatial.owner~=nil
+                and externalDirectBaseline~=nil then
+                local ds=spatial.stats or {}
+                otherDirectWhilePending=math.max(0,
+                    (ds.directDuringREPending or 0)-externalDirectBaseline)
+                queueEnvelopeOverlaps=math.max(0,
+                    (ds.spatialOverlapQueue or 0)-overlapQueueBaseline)
+                directEnvelopeOverlaps=math.max(0,
+                    (ds.spatialOverlapDirect or 0)-overlapDirectBaseline)
+            end
+            local success = state ~= false
+                and (state == nil or TerrainDeformation == nil
+                    or TerrainDeformation.STATE_SUCCESS == nil
+                    or state == TerrainDeformation.STATE_SUCCESS)
+            local physical = journal:complete(journalToken, success)
+            if physical ~= nil and physical.success
+                and physical.loweredVertices > 0 then
+                -- Maintain a physical debt consistent with the REAL native
+                -- height change rather than the requested 2-3mm command.
+                -- Before this correction a 148mm native rut received only
+                -- 2.4mm of SpatialHistory debt, making passive NPC/public
+                -- maintenance wrongly skip even a deep, journal-owned rut.
+                -- This is a coarse 0.20m proxy: the immutable per-native-
+                -- vertex GeometryJournal remains the recovery authority.
+                local observed=math.max(0,physical.maxLowerM)
+                -- GIANTS callback displacedVolume is a second, independent
+                -- outcome signal. It is NOT a per-vertex depth measurement;
+                -- a soft brush also does not excavate a full cylinder.
+                local nominalCylinderM3=math.pi*brushRadius*brushRadius*appliedDepth
+                local nativeVolumeM3=type(callbackVolume)=="number"
+                    and callbackVolume==callbackVolume
+                    and callbackVolume>=0 and callbackVolume<math.huge
+                    and callbackVolume or nil
+                local nativeVolumeLabel=nativeVolumeM3~=nil
+                    and string.format("%.7f",nativeVolumeM3) or "missing"
+                local volumeRatioLabel=nativeVolumeM3~=nil
+                    and nominalCylinderM3>0
+                    and string.format("%.2f",nativeVolumeM3/nominalCylinderM3)
+                    or "missing"
+                -- Detection must PRECEDE any physical debt commit. The
+                -- callback interval is not globally exclusive to RE; a
+                -- concurrent native writer or a nonlinear GIANTS brush can
+                -- make the observed delta larger than this request. In that
+                -- case do not grant RE authority to restore that terrain.
+                local excess=observed>appliedDepth+0.002
+                local unexpectedRise=(physical.raisedVertices or 0)>0
+                local untrustedOutcome=excess or unexpectedRise
+                if untrustedOutcome then
+                    if type(journal.invalidateCompletedFootprint)=="function" then
+                        journal:invalidateCompletedFootprint(
+                            journalToken,
+                            unexpectedRise and "UNEXPECTED_LOWER_RISE"
+                                or "EXCESS_NATIVE_LOWERING")
+                    end
+                    diagCount("geometryJournalOwnershipQuarantined",1)
+                end
+                if observed > 0.00005 and not untrustedOutcome then
+                    local current = historyStore:get(x, z)
+                    local currentDepth = current ~= nil
+                        and tonumber(current.rutDepthM) or previousDepth
+                    historyStore:commit(
+                        x,
+                        z,
+                        copyHistoryForAppliedDepth(
+                            response, currentDepth, observed, current,
+                            preDeformReferenceY
+                        )
+                    )
+                    diagCount("geometryJournalConfirmedDepthM", observed)
+                end
+                if not untrustedOutcome then
+                    diagCount("geometryJournalConfirmed", 1)
+                end
+                -- Geometry outcome is the engine result, not the 3mm request.
+                -- Compare the SAME brush's pre-/post-heightmap delta with
+                -- its submitted amount to catch native amplification.
+                diagCount("nativeMeasuredLowerEvents",1)
+                diagCount("nativeMeasuredLowerMaxSumM",physical.maxLowerM)
+                diagCount("nativeMeasuredRequestedSumM",appliedDepth)
+                if excess then
+                    diagCount("nativeMeasuredExcessEvents",1)
+                    local rt=RealismExtensionsTerrainRuntime
+                    -- One 25mm+ response to a 2-3mm request is already an
+                    -- unacceptable risk for a live game save. Do not allow
+                    -- another RE native lowering until the actuator has been
+                    -- studied; this does not erase or regrade existing soil.
+                    if not rt.nativeDamageQuarantined
+                        and physical.maxLowerM>math.max(0.025,appliedDepth*8) then
+                        rt.nativeDamageQuarantined=true
+                        diagCount("nativeAmplitudeQuarantineTriggers",1)
+                        if RealismExtensionsDiagnostics~=nil
+                            and type(RealismExtensionsDiagnostics.info)=="function" then
+                            RealismExtensionsDiagnostics.info(string.format(
+                                "TerrainNativeQuarantine | x=%.2f z=%.2f request=%.4fm observed=%.4fm reason=EXCESS_NATIVE_LOWERING nativeCallbackVolumeM3=%s nominalCylinderM3=%.7f volumeRatio=%s otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s (brush overlap is NOT physical height attribution)",
+                                x,z,appliedDepth,physical.maxLowerM,
+                                nativeVolumeLabel,nominalCylinderM3,volumeRatioLabel,
+                                otherQueueWhilePending~=nil
+                                    and tostring(otherQueueWhilePending)
+                                    or "unobserved",
+                                otherDirectWhilePending~=nil
+                                    and tostring(otherDirectWhilePending)
+                                    or "unobserved",
+                                queueEnvelopeOverlaps~=nil
+                                    and tostring(queueEnvelopeOverlaps)
+                                    or "unobserved",
+                                directEnvelopeOverlaps~=nil
+                                    and tostring(directEnvelopeOverlaps)
+                                    or "unobserved"))
+                        end
+                    end
+                    rt.nativeExcessExamples=(rt.nativeExcessExamples or 0)+1
+                    if rt.nativeExcessExamples<=6
+                        and RealismExtensionsDiagnostics~=nil
+                        and type(RealismExtensionsDiagnostics.info)=="function" then
+                        RealismExtensionsDiagnostics.info(string.format(
+                            "TerrainNativeDelta | x=%.2f z=%.2f requested=%.4fm actualMax=%.4fm samples=%d moved=%d wetness=%.3f frozen=%s pressurePa=%.0f slip=%.3f bearingRatio=%.3f vertex=%s beforeY=%.6f afterY=%.6f nativeCallbackVolumeM3=%s nominalCylinderM3=%.7f volumeRatio=%s otherQueuedWhilePending=%s otherDirectWhilePending=%s overlappingQueueBrushes=%s overlappingDirectBrushes=%s",
+                            x,z,appliedDepth,physical.maxLowerM,
+                            physical.sampledVertices or 0,physical.loweredVertices or 0,
+                            tonumber(context.physicalGroundWetness) or -1,
+                            tostring(context.hardFrozen==true),
+                            tonumber(footprint.groundPressurePa) or 0,
+                            tonumber(context.longitudinalSlip) or 0,
+                            tonumber(response.plasticDemandBearingRatio) or -1,
+                            tostring(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.key or "none"),
+                            tonumber(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.beforeY) or 0,
+                            tonumber(physical.maxLowerPoint ~= nil
+                                and physical.maxLowerPoint.afterY) or 0,
+                            nativeVolumeLabel,nominalCylinderM3,volumeRatioLabel,
+                            otherQueueWhilePending~=nil
+                                and tostring(otherQueueWhilePending)
+                                or "unobserved",
+                            otherDirectWhilePending~=nil
+                                and tostring(otherDirectWhilePending)
+                                or "unobserved",
+                            queueEnvelopeOverlaps~=nil
+                                and tostring(queueEnvelopeOverlaps)
+                                or "unobserved",
+                            directEnvelopeOverlaps~=nil
+                                and tostring(directEnvelopeOverlaps)
+                                or "unobserved"
+                        ))
+                    end
+                end
+            elseif physical ~= nil and physical.success then
+                diagCount("geometryJournalNoLowering", 1)
+            else
+                diagCount("geometryJournalFailed", 1)
+            end
+        end or nil
     })
 
     if accepted then
-        historyStore:commit(
-            x,
-            z,
-            copyHistoryForAppliedDepth(
-                response, previousDepth, appliedDepth, history,
-                preDeformReferenceY
+        if journalToken == nil then
+            -- Legacy experimental mode only: a queued request counts as debt.
+            historyStore:commit(
+                x,
+                z,
+                copyHistoryForAppliedDepth(
+                    response, previousDepth, appliedDepth, history,
+                    preDeformReferenceY
+                )
             )
-        )
-        if preDeformReferenceY ~= nil then
-            diagCount("preDeformReferenceCaptured", 1)
-        elseif history ~= nil and history.preDeformHeightM ~= nil then
-            diagCount("preDeformReferencePreserved", 1)
-        else
-            diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            if preDeformReferenceY ~= nil then
+                diagCount("preDeformReferenceCaptured", 1)
+            elseif history ~= nil and history.preDeformHeightM ~= nil then
+                diagCount("preDeformReferencePreserved", 1)
+            else
+                diagCount("preDeformReferenceLegacyOrUnavailable", 1)
+            end
         end
+        -- Journal mode also owns an accepted request, but NOT physical debt.
+        -- Its native callback alone commits that debt when height lowered.
         diagCount("brushesAccepted", 1)
         diagCount("appliedDepthM", appliedDepth)
         if actor ~= nil then
@@ -586,6 +971,10 @@ function Engine.processSample(
         return true
     end
 
+    if trialTicket~=nil and trial~=nil then
+        trial.abandon(trialTicket)
+    end
+    if journalToken ~= nil then journal:complete(journalToken, false) end
     diagCount("writerRejects", 1)
     return false
 end
@@ -687,6 +1076,59 @@ function Engine.processWheel(vehicle, wheel, dt)
 
     diagCount("contextAccepted", 1)
     state.hadContext = true
+    -- A marked-patch context sample is not a terrain write. It distinguishes
+    -- "some wheel moved anywhere" from "a grounded wheel crossed our exact
+    -- measurement zone" in the read-only baseline.
+    if RealismExtensionsTerrainControlledWriteTrial~=nil
+        and RealismExtensionsTerrainControlledWriteTrial.enabled()
+        and RealismExtensionsTerrainGeometryProbe~=nil
+        and type(RealismExtensionsTerrainGeometryProbe.observeWheelContact)
+            =="function" then
+        RealismExtensionsTerrainGeometryProbe.observeWheelContact(
+            context.worldX,context.worldZ,"context")
+    end
+    -- Per-wheel 250ms-capability sampling is passive and makes NO native
+    -- heightmap or wheel-physics change. Crucially, it records any non-1
+    -- scale already owned by another mod before we plan a future writer.
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.NativeWheelDisplacementObservation == true
+        and RealismExtensionsTerrainNativeWheelBridge ~= nil then
+        RealismExtensionsTerrainNativeWheelBridge.observe(vehicle,wheel)
+    end
+    -- Single transition record, NOT per-wheel/per-frame climate spam. This
+    -- compares the Mud-provided frozen state with current GIANTS air temp.
+    local rt=RealismExtensionsTerrainRuntime
+    if rt~=nil and type(context.hardFrozen)=="boolean" then
+        if context.hardFrozen then
+            diagCount("freezeContextSamples",1)
+        end
+        if rt.lastFreezeState==nil
+            or rt.lastFreezeState~=context.hardFrozen then
+            rt.lastFreezeState=context.hardFrozen
+            rt.freezeTransitionCount=(rt.freezeTransitionCount or 0)+1
+            if rt.freezeTransitionCount<=8
+                and RealismExtensionsDiagnostics~=nil
+                and type(RealismExtensionsDiagnostics.info)=="function" then
+                local env=g_currentMission~=nil
+                    and g_currentMission.environment or nil
+                local weather=env~=nil and env.weather or nil
+                local air=nil
+                if weather~=nil
+                    and type(weather.getCurrentTemperature)=="function" then
+                    local ok,v=pcall(weather.getCurrentTemperature,weather)
+                    if ok and type(v)=="number" then air=v end
+                end
+                RealismExtensionsDiagnostics.info(string.format(
+                    "TerrainFreezeState | frozen=%s airC=%s wetness=%.3f x=%.1f z=%.1f (source=Mud via RC; air is not soil temperature)",
+                    tostring(context.hardFrozen),
+                    air~=nil and string.format("%.2f",air) or "unknown",
+                    tonumber(context.physicalGroundWetness) or -1,
+                    context.worldX or 0,context.worldZ or 0
+                ))
+            end
+        end
+    end
 
     local footprint = RealismExtensionsFootprintModel.compute(context)
     if footprint == nil or footprint.available ~= true then
@@ -880,11 +1322,14 @@ end
 RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     history = nil,
     writer = nil,
+    geometryJournal = nil,
+    absoluteShadow = nil,
     stats = {}
 }
 
 function RealismExtensionsTerrainRuntime.initialize()
     RealismExtensionsTerrainRuntime.stats = {}
+    RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
     if RealismExtensionsTerrainRuntime.history == nil then
         RealismExtensionsTerrainRuntime.history = RealismExtensionsSpatialHistory.new({
             cellSizeM = Engine.DEFAULTS.historyCellSizeM,
@@ -895,6 +1340,47 @@ function RealismExtensionsTerrainRuntime.initialize()
     if RealismExtensionsTerrainRuntime.writer == nil then
         RealismExtensionsTerrainRuntime.writer = RealismExtensionsTerrainWriter.new()
     end
+    RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+end
+
+-- The initial loadMap hook can run before mission.terrainRootNode exists.
+-- Retry only until a real native map node and a positive unit are available.
+function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then return true end
+    if RealismExtensionsConfig == nil or RealismExtensionsConfig.modules == nil
+        or RealismExtensionsConfig.modules.TerrainGeometryJournal ~= true
+        or RealismExtensionsTerrainGeometryJournal == nil then return false end
+    local missionNode = g_currentMission ~= nil
+        and g_currentMission.terrainRootNode or nil
+    local terrainNode = type(missionNode) == "number" and missionNode > 0
+        and missionNode or g_terrainNode
+    if type(terrainNode) ~= "number" or terrainNode <= 0 then return false end
+    local candidate = RealismExtensionsTerrainGeometryJournal.new(terrainNode)
+    if candidate.unitM == nil then return false end
+    RealismExtensionsTerrainRuntime.geometryJournal = candidate
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainAbsoluteHeightShadow==true
+        and RealismExtensionsTerrainAbsoluteHeightPlanner~=nil then
+        RealismExtensionsTerrainRuntime.absoluteShadow =
+            RealismExtensionsTerrainAbsoluteHeightPlanner.new({
+                unitM=candidate.unitM,maxSources=50000,
+                logicalCellSizeM=RealismExtensionsTerrainRuntime.history~=nil
+                    and RealismExtensionsTerrainRuntime.history.cellSizeM
+                    or 0.20
+            })
+        -- Bind to the actual SpatialHistory that owns recovered cells, so
+        -- confirmed tillage/municipal recovery drops outstanding SHADOW
+        -- demands. All hooks are read-only with respect to native geometry.
+        local history=RealismExtensionsTerrainRuntime.history
+        local shadow=RealismExtensionsTerrainRuntime.absoluteShadow
+        if history~=nil and shadow~=nil then
+            history.onRecovery=function(key,remaining,applied)
+                shadow:onHistoryRecovered(key,remaining,applied)
+            end
+        end
+    end
+    return true
 end
 
 function RealismExtensionsTerrainRuntime.flush()
@@ -927,7 +1413,13 @@ function RealismExtensionsTerrainRuntime.clear()
     if RealismExtensionsTerrainRuntime.writer ~= nil then
         RealismExtensionsTerrainRuntime.writer:clear()
     end
+    if RealismExtensionsTerrainRuntime.geometryJournal ~= nil then
+        RealismExtensionsTerrainRuntime.geometryJournal:reset()
+    end
     RealismExtensionsTerrainRuntime.history = nil
     RealismExtensionsTerrainRuntime.writer = nil
+    RealismExtensionsTerrainRuntime.geometryJournal = nil
+    RealismExtensionsTerrainRuntime.absoluteShadow = nil
     RealismExtensionsTerrainRuntime.stats = {}
+    RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
 end

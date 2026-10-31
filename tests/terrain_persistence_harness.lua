@@ -7,6 +7,8 @@ local function newXml(path)
     function xml:setInt(k,v) values[k]=v end
     function xml:setFloat(k,v) values[k]=v end
     function xml:setString(k,v) values[k]=v end
+    function xml:setBool(k,v) values[k]=v end
+    function xml:getBool(k,d) local v=values[k]; if v==nil then return d end; return v end
     function xml:getInt(k,d) local v=values[k]; if v==nil then return d end; return v end
     function xml:getFloat(k,d) local v=values[k]; if v==nil then return d end; return v end
     function xml:getString(k,d) local v=values[k]; if v==nil then return d end; return v end
@@ -36,6 +38,7 @@ function XMLFile.load(_,path)
     function xml:getInt(k,d) local v=self._values[k]; if v==nil then return d end; return v end
     function xml:getFloat(k,d) local v=self._values[k]; if v==nil then return d end; return v end
     function xml:getString(k,d) local v=self._values[k]; if v==nil then return d end; return v end
+    function xml:getBool(k,d) local v=self._values[k]; if v==nil then return d end; return v end
     function xml:iterate(prefix,fn)
         local indices={}
         for key in pairs(self._values) do
@@ -59,6 +62,7 @@ g_currentMission={missionInfo={mapId="testMap",savegameDirectory="/save",isValid
 
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainPersistence.lua")
+dofile("scripts/terrain/TerrainGeometryJournal.lua")
 
 local h=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
 h:commit(1.0,2.0,{rutDepthM=0.03,longitudinalShearDistanceM=1.2,lateralShearDistanceM=0.2,slipExcavationDistanceM=2.5,deformationExposure=3.4,passCount=7,maintenanceAgePeriods=3})
@@ -100,9 +104,78 @@ local accepted,reason=RealismExtensionsTerrainPersistence.load(g_currentMission.
 assert(accepted==false and reason=="map identity mismatch")
 assert(foreign.count==0)
 
--- Clients never write authoritative history.
+-- Native geometry journal persists in a separate sidecar. It stores only
+-- successful main-grid lowering, never pending/failed transactions.
+local geoApi=RealismExtensionsTerrainGeometryJournal
+local nilJournal=geoApi.new(nil,{sample=function() return 100 end})
+local nilSaved,why=RealismExtensionsTerrainPersistence.saveGeometryJournal(
+    g_currentMission.missionInfo,nilJournal
+)
+assert(nilSaved==false and string.find(why,"unit unavailable",1,true)~=nil)
+local journal=geoApi.new(42,{unitM=1})
+local transaction=assert(journal:begin("wheel-1",5,5,0.3))
+terrainHeights["5:5"]=99.94
+assert(journal:complete(transaction,true).loweredVertices==1)
+local geoSave,geoCount=RealismExtensionsTerrainPersistence.saveGeometryJournal(
+    g_currentMission.missionInfo,journal
+)
+assert(geoSave==true and geoCount>=1)
+local j2=geoApi.new(42,{unitM=1})
+local geoLoad,n,invalid=RealismExtensionsTerrainPersistence.loadGeometryJournal(
+    g_currentMission.missionInfo,j2
+)
+assert(geoLoad and n>=1 and invalid==0)
+assert(j2.observations["5:5"].owned==true)
+assert(math.abs(j2.observations["5:5"].preREHeightM-100)<0.000001)
+-- Simulate loading an old on-disk v1 sidecar from before the new
+-- callback-mismatch protection: the height remains, but ownership does not.
+local geometryPath=nil
+for path in pairs(files) do
+    if string.find(path,"realismExtensionsGeometryJournal",1,true) then
+        geometryPath=path
+        break
+    end
+end
+assert(geometryPath~=nil)
+local versionKey=RealismExtensionsTerrainPersistence.GEOMETRY_ROOT..
+    "#formatVersion"
+assert(files[geometryPath][versionKey]==2)
+files[geometryPath][versionKey]=1
+local legacyJournal=geoApi.new(42,{unitM=1})
+local legacyOk,legacyCount,legacyRejected=
+    RealismExtensionsTerrainPersistence.loadGeometryJournal(
+        g_currentMission.missionInfo,legacyJournal)
+assert(legacyOk and legacyCount>=1 and legacyRejected==0)
+assert(legacyJournal.observations["5:5"].owned==false)
+assert(legacyJournal:getRecoverablePoint(5,5)==nil)
+assert(legacyJournal.stats.legacyProvenanceDowngraded>=1)
+assert(terrainHeights["5:5"]==99.94)
+files[geometryPath][versionKey]=2
+
+-- Imported references must not authorize restore if saved geometry differs
+-- from the loaded GIANTS heightmap after a manual landscaping operation.
+terrainHeights["5:5"]=99.2
+local j3=geoApi.new(42,{unitM=1})
+local acceptedJournal,loadedCount,excluded=RealismExtensionsTerrainPersistence.loadGeometryJournal(
+    g_currentMission.missionInfo,j3
+)
+assert(acceptedJournal and excluded>=1)
+assert(j3.observations["5:5"]==nil)
+terrainHeights["5:5"]=99.94
+local wrongMap=g_currentMission.missionInfo.mapId
+g_currentMission.missionInfo.mapId="anotherMap"
+local mapOk,mapWhy=RealismExtensionsTerrainPersistence.loadGeometryJournal(
+    g_currentMission.missionInfo,geoApi.new(42,{unitM=1})
+)
+assert(mapOk==false and mapWhy=="geometry journal map identity mismatch")
+g_currentMission.missionInfo.mapId=wrongMap
+
+-- Clients never write authoritative history or geometry journal.
 g_server=nil
 local clientOk=RealismExtensionsTerrainPersistence.save(g_currentMission.missionInfo,h)
 assert(clientOk==false)
+assert(RealismExtensionsTerrainPersistence.saveGeometryJournal(
+    g_currentMission.missionInfo,journal
+)==false)
 
 print("terrain_persistence_harness: OK")

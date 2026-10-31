@@ -1,0 +1,392 @@
+-- Experimental no-write planner for permanent MAIN-heightmap rut geometry.
+-- Keeps the sub-quantum demand in a separate, volatile ledger; NEVER calls
+-- GIANTS setters, changes SpatialHistory, or certifies recovery ownership.
+-- Main 1m vertices are NOT the separate fine wheel-displacement surface.
+RealismExtensionsTerrainAbsoluteHeightPlanner =
+    RealismExtensionsTerrainAbsoluteHeightPlanner or {}
+local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
+Planner.VERSION=5
+local function finite(v)
+    return type(v)=="number" and v==v
+        and v~=math.huge and v~=-math.huge
+end
+local function snap(value,unit)
+    local i=math.floor(value/unit+0.5)
+    return i*unit,i
+end
+function Planner.new(options)
+    options=options or {}
+    local u=tonumber(options.unitM)
+    if not finite(u) or u<=0 then return nil,"MAIN_UNIT_UNAVAILABLE" end
+    -- A caller cannot use one 7.78mm event to infer a reliable map quantum.
+    local quantum=tonumber(options.verifiedQuantumM)
+    if quantum~=nil and (not finite(quantum)
+        or quantum<0.00025 or quantum>0.05) then
+        return nil,"QUANTUM_NOT_VERIFIED"
+    end
+    return setmetatable({
+        unitM=u,verifiedQuantumM=quantum,
+        logicalCellSizeM=math.max(0.05,tonumber(options.logicalCellSizeM) or 0.20),
+        maxWorkedVertices=math.max(1,math.floor(tonumber(options.maxWorkedVertices) or 4096)), 
+        maxSources=math.max(1,math.floor(options.maxSources or 50000)),
+        maxDemandPerSourceM=math.max(0.0001,
+            math.min(0.10,tonumber(options.maxDemandPerSourceM) or 0.10)),
+        -- Virtual predicted rut target may exceed the independent 10cm
+        -- native-excavation budget; NEVER conflate model state with a
+        -- safe executable height command.
+        maxModelTargetM=math.max(0.10,
+            math.min(2.0,tonumber(options.maxModelTargetM) or 1.0)),
+        sources={},sourceCount=0,vertices={},
+        stats={observations=0,sourceIncreases=0,duplicates=0,
+            accumulatedM=0,vertexCrossings=0,rejected=0,
+            capacityRefusals=0,unverifiedQuantumEvents=0,
+            recoveries=0,recoveredDemandM=0,recoveryNoSource=0,
+            unverifiedTargetDrops=0,virtualHistoryUpdates=0,
+            virtualHistoryReads=0,virtualHistoryRejects=0,
+            workedAreas=0,workAreaSourcesCleared=0,
+            workAreaDemandClearedM=0,workAreaRejects=0}
+    },{__index=Planner})
+end
+
+-- A SHADOW-only model state represents mechanical exposure and predicted
+-- rut depth. It is NOT physically confirmed, never committed to
+-- SpatialHistory and never serialized into the terrain save.
+local MODEL_FIELDS={
+    "rutDepthM","deformationExposure","longitudinalShearDistanceM",
+    "lateralShearDistanceM","slipExcavationDistanceM","passCount"
+}
+function Planner:updateModelHistory(source,nextHistory)
+    local h={}
+    for _,field in ipairs(MODEL_FIELDS) do
+        local value=nextHistory[field]
+        if value~=nil then
+            if not finite(value) or value<0 then
+                self.stats.virtualHistoryRejects=
+                    self.stats.virtualHistoryRejects+1
+                return false,"INVALID_VIRTUAL_MODEL_STATE"
+            end
+            h[field]=value
+        end
+    end
+    if not finite(h.rutDepthM) then
+        return false,"NO_VIRTUAL_RUT_DEPTH"
+    end
+    source.modelHistory=h
+    self.stats.virtualHistoryUpdates=self.stats.virtualHistoryUpdates+1
+    return true,nil
+end
+
+function Planner:getModelHistory(sourceKey,x,z,realHistory)
+    local source=self.sources[sourceKey]
+    if source==nil or not finite(x) or not finite(z) then
+        return realHistory
+    end
+    local _,ix=snap(x,self.unitM)
+    local _,iz=snap(z,self.unitM)
+    if source.vertexKey~=tostring(ix)..":"..tostring(iz) then
+        return realHistory
+    end
+    local virtual=source.modelHistory
+    if type(virtual)~="table" then return realHistory end
+    self.stats.virtualHistoryReads=self.stats.virtualHistoryReads+1
+    local result={}
+    for k,v in pairs(realHistory or {}) do result[k]=v end
+    for _,field in ipairs(MODEL_FIELDS) do
+        if virtual[field]~=nil then result[field]=virtual[field] end
+    end
+    return result
+end
+
+function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHistory)
+    local st=self.stats
+    st.observations=st.observations+1
+    if type(sourceKey)~="string" or sourceKey==""
+        or not finite(x) or not finite(z)
+        or not finite(cumulativeTargetM)
+        or cumulativeTargetM<0 or cumulativeTargetM>self.maxModelTargetM
+        or (existingDepthM~=nil and (not finite(existingDepthM)
+            or existingDepthM<0
+            or existingDepthM>self.maxModelTargetM)) then
+        st.rejected=st.rejected+1
+        return nil,"INVALID_WHEEL_TARGET"
+    end
+    local sx,ix=snap(x,self.unitM)
+    local sz,iz=snap(z,self.unitM)
+    local vertexKey=tostring(ix)..":"..tostring(iz)
+    local source=self.sources[sourceKey]
+    if source==nil then
+        local baseline=existingDepthM or 0
+        if cumulativeTargetM<=baseline+0.0000001 then
+            -- No NEW deformational demand: do not allocate a source for
+            -- thousands of inactive/restored wheel cells. Otherwise a
+            -- busy farm can exhaust the 50k source cap without one rut.
+            st.duplicates=st.duplicates+1
+            return {state="UNCHANGED",vertexKey=vertexKey,
+                x=sx,z=sz,addedM=0,targetM=baseline}
+        end
+        if self.sourceCount>=self.maxSources then
+            st.capacityRefusals=st.capacityRefusals+1
+            return nil,"SHADOW_SOURCE_CAPACITY"
+        end
+        -- Seed the per-logical-cell shadow with any history RE loaded from
+        -- the existing save. Otherwise first encounter would count an old
+        -- persistent rut as *new* demand and duplicate its geometry.
+        local sxLogical=math.floor(x/self.logicalCellSizeM+0.5)
+            *self.logicalCellSizeM
+        local szLogical=math.floor(z/self.logicalCellSizeM+0.5)
+            *self.logicalCellSizeM
+        source={vertexKey=vertexKey,targetM=existingDepthM or 0,
+            x=sxLogical,z=szLogical,
+            unappliedDemandM=0,modelHistory=nil}
+        self.sources[sourceKey]=source
+        self.sourceCount=self.sourceCount+1
+    elseif source.vertexKey~=vertexKey then
+        -- A single logical 0.2m history cell must not move its accumulated
+        -- history from one native vertex to another when a wheel shifts.
+        st.rejected=st.rejected+1
+        return nil,"SOURCE_VERTEX_DRIFT"
+    end
+    if cumulativeTargetM+0.0000001<source.targetM then
+        -- Only a confirmed logical History recovery may lower the shadow
+        -- source's baseline. A silent decrease could be stale model input.
+        st.unverifiedTargetDrops=st.unverifiedTargetDrops+1
+        return {state="TARGET_DECREASE_UNVERIFIED",vertexKey=vertexKey,
+            x=sx,z=sz,addedM=0,targetM=source.targetM}
+    end
+    local delta=math.max(0,cumulativeTargetM-source.targetM)
+    if delta<=0.0000001 then
+        if type(nextHistory)=="table" and source.modelHistory~=nil then
+            -- Exposure/shear may progress while the rut target remains at
+            -- its physical cap. Keep this virtual only, never on the save.
+            self:updateModelHistory(source,nextHistory)
+        end
+        st.duplicates=st.duplicates+1
+        return {state="UNCHANGED",vertexKey=vertexKey,
+            x=sx,z=sz,addedM=0,targetM=source.targetM}
+    end
+    source.targetM=cumulativeTargetM
+    if type(nextHistory)=="table" then
+        self:updateModelHistory(source,nextHistory)
+    end
+    source.unappliedDemandM=math.min(self.maxDemandPerSourceM,
+        source.unappliedDemandM+delta)
+    local vertex=self.vertices[vertexKey]
+    if vertex==nil then
+        vertex={x=sx,z=sz,demandM=0,crossed=false,
+            sourceCount=0,members={}}
+        self.vertices[vertexKey]=vertex
+    end
+    -- CRITICAL: one native 1m main-height vertex covers many logical 0.2m
+    -- history cells. Summing every cell's depth would multiply the same
+    -- wheel imprint by up to ~25 (or more with path interpolation).
+    -- A geometry vertex represents a HEIGHT, not the integral of source
+    -- depths. For now use the largest NEW depth observed per source;
+    -- future footprint/area weighting is a separate calibrated model.
+    local sourceDemand=source.unappliedDemandM
+    vertex.demandM=math.max(vertex.demandM,sourceDemand)
+    if delta>0 then
+        if source.reportedToVertex~=true then
+            source.reportedToVertex=true
+            vertex.members[sourceKey]=true
+            vertex.sourceCount=vertex.sourceCount+1
+        end
+    end
+    st.sourceIncreases=st.sourceIncreases+1
+    st.accumulatedM=st.accumulatedM+delta
+    local q=self.verifiedQuantumM
+    local crossed=q~=nil and vertex.demandM>=q or false
+    if crossed and not vertex.crossed then
+        st.vertexCrossings=st.vertexCrossings+1
+    end
+    vertex.crossed=crossed
+    if q==nil then st.unverifiedQuantumEvents=st.unverifiedQuantumEvents+1 end
+    return {state=q==nil and "QUANTUM_UNVERIFIED"
+        or crossed and "QUANTUM_READY_SHADOW" or "SUB_QUANTUM_SHADOW",
+        vertexKey=vertexKey,x=sx,z=sz,addedM=delta,
+        targetM=cumulativeTargetM,demandM=vertex.demandM,
+        quantumM=q,doesNotWrite=true}
+end
+
+-- A trusted logical-history recovery is an independent event: it is
+-- propagated only AFTER SpatialHistory has applied a positive recovery.
+-- Never infer recovery from a falling model target alone. Shadow demand is
+-- reduced by the confirmed amount, without inventing native geometry.
+function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
+    if type(sourceKey)~="string" or not finite(remainingRutM)
+        or not finite(appliedM) or appliedM<=0 or remainingRutM<0 then
+        return false,"INVALID_RECOVERY_EVENT"
+    end
+    local source=self.sources[sourceKey]
+    if source==nil then
+        self.stats.recoveryNoSource=self.stats.recoveryNoSource+1
+        return false,"SOURCE_NOT_TRACKED"
+    end
+    local previous=source.targetM
+    local confirmed=math.min(appliedM,math.max(0,previous-remainingRutM))
+    if confirmed<=0 then return false,"NO_CONFIRMED_DECREASE" end
+    source.targetM=remainingRutM
+    -- A confirmed repair invalidates virtual shear/exposure accumulated
+    -- before tillage. Future model steps restart from real, repaired history.
+    source.modelHistory=nil
+    source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
+    -- Even partial restoration can settle every unit of NEW shadow
+    -- demand. Release the inactive source then: future observations seed
+    -- their baseline from the CURRENT real SpatialHistory cell, preserving
+    -- legacy rut depth without retaining an unlimited number of idle keys.
+    local retired=source.unappliedDemandM<=0.000001
+    self.stats.recoveries=self.stats.recoveries+1
+    self.stats.recoveredDemandM=self.stats.recoveredDemandM+confirmed
+    local vertex=self.vertices[source.vertexKey]
+    if vertex~=nil then
+        if retired and vertex.members[sourceKey] then
+            vertex.members[sourceKey]=nil
+            vertex.sourceCount=math.max(0,vertex.sourceCount-1)
+        end
+        local largest=0
+        for key in pairs(vertex.members) do
+            local member=self.sources[key]
+            if member~=nil then
+                largest=math.max(largest,member.unappliedDemandM)
+            end
+        end
+        vertex.demandM=largest
+        local q=self.verifiedQuantumM
+        vertex.crossed=q~=nil and largest>=q or false
+        if vertex.sourceCount==0 and largest<=0.000001 then
+            -- No active debt or source: avoid keeping every historical 1m
+            -- vertex in RAM for the lifetime of a long-running farm.
+            self.vertices[source.vertexKey]=nil
+        end
+    end
+    if retired then
+        self.sources[sourceKey]=nil
+        self.sourceCount=math.max(0,self.sourceCount-1)
+    end
+    return true,nil
+end
+
+-- A real GIANTS tillage work-area callback can reset *virtual* model
+-- exposure in the exact worked polygon. This does NOT certify any native
+-- geometry restoration or alter saved SpatialHistory.
+-- Bounded O(vertex bbox + active sources in bbox), not a global 50k scan.
+function Planner:onWorkedArea(geometry)
+    local g=geometry
+    local st=self.stats
+    if type(g)~="table" or not finite(g.xs) or not finite(g.zs)
+        or not finite(g.ux) or not finite(g.uz)
+        or not finite(g.vx) or not finite(g.vz) then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_GEOMETRY_UNVERIFIED"
+    end
+    local det=g.ux*g.vz-g.uz*g.vx
+    local lenU=math.sqrt(g.ux*g.ux+g.uz*g.uz)
+    local lenV=math.sqrt(g.vx*g.vx+g.vz*g.vz)
+    local margin=self.logicalCellSizeM*0.5
+    if math.abs(det)<0.00001 or lenU<=0 or lenV<=0
+        or math.abs(det)/lenV<=2*margin
+        or math.abs(det)/lenU<=2*margin then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_FOOTPRINT_TOO_NARROW"
+    end
+    local corners={
+        {g.xs,g.zs},{g.xs+g.ux,g.zs+g.uz},
+        {g.xs+g.vx,g.zs+g.vz},
+        {g.xs+g.ux+g.vx,g.zs+g.uz+g.vz}
+    }
+    local minX,maxX,minZ,maxZ=math.huge,-math.huge,math.huge,-math.huge
+    for _,p in ipairs(corners) do
+        minX=math.min(minX,p[1]);maxX=math.max(maxX,p[1])
+        minZ=math.min(minZ,p[2]);maxZ=math.max(maxZ,p[2])
+    end
+    local u=self.unitM
+    local x0,x1=math.floor(minX/u)-1,math.ceil(maxX/u)+1
+    local z0,z1=math.floor(minZ/u)-1,math.ceil(maxZ/u)+1
+    if (x1-x0+1)*(z1-z0+1)>self.maxWorkedVertices then
+        st.workAreaRejects=st.workAreaRejects+1
+        return nil,"WORK_BBOX_TOO_LARGE"
+    end
+    local marginU=margin*lenV/math.abs(det)
+    local marginV=margin*lenU/math.abs(det)
+    local toClear={}
+    for ix=x0,x1 do
+        for iz=z0,z1 do
+            local vertex=self.vertices[tostring(ix)..":"..tostring(iz)]
+            if vertex~=nil then
+                for key in pairs(vertex.members) do
+                    local source=self.sources[key]
+                    if source~=nil then
+                        local dx,dz=source.x-g.xs,source.z-g.zs
+                        local alpha=(dx*g.vz-dz*g.vx)/det
+                        local beta=(g.ux*dz-g.uz*dx)/det
+                        if alpha>=marginU and alpha<=1-marginU
+                            and beta>=marginV and beta<=1-marginV then
+                            toClear[key]=true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local cleared,clearedM=0,0
+    for key in pairs(toClear) do
+        local source=self.sources[key]
+        if source~=nil then
+            cleared=cleared+1
+            clearedM=clearedM+source.unappliedDemandM
+            local vertex=self.vertices[source.vertexKey]
+            if vertex~=nil then
+                vertex.members[key]=nil
+                vertex.sourceCount=math.max(0,vertex.sourceCount-1)
+                local largest=0
+                for other in pairs(vertex.members) do
+                    local remaining=self.sources[other]
+                    if remaining~=nil then
+                        largest=math.max(largest,remaining.unappliedDemandM)
+                    end
+                end
+                if vertex.sourceCount==0 then
+                    self.vertices[source.vertexKey]=nil
+                else
+                    vertex.demandM=largest
+                    vertex.crossed=self.verifiedQuantumM~=nil
+                        and largest>=self.verifiedQuantumM or false
+                end
+            end
+            self.sources[key]=nil
+            self.sourceCount=math.max(0,self.sourceCount-1)
+        end
+    end
+    st.workedAreas=st.workedAreas+1
+    st.workAreaSourcesCleared=st.workAreaSourcesCleared+cleared
+    st.workAreaDemandClearedM=st.workAreaDemandClearedM+clearedM
+    return cleared,nil
+end
+
+function Planner:getVertex(ix,iz)
+    return self.vertices[tostring(ix)..":"..tostring(iz)]
+end
+function Planner:summary()
+    local vertices=0
+    for _ in pairs(self.vertices) do vertices=vertices+1 end
+    local vertexDemandSumM=0
+    local supportedVertices=0
+    for _,v in pairs(self.vertices) do
+        vertexDemandSumM=vertexDemandSumM+v.demandM
+        if v.sourceCount>=2 then supportedVertices=supportedVertices+1 end
+    end
+    return string.format(
+        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d virtualReads=%d virtualUpdates=%d virtualRejects=%d workedAreas=%d workedSourcesCleared=%d workedShadowClearedM=%.6f workedRejects=%d rejected=%d capacityRefusals=%d",
+        self.unitM,self.verifiedQuantumM~=nil
+            and string.format("%.6fm",self.verifiedQuantumM) or "UNVERIFIED",
+        self.sourceCount,vertices,self.stats.observations,
+        self.stats.sourceIncreases,self.stats.duplicates,
+        self.stats.accumulatedM,vertexDemandSumM,supportedVertices,
+        self.stats.vertexCrossings,self.stats.recoveries,
+        self.stats.recoveredDemandM,self.stats.unverifiedTargetDrops,
+        self.stats.virtualHistoryReads,self.stats.virtualHistoryUpdates,
+        self.stats.virtualHistoryRejects,self.stats.workedAreas,
+        self.stats.workAreaSourcesCleared,
+        self.stats.workAreaDemandClearedM,self.stats.workAreaRejects,
+        self.stats.rejected,self.stats.capacityRefusals)
+end
+return Planner

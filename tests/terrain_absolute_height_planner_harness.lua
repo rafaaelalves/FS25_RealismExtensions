@@ -1,0 +1,82 @@
+-- Pure sub-quantum geometry planning, no GIANTS height setters.
+dofile("scripts/terrain/TerrainAbsoluteHeightPlanner.lua")
+local P=RealismExtensionsTerrainAbsoluteHeightPlanner
+assert(P.new({})==nil)
+assert(P.new({unitM=0})==nil)
+local shadow=assert(P.new({unitM=1,maxSources=3}))
+-- Thousands of no-yield or unchanged saved cells must not consume
+-- the bounded shadow source pool before one real plastic rut occurs.
+for i=1,100 do
+    assert(shadow:observe("no-debt-"..i,i,0,0,0).state=="UNCHANGED")
+    assert(shadow:observe("saved-"..i,i,0,0.024,0.024).state=="UNCHANGED")
+end
+assert(shadow.sourceCount==0 and next(shadow.vertices)==nil)
+local a=assert(shadow:observe("cell-1",10.25,20.20,0.0017))
+assert(a.state=="QUANTUM_UNVERIFIED")
+assert(a.vertexKey=="10:20" and a.doesNotWrite==true)
+assert(shadow:observe("cell-1",10.25,20.20,0.0017).state=="UNCHANGED")
+assert(math.abs(shadow:getVertex(10,20).demandM-0.0017)<1e-8)
+local next=assert(shadow:observe("cell-1",10.25,20.20,0.0032))
+assert(math.abs(next.addedM-0.0015)<1e-8)
+assert(math.abs(shadow:getVertex(10,20).demandM-0.0032)<1e-8)
+assert(shadow:observe("cell-1",10.65,20.20,0.005)==nil)
+assert(math.abs(shadow:getVertex(10,20).demandM-0.0032)<1e-8)
+assert(shadow:observe("cell-2",10.28,20.18,0.0025).vertexKey=="10:20")
+assert(math.abs(shadow:getVertex(10,20).demandM-0.0032)<1e-8)
+assert(shadow:getVertex(10,20).sourceCount==2)
+assert(shadow.stats.accumulatedM>shadow:getVertex(10,20).demandM)
+assert(shadow:observe("cell-3",11.20,20,0.001))
+assert(shadow:observe("cell-4",12.20,20,0.001)==nil)
+assert(shadow.stats.capacityRefusals==1)
+assert(shadow:summary():find("mode=NO_WRITE",1,true))
+assert(shadow:summary():find("quantum=UNVERIFIED",1,true))
+
+local q=255/65535 -- supplied externally; not inferred by this planner
+local confirmed=assert(P.new({unitM=1,verifiedQuantumM=q}))
+assert(confirmed:observe("A",250.1,300.1,0.0017).state=="SUB_QUANTUM_SHADOW")
+assert(confirmed:observe("A",250.1,300.1,0.0017).state=="UNCHANGED")
+assert(confirmed:observe("A",250.1,300.1,0.0034).state=="SUB_QUANTUM_SHADOW")
+assert(confirmed:observe("A",250.1,300.1,0.0043).state=="QUANTUM_READY_SHADOW")
+assert(confirmed.stats.vertexCrossings==1)
+assert(confirmed:observe("A",250.1,300.1,0.0054).state=="QUANTUM_READY_SHADOW")
+assert(confirmed.stats.vertexCrossings==1)
+assert(confirmed:observe("missing",1,2,0/0)==nil)
+assert(confirmed:observe("missing",1,2,math.huge)==nil)
+assert(confirmed:observe("missing",1,2,-0.01)==nil)
+assert(confirmed.stats.rejected==3)
+
+-- 20cm sample cells on a 1m native vertex are not 25 independently
+-- stackable vertical excavations. A passing 2mm rut across 25 cells
+-- remains 2mm high-level demand, not a catastrophic 50mm command.
+local overlapping=assert(P.new({unitM=1,maxSources=100,
+    verifiedQuantumM=q}))
+for ix=1,5 do
+    for iz=1,5 do
+        local name=string.format("cell-%d-%d",ix,iz)
+        local x=10+(ix-3)*0.12
+        local z=20+(iz-3)*0.12
+        local out=assert(overlapping:observe(name,x,z,0.002))
+        assert(out.vertexKey=="10:20")
+        assert(out.state=="SUB_QUANTUM_SHADOW")
+    end
+end
+assert(math.abs(overlapping:getVertex(10,20).demandM-0.002)<1e-8)
+assert(overlapping:getVertex(10,20).sourceCount==25)
+assert(math.abs(overlapping.stats.accumulatedM-0.05)<1e-8)
+assert(overlapping:summary():find("vertexDemandSumM=0.002000",1,true))
+assert(overlapping:summary():find("multiSourceVertices=1",1,true))
+assert(overlapping:observe("cell-3-3",10,20,0.004).state
+    =="QUANTUM_READY_SHADOW")
+assert(math.abs(overlapping:getVertex(10,20).demandM-0.004)<1e-8)
+assert(overlapping.stats.vertexCrossings==1)
+-- Returning to a loaded save must not manufacture native demand equal to
+-- the persisted RE rut depth. Only *new* target increase counts.
+local restored=assert(P.new({unitM=1,verifiedQuantumM=q}))
+local h=assert(restored:observe("old-cell",42.1,90.1,0.024,0.024))
+assert(h.state=="UNCHANGED")
+assert(restored.stats.accumulatedM==0)
+h=assert(restored:observe("old-cell",42.1,90.1,0.027,0.024))
+assert(h.state=="SUB_QUANTUM_SHADOW")
+assert(math.abs(h.addedM-0.003)<1e-8)
+assert(restored:observe("bad",40,40,0.01,0/0)==nil)
+print("terrain_absolute_height_planner_harness: OK")

@@ -424,4 +424,45 @@ assert(rejectedProbes==2,"deadline must prevent further native probes")
 writer.measureRecoveryAt=oldMeasure
 Recovery.resetRuntimeState()
 
+-- Causal mode: the entire actively-cultivating tractor must remain eligible
+-- to make NEW physical ruts (e.g. heavy tractor ahead of the repair tool).
+-- Only its wheels crossing the ACTUALLY worked patch are protected.
+g_currentMission.time=g_currentMission.time+1000
+Recovery.activeCombinationUntil[rootVehicle]=
+    g_currentMission.time+Recovery.DEFAULTS.activeCombinationGraceMs
+assert(Recovery.isRutGenerationSuppressed(vehicle,g_currentMission.time)==true,
+    "legacy mode preserves old full-combination protection")
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+assert(Recovery.isRutGenerationSuppressed(vehicle,g_currentMission.time)==false,
+    "causal mode must not hide tractor ruts ahead of working implement")
+assert(Recovery.getDiagnostics().causalCombinationSpatialOnly>=1)
+Recovery.protectedCells["1:1"]=g_currentMission.time+8000
+assert(Recovery.isRecentlyCultivated(0.4,0.4,g_currentMission.time)==true,
+    "causal mode still protects the physically cultivated cell")
+assert(Recovery.isRecentlyCultivated(4.0,4.0,g_currentMission.time)==false,
+    "causal mode must not protect non-worked ground ahead of the implement")
+RealismExtensionsConfig.modules.TerrainCausalRecovery=nil
+Recovery.resetRuntimeState()
+
+-- Regression: only an actually processed GIANTS tillage polygon clears
+-- ephemeral SHADOW model exposure; rejected/idle work must not clear it.
+local shadowWorkCalls=0
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+RealismExtensionsTerrainRuntime.absoluteShadow={
+    onWorkedArea=function(self,g)
+        assert(g.xs==0 and g.zs==0)
+        assert(g.ux==2 and g.vz==1)
+        shadowWorkCalls=shadowWorkCalls+1
+        return 1,nil
+    end
+}
+seedHistory({})
+Recovery.processCultivatorArea(vehicle,workedSuper,workArea,16)
+assert(shadowWorkCalls==1)
+Recovery.processCultivatorArea(vehicle,rejectedSuper,workArea,16)
+assert(shadowWorkCalls==1)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsTerrainRuntime.absoluteShadow=nil
+Recovery.resetRuntimeState()
+
 print("terrain_recovery_r7_tillage_profiles_harness: OK")

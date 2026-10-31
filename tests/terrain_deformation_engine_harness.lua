@@ -159,12 +159,22 @@ local contactStats=RealismExtensionsLoadedContactRegistry.getStats(0)
 assert(contactStats.activeContacts==2)
 assert(contactStats.maxLoadN>=20000)
 
+-- Exercise the actual specialization's passive bridge call rather than
+-- only unit-testing the bridge in isolation. The harness wheels have no
+-- native shape/scales; observe() must never write, allocate a brush, or
+-- prevent the normal terrain update from proceeding.
+dofile("scripts/terrain/TerrainNativeWheelBridge.lua")
+RealismExtensionsConfig.modules.NativeWheelDisplacementObservation=true
+
 -- Move each wheel forward: only this vehicle's two wheels are processed.
 wheelA.testX = 0.4
 wheelB.testX = 0.9
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == 4)
 assert(enqueued > 2)
+assert(RealismExtensionsTerrainNativeWheelBridge.stats.samples==2)
+assert(RealismExtensionsTerrainNativeWheelBridge.stats.scaleUnavailable==2)
+RealismExtensionsConfig.modules.NativeWheelDisplacementObservation=false
 
 -- Stationary wheelspin must still pass the cheap gate: body at rest, wheel
 -- surface moving. This is the "tractor against a pillar" class of scenario.
@@ -290,6 +300,287 @@ RealismExtensionsConfig.modules.TerrainDeformation = true
 vehicle.isServer = false
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle, 250)
 assert(contexts == afterActorPolicyContexts)
+
+-- Causal journal path: accepting the queue MUST NOT create physical debt.
+-- The second wheel is deliberately distant to avoid vertex overlap.
+dofile("scripts/terrain/TerrainGeometryJournal.lua")
+local liveHeights={}
+local function heightKey(x,z)
+    return string.format("%.1f:%.1f",x,z)
+end
+local sampleHeight=function(x,z)
+    return liveHeights[heightKey(x,z)] or 100
+end
+local journal=RealismExtensionsTerrainGeometryJournal.new(
+    42,{unitM=1,sample=sampleHeight}
+)
+RealismExtensionsTerrainRuntime.geometryJournal=journal
+RealismExtensionsConfig.modules.TerrainGeometryJournal=true
+local callbacks={}
+RealismExtensionsTerrainRuntime.writer={
+    options={minDepthM=0.0004},
+    enqueue=function(self,brush)
+        assert(type(brush.onApplied)=="function")
+        callbacks[#callbacks+1]=brush
+        return true
+    end
+}
+TerrainDeformation={STATE_SUCCESS=1}
+vehicle.isServer=true
+wheelA.testX=20
+wheelB.testX=100
+-- Reset motion anchors: moving from the earlier 2m positions is a
+-- teleport in this harness, not a continuous tire rut.
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastZ=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastZ=nil
+bodySpeedKph=5
+g_currentMission.time=g_currentMission.time+1000
+local historyBefore=RealismExtensionsTerrainRuntime.history.count
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==2)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+assert(journal.pendingCount==2, "journal pending="..tostring(journal.pendingCount).." active="..tostring((function() local n=0 for _ in pairs(journal.pendingByLogicalKey) do n=n+1 end return n end)()))
+local requeued=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==requeued) -- still pending: no duplicate native jobs
+callbacks[1].onApplied(false) -- failed submit/engine: no debt
+assert(journal.pendingCount==1)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+liveHeights[heightKey(100,0)]=99.988
+callbacks[2].onApplied(1)
+assert(journal.pendingCount==0)
+-- The 12mm observation is EXCESSIVE relative to the submitted 3mm.
+-- Do not claim somebody else's possibly concurrent native movement,
+-- and do not automatically authorize restoration of that height.
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore)
+assert(RealismExtensionsTerrainRuntime.history:get(100,0)==nil)
+assert(journal.observations["100:0"].owned==false)
+assert(journal:getRecoverablePoint(100,0)==nil)
+assert((journal.stats.anomalousCompletedFootprints or 0)==1)
+-- The simulated native result moved 12mm despite a 3mm maximum command.
+-- This event must be measured from the callback, not inferred from intent.
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredExcessEvents or 0)==1)
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredLowerMaxSumM or 0)>=0.0119)
+assert((RealismExtensionsTerrainRuntime.stats.nativeMeasuredRequestedSumM or 0)<=0.00301)
+local countAfter=RealismExtensionsTerrainRuntime.history.count
+callbacks[2].onApplied(1) -- duplicate callback ignored by journal
+assert(RealismExtensionsTerrainRuntime.history.count==countAfter)
+-- Note: the existing logger sees this case as failed journal confirmation.
+
+-- A clean <=3mm native change remains eligible for verified ownership
+-- and physical debt, proving that the new mismatch gate is not blanket
+-- disabling causal journaling.
+wheelA.testX=140
+wheelB.testX=160
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeClean=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeClean+2)
+callbacks[beforeClean+1].onApplied(false)
+liveHeights[heightKey(160,0)]=99.997
+callbacks[beforeClean+2].onApplied(1)
+assert(RealismExtensionsTerrainRuntime.history.count==historyBefore+1)
+assert(journal.observations["160:0"].owned==true)
+assert(journal.observations["160:0"].preREHeightM==100)
+-- Any subsequent repair still requires a distinct causal recovery test.
+
+-- Excessive native movement quarantines all further causal wheel
+-- excavation in this game session. This is an experimental save-safety gate,
+-- NOT a claim that the native actuator's amplification is fixed.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+wheelA.testX=220
+wheelB.testX=320
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastZ=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastZ=nil
+g_currentMission.time=g_currentMission.time+1000
+local preFault=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==preFault+2)
+callbacks[preFault+1].onApplied(false)
+-- A parallel GIANTS queue job is visible *as a submission*, but without a
+-- per-brush area we MUST NOT claim it dug the measured rut.
+local recordedInfo={}
+RealismExtensionsDiagnostics={
+    info=function(message)
+        recordedInfo[#recordedInfo+1]=message
+    end
+}
+RealismExtensionsTerrainNativeQueueProbe={
+    enabled=true,stats={externalDuringREPending=7}
+}
+RealismExtensionsTerrainNativeSpatialProbe={
+    owner={},stats={
+        directDuringREPending=4,
+        spatialOverlapQueue=8,
+        spatialOverlapDirect=10
+    }
+}
+callbacks[preFault+2].onSubmitted()
+RealismExtensionsTerrainNativeQueueProbe.stats.externalDuringREPending=8
+RealismExtensionsTerrainNativeSpatialProbe.stats.directDuringREPending=6
+RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapQueue=9
+RealismExtensionsTerrainNativeSpatialProbe.stats.spatialOverlapDirect=12
+liveHeights[heightKey(320,0)]=99.945
+-- Native displacement volume is an independent callback measurement.
+callbacks[preFault+2].onApplied(1,nil,nil,nil,0.00014)
+local anomalyLog=false
+for _,line in ipairs(recordedInfo) do
+    if line:find("TerrainNativeQuarantine",1,true)
+        and line:find("nativeCallbackVolumeM3=0.0001400",1,true)
+        and line:find("nominalCylinderM3=",1,true)
+        and line:find("volumeRatio=",1,true)
+        and line:find("otherQueuedWhilePending=1",1,true)
+        and line:find("otherDirectWhilePending=2",1,true)
+        and line:find("overlappingQueueBrushes=1",1,true)
+        and line:find("overlappingDirectBrushes=2",1,true) then
+        anomalyLog=true
+    end
+end
+assert(anomalyLog==true)
+RealismExtensionsTerrainNativeQueueProbe=nil
+RealismExtensionsTerrainNativeSpatialProbe=nil
+RealismExtensionsDiagnostics=nil
+assert(RealismExtensionsTerrainRuntime.nativeDamageQuarantined==true)
+assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineTriggers or 0)==1)
+assert(journal.pendingCount==0)
+assert(journal.observations["320:0"].owned==false)
+assert(journal:getRecoverablePoint(320,0)==nil)
+assert(RealismExtensionsTerrainRuntime.history:get(320,0)==nil)
+
+-- Even before the writer flushes queued wheels, the no-more-writes gate
+-- should block new wheel samples from introducing further native requests.
+wheelA.testX=400
+wheelB.testX=500
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local preBlocked=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==preBlocked)
+assert((RealismExtensionsTerrainRuntime.stats.nativeAmplitudeQuarantineSkips or 0)>=1)
+RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
+
+-- A missing native journal is NOT permission to fall back to pre-callback
+-- geometry debt when causal restoration is requested.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsTerrainRuntime.geometryJournal=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+wheelA.testX=30
+wheelB.testX=120
+g_currentMission.time=g_currentMission.time+1000
+local beforeUnavailable=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeUnavailable)
+assert((RealismExtensionsTerrainRuntime.stats.geometryJournalFailClosed or 0)>0)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+
+-- Observe-only mode must be enforced in the REAL vehicle-specialization
+-- path before any history or native writer enqueue, even with no journal.
+RealismExtensionsTerrainControlledWriteTrial={
+    enabled=function()return true end,
+    isArmed=function()return false end
+}
+local observedPatch={context=0,eligible=0}
+RealismExtensionsTerrainGeometryProbe={
+    observeWheelContact=function(x,z,stage)
+        assert(type(x)=="number" and type(z)=="number")
+        observedPatch[stage]=(observedPatch[stage] or 0)+1
+    end
+}
+bodySpeedKph=5
+RealismExtensionsTerrainRecovery.active=false
+RealismExtensionsTerrainRecovery.protected=false
+wheelA.testX=610
+wheelB.testX=650
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeObserveWrites=#callbacks
+local beforeObserveHistory=RealismExtensionsTerrainRuntime.history.count
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeObserveWrites)
+assert(RealismExtensionsTerrainRuntime.history.count==beforeObserveHistory)
+assert((RealismExtensionsTerrainRuntime.stats.trialReadOnlyWheelSamples or 0)>=1)
+assert(observedPatch.context>=1 and observedPatch.eligible>=1)
+
+-- Regression: while an armed one-shot targets a different marked patch,
+-- off-site wheels must not enter journals, mutate logical history or queue
+-- a writer callback even when the model requests plastic yield.
+RealismExtensionsTerrainControlledWriteTrial={
+    enabled=function()return true end,
+    isArmed=function()return true end,
+    isWithinMarkedRegion=function(x,z)return false end
+}
+wheelA.testX=690
+wheelB.testX=710
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local beforeOffsiteHistory=RealismExtensionsTerrainRuntime.history.count
+local beforeOffsiteWrites=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(#callbacks==beforeOffsiteWrites)
+assert(RealismExtensionsTerrainRuntime.history.count==beforeOffsiteHistory)
+assert((observedPatch.outsideTrial or 0)>=1)
+RealismExtensionsTerrainControlledWriteTrial=nil
+RealismExtensionsTerrainGeometryProbe=nil
+
+-- Even without the experimental console profile, the branch-wide SHADOW
+-- policy must independently refuse geometry and history writes. It still
+-- passes valid model targets to the pure absolute-height planner.
+local shadowObservations=0
+RealismExtensionsTerrainRuntime.absoluteShadow={
+    getModelHistory=function(self,key,x,z,realHistory)
+        return realHistory
+    end,
+    observe=function(self,key,x,z,target,baseline,nextHistory)
+        assert(type(key)=="string")
+        assert(type(x)=="number" and type(z)=="number")
+        assert(target>=0 and baseline>=0)
+        shadowObservations=shadowObservations+1
+    end
+}
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+wheelA.testX=730
+wheelB.testX=750
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelA].lastX=nil
+vehicle[RealismExtensionsTerrainDeformationEngine.SPEC_FIELD]
+    .states[wheelB].lastX=nil
+g_currentMission.time=g_currentMission.time+1000
+local shadowHistory=RealismExtensionsTerrainRuntime.history.count
+local shadowNative=#callbacks
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert(shadowObservations>0)
+assert(#callbacks==shadowNative)
+assert(RealismExtensionsTerrainRuntime.history.count==shadowHistory)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsTerrainRuntime.absoluteShadow=nil
 
 RealismExtensionsTerrainDeformationEngine.onDelete(vehicle)
 assert(RealismExtensionsLoadedContactRegistry.getStats(0).activeContacts==0)
