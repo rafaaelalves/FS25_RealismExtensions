@@ -67,9 +67,11 @@ RealismExtensionsFootprintModel = {
 }
 
 local lastModelOptions=nil
+local lastResponseDtMs=0
 RealismExtensionsTerrainResponseModel = {
     compute = function(context, footprint, history, dt, options)
         lastModelOptions=options
+        lastResponseDtMs=dt
         local previous = history and history.rutDepthM or 0
         return {
             available=true,
@@ -188,6 +190,12 @@ assert(enqueued-beforeTeleportWrites<=2)
 wheelA.testX=100.6
 RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
 assert((RealismExtensionsTerrainRuntime.stats.wheelPathResets or 0)>=1)
+
+-- A paused frame is unknown wheel-contact time, not additional shear.
+wheelA.testX=101
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,5000)
+assert(lastResponseDtMs<=RealismExtensionsTerrainDeformationEngine.DEFAULTS.sampleIntervalMs)
+assert((RealismExtensionsTerrainRuntime.stats.wheelPathResets or 0)>=3)
 
 -- Stationary wheelspin must still pass the cheap gate: body at rest, wheel
 -- surface moving. This is the "tractor against a pillar" class of scenario.
