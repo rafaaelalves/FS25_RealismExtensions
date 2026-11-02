@@ -50,20 +50,38 @@ assert(#calls==0)
 -- Explicit *test-only* candidate can call the native setter, but neither
 -- regular passively-observed wheels nor any runtime RE function calls it.
 Platform={gameplay={wheelTerrainDisplacement=true}}
-local apply,reason=Bridge.nativeSetterCandidate(physics,1.4)
+-- Source-visible native setter exists, but accidental unleased invocation
+-- must fail closed even for a fully loaded and server-controlled wheel.
+local forbidden,whyForbidden=Bridge.nativeSetterCandidate(physics,1.4)
+assert(forbidden==false and whyForbidden=="RESEARCH_OWNER_LEASE_UNVERIFIED")
+local auth={mode="EXPLICIT_ISOLATED_WHEEL_RESEARCH",
+    exclusiveControlAcknowledged=true,clonedSaveAcknowledged=true,
+    expectedLuaScale=1.75}
+assert(Bridge.nativeSetterCandidate(physics,1.4,{
+    mode="EXPLICIT_ISOLATED_WHEEL_RESEARCH",
+    exclusiveControlAcknowledged=true,
+    clonedSaveAcknowledged=false,expectedLuaScale=1.75
+})==false)
+assert(Bridge.nativeSetterCandidate(physics,1.4,{
+    mode="EXPLICIT_ISOLATED_WHEEL_RESEARCH",
+    exclusiveControlAcknowledged=true,
+    clonedSaveAcknowledged=true,expectedLuaScale=1.0
+})==false)
+assert(#calls==0)
+local apply,reason=Bridge.nativeSetterCandidate(physics,1.4,auth)
 assert(apply==true and reason==nil)
 assert(#calls==1)
 assert(calls[1].node==1337 and calls[1].shape==77)
 assert(calls[1].scale==1.4)
 assert(physics.displacementScale==1.75) -- native caller owns Lua field
 Platform.gameplay.wheelTerrainDisplacement=false
-assert(Bridge.nativeSetterCandidate(physics,1.4)==false)
+assert(Bridge.nativeSetterCandidate(physics,1.4,auth)==false)
 assert(#calls==1)
 Platform.gameplay.wheelTerrainDisplacement=true
-assert(Bridge.nativeSetterCandidate(physics,5)==false)
+assert(Bridge.nativeSetterCandidate(physics,5,auth)==false)
 assert(#calls==1)
 physics.wheelShape=0
-assert(Bridge.nativeSetterCandidate(physics,1.2)==false)
+assert(Bridge.nativeSetterCandidate(physics,1.2,auth)==false)
 assert(#calls==1)
 Bridge.reset()
 assert(Bridge.stats.samples==0 and Bridge.stats.distinctWheels==0)
