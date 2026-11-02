@@ -523,7 +523,16 @@ function Engine.processSample(
             math.max(0,tonumber(response.rutDepthM) or 0),
             math.max(0,tonumber(persistedHistory~=nil
                 and persistedHistory.rutDepthM) or 0),
-            response.nextHistory)
+            response.nextHistory,{
+                available=footprint~=nil and footprint.available==true,
+                isCrawler=context.isCrawler==true
+                    or (footprint~=nil and footprint.kind=="CRAWLER"),
+                supportWidthM=footprint~=nil
+                    and footprint.supportWidthM or nil,
+                footprintLengthM=footprint~=nil
+                    and footprint.footprintLengthM or nil,
+                dirX=travelDirX,dirZ=travelDirZ
+            })
     end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
