@@ -194,6 +194,7 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
             supportWidthM=footprintEvidence.supportWidthM,
             footprintLengthM=footprintEvidence.footprintLengthM,
             dirX=footprintEvidence.dirX,dirZ=footprintEvidence.dirZ,
+            pathContinuity=footprintEvidence.pathContinuity,
             minCellCoverage01=self.minMainCellCoverage01
         })
     else
