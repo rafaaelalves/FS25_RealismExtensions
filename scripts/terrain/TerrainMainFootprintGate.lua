@@ -91,7 +91,7 @@ function Gate.evaluate(o)
     if w<=0 or len<=0 or w>12*u or len>12*u then
         return outcome("GEOMETRY_UNKNOWN","INVALID_CONTACT_DIMENSIONS",0,u,0)
     end
-    if o.footprintAvailable==false or o.isCrawler==true then
+    if o.footprintAvailable~=true or o.isCrawler==true then
         return outcome("GEOMETRY_UNKNOWN","UNVERIFIED_CONTACT_TOPOLOGY",0,u,0)
     end
     local dx,dz=o.dirX,o.dirZ
