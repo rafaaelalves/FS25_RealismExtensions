@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=5
+Planner.VERSION=6
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -36,6 +36,8 @@ function Planner.new(options)
         -- safe executable height command.
         maxModelTargetM=math.max(0.10,
             math.min(2.0,tonumber(options.maxModelTargetM) or 1.0)),
+        minMainCellCoverage01=math.max(0.5,
+            math.min(1,tonumber(options.minMainCellCoverage01) or 0.75)),
         sources={},sourceCount=0,vertices={},
         stats={observations=0,sourceIncreases=0,duplicates=0,
             accumulatedM=0,vertexCrossings=0,rejected=0,
@@ -44,7 +46,10 @@ function Planner.new(options)
             unverifiedTargetDrops=0,virtualHistoryUpdates=0,
             virtualHistoryReads=0,virtualHistoryRejects=0,
             workedAreas=0,workAreaSourcesCleared=0,
-            workAreaDemandClearedM=0,workAreaRejects=0}
+            workAreaDemandClearedM=0,workAreaRejects=0,
+            mainFootprintSamples=0,mainFineOnly=0,
+            mainResearchCandidates=0,mainGeometryUnknown=0,
+            maxMainCellCoverage01=0}
     },{__index=Planner})
 end
 
@@ -97,7 +102,7 @@ function Planner:getModelHistory(sourceKey,x,z,realHistory)
     return result
 end
 
-function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHistory)
+function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHistory,footprintEvidence)
     local st=self.stats
     st.observations=st.observations+1
     if type(sourceKey)~="string" or sourceKey==""
@@ -176,6 +181,41 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
             sourceCount=0,members={}}
         self.vertices[vertexKey]=vertex
     end
+    -- Geometric support is separate from native quantum; read-only screen.
+    local geometryScreen
+    local gate=RealismExtensionsTerrainMainFootprintGate
+    if gate~=nil and type(gate.evaluate)=="function"
+        and type(footprintEvidence)=="table" then
+        geometryScreen=gate.evaluate({
+            unitM=self.unitM,vertexX=sx,vertexZ=sz,
+            contactX=x,contactZ=z,
+            footprintAvailable=footprintEvidence.available,
+            isCrawler=footprintEvidence.isCrawler,
+            supportWidthM=footprintEvidence.supportWidthM,
+            footprintLengthM=footprintEvidence.footprintLengthM,
+            dirX=footprintEvidence.dirX,dirZ=footprintEvidence.dirZ,
+            minCellCoverage01=self.minMainCellCoverage01
+        })
+    else
+        geometryScreen={state="GEOMETRY_UNKNOWN",
+            reason="FOOTPRINT_EVIDENCE_UNAVAILABLE",
+            coverage01=0,doesNotWrite=true,
+            authorizesMainWrite=false}
+    end
+    source.mainGeometryScreen=geometryScreen
+    vertex.lastMainGeometryScreen=geometryScreen
+    vertex.maxMainCoverage01=math.max(vertex.maxMainCoverage01 or 0,
+        tonumber(geometryScreen.coverage01) or 0)
+    st.mainFootprintSamples=st.mainFootprintSamples+1
+    st.maxMainCellCoverage01=math.max(st.maxMainCellCoverage01,
+        tonumber(geometryScreen.coverage01) or 0)
+    if geometryScreen.state=="MAIN_RESEARCH_CANDIDATE" then
+        st.mainResearchCandidates=st.mainResearchCandidates+1
+    elseif geometryScreen.state=="FINE_ONLY_OR_UNREPRESENTABLE" then
+        st.mainFineOnly=st.mainFineOnly+1
+    else
+        st.mainGeometryUnknown=st.mainGeometryUnknown+1
+    end
     -- CRITICAL: one native 1m main-height vertex covers many logical 0.2m
     -- history cells. Summing every cell's depth would multiply the same
     -- wheel imprint by up to ~25 (or more with path interpolation).
@@ -204,7 +244,11 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
         or crossed and "QUANTUM_READY_SHADOW" or "SUB_QUANTUM_SHADOW",
         vertexKey=vertexKey,x=sx,z=sz,addedM=delta,
         targetM=cumulativeTargetM,demandM=vertex.demandM,
-        quantumM=q,doesNotWrite=true}
+        quantumM=q,doesNotWrite=true,
+        mainGeometryState=geometryScreen.state,
+        mainGeometryReason=geometryScreen.reason,
+        mainCellCoverage01=geometryScreen.coverage01,
+        authorizesMainWrite=false}
 end
 
 -- A trusted logical-history recovery is an independent event: it is
@@ -375,7 +419,7 @@ function Planner:summary()
         if v.sourceCount>=2 then supportedVertices=supportedVertices+1 end
     end
     return string.format(
-        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d virtualReads=%d virtualUpdates=%d virtualRejects=%d workedAreas=%d workedSourcesCleared=%d workedShadowClearedM=%.6f workedRejects=%d rejected=%d capacityRefusals=%d",
+        "TerrainAbsoluteShadow | mode=NO_WRITE mapUnit=%.3fm quantum=%s sources=%d vertices=%d samples=%d targetIncreases=%d duplicates=%d sourceGrowthSumM=%.6f vertexDemandSumM=%.6f multiSourceVertices=%d quantumReadyVertices=%d recovered=%d recoveredDemandM=%.6f targetDropRefusals=%d virtualReads=%d virtualUpdates=%d virtualRejects=%d workedAreas=%d workedSourcesCleared=%d workedShadowClearedM=%.6f workedRejects=%d rejected=%d capacityRefusals=%d mainFootprintSamples=%d mainFineOnly=%d mainResearchCandidates=%d mainGeometryUnknown=%d maxMainCoverage=%.3f",
         self.unitM,self.verifiedQuantumM~=nil
             and string.format("%.6fm",self.verifiedQuantumM) or "UNVERIFIED",
         self.sourceCount,vertices,self.stats.observations,
@@ -387,6 +431,9 @@ function Planner:summary()
         self.stats.virtualHistoryRejects,self.stats.workedAreas,
         self.stats.workAreaSourcesCleared,
         self.stats.workAreaDemandClearedM,self.stats.workAreaRejects,
-        self.stats.rejected,self.stats.capacityRefusals)
+        self.stats.rejected,self.stats.capacityRefusals,
+        st.mainFootprintSamples,st.mainFineOnly,
+        st.mainResearchCandidates,st.mainGeometryUnknown,
+        st.maxMainCellCoverage01)
 end
 return Planner
