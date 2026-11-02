@@ -1,4 +1,5 @@
 -- Pure sub-quantum geometry planning, no GIANTS height setters.
+dofile("scripts/terrain/TerrainMainFootprintGate.lua")
 dofile("scripts/terrain/TerrainAbsoluteHeightPlanner.lua")
 local P=RealismExtensionsTerrainAbsoluteHeightPlanner
 assert(P.new({})==nil)
