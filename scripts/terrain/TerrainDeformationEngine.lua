@@ -1270,9 +1270,12 @@ function Engine.processWheel(vehicle, wheel, dt)
     if continuity.state=="RESET_ANCHOR" then
         diagCount("wheelPathResets",1)
         -- Keep current contact only, never connect the unknown gap.
+        -- A 10s frame/pause gap is NOT 10s of measured wheel/soil contact.
+        -- Never convert unknown time into plastic exposure or shear distance.
+        local measuredDtMs=math.min(elapsedMs,Engine.DEFAULTS.sampleIntervalMs)
         Engine.processSample(
             vehicle,wheel,state,context,footprint,
-            x,z,elapsedMs,stationaryWheelspin,nil,nil,actor
+            x,z,measuredDtMs,stationaryWheelspin,nil,nil,actor
         )
         return
     end
