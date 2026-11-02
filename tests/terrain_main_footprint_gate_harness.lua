@@ -9,7 +9,7 @@ local function check(base,overrides)
 end
 local full={unitM=1,vertexX=10,vertexZ=20,contactX=10,contactZ=20,
     supportWidthM=1,footprintLengthM=1,dirX=1,dirZ=0,
-    footprintAvailable=true}
+    footprintAvailable=true,pathContinuity=true}
 local a=check(full)
 assert(a.state=="MAIN_RESEARCH_CANDIDATE" and a.coverage01>0.999)
 assert(a.authorizesMainWrite==false and a.doesNotWrite==true)
@@ -36,6 +36,11 @@ assert(check(full,{dirX=0,dirZ=0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{dirX=0/0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{unitM=0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{isCrawler=true}).state=="GEOMETRY_UNKNOWN")
+assert(check(full,{pathContinuity=false}).state=="GEOMETRY_UNKNOWN")
+local unproven={}
+for k,v in pairs(full) do if k~="pathContinuity" then unproven[k]=v end end
+assert(G.evaluate(unproven).reason=="NO_BOUNDED_MEASURED_PATH")
+
 assert(check(full,{footprintAvailable=false}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{footprintAvailable=nil}).state=="MAIN_RESEARCH_CANDIDATE") -- Lua table override nil does not remove existing field
 local missingAvailability={}
