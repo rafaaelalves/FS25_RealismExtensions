@@ -36,6 +36,11 @@ assert(check(full,{dirX=0,dirZ=0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{dirX=0/0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{unitM=0}).state=="GEOMETRY_UNKNOWN")
 assert(check(full,{isCrawler=true}).state=="GEOMETRY_UNKNOWN")
+assert(check(full,{footprintAvailable=false}).state=="GEOMETRY_UNKNOWN")
+assert(check(full,{footprintAvailable=nil}).state=="MAIN_RESEARCH_CANDIDATE") -- Lua table override nil does not remove existing field
+local missingAvailability={}
+for k,v in pairs(full) do if k~="footprintAvailable" then missingAvailability[k]=v end end
+assert(G.evaluate(missingAvailability).state=="GEOMETRY_UNKNOWN")
 -- Two parallel thin tracks do not become one wide impression just because
 -- both 20cm logical samples map to the same coarse native vertex.
 local left=check(full,{contactZ=19.8,supportWidthM=0.35})
