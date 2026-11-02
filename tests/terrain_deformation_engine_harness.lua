@@ -90,6 +90,7 @@ dofile("scripts/terrain/TerrainActorPolicy.lua")
 dofile("scripts/terrain/SurfaceResponse.lua")
 dofile("scripts/terrain/SpatialHistory.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
+dofile("scripts/terrain/TerrainWheelPathContinuity.lua")
 
 local enqueued = 0
 RealismExtensionsTerrainRuntime = {
@@ -175,6 +176,18 @@ assert(enqueued > 2)
 assert(RealismExtensionsTerrainNativeWheelBridge.stats.samples==2)
 assert(RealismExtensionsTerrainNativeWheelBridge.stats.scaleUnavailable==2)
 RealismExtensionsConfig.modules.NativeWheelDisplacementObservation=false
+
+-- A reset-to-shop / teleport must not interpolate old wheel X to new X.
+-- Exactly one sample is allowed at each observed current wheel location.
+local beforeTeleportWrites=enqueued
+wheelA.testX=100.4
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert((RealismExtensionsTerrainRuntime.stats.wheelPathResets or 0)>=1)
+assert(enqueued-beforeTeleportWrites<=2)
+-- The next ordinary measurement cannot reconnect the old 0.4m point.
+wheelA.testX=100.6
+RealismExtensionsTerrainDeformationEngine.onUpdate(vehicle,250)
+assert((RealismExtensionsTerrainRuntime.stats.wheelPathResets or 0)>=1)
 
 -- Stationary wheelspin must still pass the cheap gate: body at rest, wheel
 -- surface moving. This is the "tractor against a pillar" class of scenario.
