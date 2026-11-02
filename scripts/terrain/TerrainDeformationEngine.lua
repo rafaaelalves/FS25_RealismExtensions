@@ -531,7 +531,10 @@ function Engine.processSample(
                     and footprint.supportWidthM or nil,
                 footprintLengthM=footprint~=nil
                     and footprint.footprintLengthM or nil,
-                dirX=travelDirX,dirZ=travelDirZ
+                dirX=travelDirX,dirZ=travelDirZ,
+                pathContinuity=wheelState~=nil
+                    and wheelState.pathEvidence~=nil
+                    and wheelState.pathEvidence.completeCoverage==true
             })
     end
     local trial=RealismExtensionsTerrainControlledWriteTrial
@@ -1206,6 +1209,7 @@ function Engine.processWheel(vehicle, wheel, dt)
         -- anchor so a later movement does not interpolate a synthetic path
         -- from an old parked position, then leave before TerrainResponse.
         state.lastX, state.lastZ = context.worldX, context.worldZ
+        state.pathEvidence=nil
         diagCount("loadedContactRefreshOnly", 1)
         return
     end
@@ -1233,6 +1237,7 @@ function Engine.processWheel(vehicle, wheel, dt)
     state.lastX, state.lastZ = x, z
 
     if lastX == nil or lastZ == nil then
+        state.pathEvidence=nil
         Engine.processSample(
             vehicle, wheel, state, context, footprint,
             x, z, elapsedMs, stationaryWheelspin, nil, nil, actor
@@ -1240,32 +1245,47 @@ function Engine.processWheel(vehicle, wheel, dt)
         return
     end
 
-    local pathDistance = distance2D(lastX, lastZ, x, z)
+    -- Movement continuity must be checked BEFORE interpolating old and new
+    -- wheel contacts. Vehicle resets, long pauses and impossible speed jumps
+    -- must never synthesize ruts along a nonexistent straight line.
     local spacing = math.max(
         Engine.DEFAULTS.minPathSpacingM,
         math.min(footprint.supportWidthM, footprint.footprintLengthM)
             * Engine.DEFAULTS.pathSpacingFactor
     )
-
-    local movingSamples = math.max(1, math.ceil(pathDistance / spacing))
-    movingSamples = math.min(
-        movingSamples,
-        Engine.DEFAULTS.maxSamplesPerWheelTick
-    )
-
-    -- Stationary wheelspin is still processed at the current contact cell.
-    if pathDistance < Engine.DEFAULTS.minPathSpacingM then
-        movingSamples = 1
-        diagCount("stationaryContactSamples", 1)
-    else
-        diagCount("movingContactSamples", movingSamples)
+    local continuity = RealismExtensionsTerrainWheelPathContinuity
+        and RealismExtensionsTerrainWheelPathContinuity.analyze(
+            lastX,lastZ,x,z,elapsedMs,{
+                vehicleSpeedKph=bodySpeedKph,
+                spacingM=spacing,
+                maxSamples=Engine.DEFAULTS.maxSamplesPerWheelTick,
+                stationaryThresholdM=Engine.DEFAULTS.minPathSpacingM
+            }) or nil
+    if continuity==nil or continuity.reject then
+        state.pathEvidence=nil
+        diagCount("wheelPathInvalidSamples",1)
+        return
     end
-
-    local sampleDt = elapsedMs / movingSamples
-    local travelDirX, travelDirZ = nil, nil
-    if pathDistance > 0.0001 then
-        travelDirX = (x - lastX) / pathDistance
-        travelDirZ = (z - lastZ) / pathDistance
+    state.pathEvidence=continuity
+    if continuity.state=="RESET_ANCHOR" then
+        diagCount("wheelPathResets",1)
+        -- Keep current contact only, never connect the unknown gap.
+        Engine.processSample(
+            vehicle,wheel,state,context,footprint,
+            x,z,elapsedMs,stationaryWheelspin,nil,nil,actor
+        )
+        return
+    end
+    if continuity.state=="UNDER_SAMPLED" then
+        diagCount("wheelPathUnderSampled",1)
+    end
+    local movingSamples=continuity.movingSamples
+    local sampleDt=elapsedMs/movingSamples
+    local travelDirX,travelDirZ=continuity.dirX,continuity.dirZ
+    if continuity.state=="STATIONARY" then
+        diagCount("stationaryContactSamples",1)
+    else
+        diagCount("movingContactSamples",movingSamples)
     end
 
     for i = 1, movingSamples do
