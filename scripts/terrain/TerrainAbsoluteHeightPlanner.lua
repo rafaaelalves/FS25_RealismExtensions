@@ -432,8 +432,8 @@ function Planner:summary()
         self.stats.workAreaSourcesCleared,
         self.stats.workAreaDemandClearedM,self.stats.workAreaRejects,
         self.stats.rejected,self.stats.capacityRefusals,
-        st.mainFootprintSamples,st.mainFineOnly,
-        st.mainResearchCandidates,st.mainGeometryUnknown,
-        st.maxMainCellCoverage01)
+        self.stats.mainFootprintSamples,self.stats.mainFineOnly,
+        self.stats.mainResearchCandidates,self.stats.mainGeometryUnknown,
+        self.stats.maxMainCellCoverage01)
 end
 return Planner
