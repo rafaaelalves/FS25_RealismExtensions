@@ -7,7 +7,7 @@
 RealismExtensionsTerrainNativeWheelBridge =
     RealismExtensionsTerrainNativeWheelBridge or {}
 local Bridge=RealismExtensionsTerrainNativeWheelBridge
-Bridge.VERSION=1
+Bridge.VERSION=2
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -103,7 +103,23 @@ end
 -- It is NEVER exported as an automatic default or installed as a global hook.
 -- Callers must explicitly supply a research-enabled policy and verify they
 -- still own the wheel's scale BEFORE invoking the returned function.
-function Bridge.nativeSetterCandidate(physics,newScale)
+function Bridge.nativeSetterCandidate(physics,newScale,authorization)
+    -- Opt-in research-only lease. Never infer owner from an existing native
+    -- wheelShape or a working scale getter. An explicit caller must confirm
+    -- the expected current Lua scale immediately before this one-shot test.
+    -- These booleans are NOT an engine-level guarantee of exclusivity/MP
+    -- synchronization; no production system invokes this function.
+    if type(authorization)~="table"
+        or authorization.mode~="EXPLICIT_ISOLATED_WHEEL_RESEARCH"
+        or authorization.exclusiveControlAcknowledged~=true
+        or authorization.clonedSaveAcknowledged~=true
+        or not finite(authorization.expectedLuaScale)
+        or type(physics)~="table"
+        or not finite(physics.displacementScale)
+        or math.abs(physics.displacementScale
+            - authorization.expectedLuaScale)>0.0001 then
+        return false,"RESEARCH_OWNER_LEASE_UNVERIFIED"
+    end
     if type(physics)~="table" or not finite(newScale)
         or newScale<0 or newScale>2
         or type(physics.vehicle)~="table"
