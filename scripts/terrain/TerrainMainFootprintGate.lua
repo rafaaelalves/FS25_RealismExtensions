@@ -124,6 +124,14 @@ function Gate.evaluate(o)
     if not finite(minimum) or minimum<0.5 or minimum>1 then
         minimum=0.75
     end
+    -- The geometry of one wheel contact alone does not establish a
+    -- continuous traveled footprint. A reset, wheelspin/no direction, or an
+    -- under-sampled interpolated chord cannot make a MAIN candidate.
+    -- This does NOT mean coarse/fine native geometry was measured.
+    if o.pathContinuity~=true then
+        return outcome("GEOMETRY_UNKNOWN",
+            "NO_BOUNDED_MEASURED_PATH",overlap,u,w*len)
+    end
     if w<0.75*u or len<0.75*u then
         return outcome("FINE_ONLY_OR_UNREPRESENTABLE",
             "CONTACT_NARROWER_THAN_MAIN_SUPPORT",overlap,u,w*len)
