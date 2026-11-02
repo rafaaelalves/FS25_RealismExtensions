@@ -87,7 +87,7 @@ assert(restored:observe("bad",40,40,0.01,0/0)==nil)
 local geom=assert(P.new({unitM=1,verifiedQuantumM=q,maxSources=12}))
 local narrow=assert(geom:observe("narrow",10,20,q*2,0,nil,{
     available=true,supportWidthM=0.35,footprintLengthM=1.2,
-    dirX=1,dirZ=0
+    dirX=1,dirZ=0,pathContinuity=true
 }))
 assert(narrow.state=="QUANTUM_READY_SHADOW")
 assert(narrow.mainGeometryState=="FINE_ONLY_OR_UNREPRESENTABLE")
@@ -95,13 +95,13 @@ assert(narrow.authorizesMainWrite==false)
 assert(geom:getVertex(10,20).demandM>=q*2)
 local wide=assert(geom:observe("wide",11,20,q*2,0,nil,{
     available=true,supportWidthM=1.1,footprintLengthM=1.1,
-    dirX=1,dirZ=0
+    dirX=1,dirZ=0,pathContinuity=true
 }))
 assert(wide.mainGeometryState=="MAIN_RESEARCH_CANDIDATE")
 assert(wide.authorizesMainWrite==false)
 local noDir=assert(geom:observe("spin",12,20,q*2,0,nil,{
     available=true,supportWidthM=1.1,footprintLengthM=1.1,
-    dirX=0,dirZ=0
+    dirX=0,dirZ=0,pathContinuity=false
 }))
 assert(noDir.mainGeometryState=="GEOMETRY_UNKNOWN")
 assert(geom.stats.mainFineOnly==1)
@@ -113,11 +113,19 @@ assert(geom:summary():find("mainFineOnly=1",1,true))
 -- promoted by adding its requested depth to a neighboring narrow source.
 local narrow2=assert(geom:observe("narrow2",10.2,20,q*3,0,nil,{
     available=true,supportWidthM=0.35,footprintLengthM=1.2,
-    dirX=1,dirZ=0
+    dirX=1,dirZ=0,pathContinuity=true
 }))
 assert(narrow2.mainGeometryState=="FINE_ONLY_OR_UNREPRESENTABLE")
 assert(geom:getVertex(10,20).demandM==q*3)
 assert(geom:getVertex(10,20).sourceCount==2)
 assert(geom.stats.mainFineOnly==2)
+local incomplete=assert(geom:observe("notConnected",13,20,q*2,0,nil,{
+    available=true,supportWidthM=1.1,footprintLengthM=1.1,
+    dirX=1,dirZ=0,pathContinuity=false
+}))
+assert(incomplete.mainGeometryState=="GEOMETRY_UNKNOWN")
+assert(incomplete.mainGeometryReason=="NO_BOUNDED_MEASURED_PATH")
+assert(incomplete.authorizesMainWrite==false)
+
 
 print("terrain_absolute_height_planner_harness: OK")
