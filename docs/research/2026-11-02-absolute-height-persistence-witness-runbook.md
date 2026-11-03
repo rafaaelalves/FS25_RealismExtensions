@@ -58,3 +58,21 @@ Um match dos nove valores **após um reload real** sustenta persistência da alt
 Referências GIANTS: [Ground Deformation interview](https://www.farming-simulator.com/newsArticle.php?country=us&lang=en&news_id=569), [Engine Terrain v1.20](https://gdn.giants-software.com/documentation_scripting_fs25.php?category=28&function=812&version=engine).
 
 **Estado:** PR #64 draft, `main` RE/RC intocadas; esse é um protocolo de evidência, não uma liberação para gameplay.
+
+
+## Adendo — 02/11, instrumentação de colisão da roda e proteção do witness
+
+**Implementado e aprovado pelo CI:** `TerrainWheelCollisionProbe.lua` e `reTerrainTrial contact`. A GIANTS documenta `getWheelShapeContactPoint`, `getWheelShapeContactObject` e `getWheelShapePosition` no FS25 v1.20; isso consulta o estado do wheel shape e **não** uma célula da grade fina de deformação. A descrição de `getWheelShapeContactPoint` não declara claramente o referencial das coordenadas. O RE considera as interpretações mundial e local e aceita o cálculo `contactY - MAIN` somente quando a proximidade ao nó da roda discrimina uma delas. Caso contrário, `CONTACT_FRAME_UNVERIFIED` é resultado correto; não fabricar delta ou diagnóstico de clipping.
+
+Para observar *sem escrita alguma*, em uma sessão com RE experimental, roda sob carga perto da área de interesse, marcar o ponto e executar:
+```text
+reGeoMark
+reTerrainTrial contact
+```
+O observador procura até quatro contatos físicos na área marcada, só sob servidor e com wheel shapes ativos, reporta ausência de contato/objeto que não seja terreno e recusa geometria ambígua. É uma consulta opcional, **não** parte do comando destrutivo. Pode ser usada para comparar a situação sem nenhuma escrita do RE em `SHADOW`. A ocorrência antiga de clipping com o RE desligado pertence a outra sessão sem log correspondente: não atribuir sua causa a uma execução deste ensaio.
+
+Para o **ensaio com setter** (apenas clone descartável): registrar a região marcada *sem rodas em cima* para permitir a calibração. Após eventual `absolute`, medição 3×3 e, somente se escolhido, `absolutePersist COPY` + salvar + recarregar + `absoluteVerify`, aproximar uma roda real da região e executar `reTerrainTrial contact`. Comparar apenas quando a geometria de contato, veículo, carga, local e condições forem suficientemente semelhantes. A aproximação da roda também pode introduzir deformação NATIVA; portanto **a simples diferença entre contato Y e MAIN não demonstra que a escrita absoluta alterou a malha fina ou a colisão**. O teste deve registrar a forma visual e a trafegabilidade separadamente.
+
+**Proteções incrementais:** o witness serializado está no formato v2 e valida que só o vértice central baixou e que essa redução ficou no intervalo de 0,5 mm até 12 mm no experimento de 1,5 mm. Essas marcas são *gates conservadores de evidência*, não valores universais do mapa. Um setter que provocou um buraco maior pode continuar tendo modificado o clone; ele apenas não será registrado como sucesso. A confirmação `absolutePersist COPY` agora liga o witness ao objeto `missionInfo` e ao diretório da mesma sessão, e a primeira tentativa de save consome a autorização mesmo quando recusada. **Não há reenvio automático de gravação em saves posteriores.**
+
+**Critério exato:** sucesso de `absoluteVerify` prova apenas que os NOVE valores de altura MAIN concordam com o witness salvo, *sob a condição de que o jogador realmente tenha recarregado a cópia*. Um contato físico válido é outra observação; o seu referencial é inferido, não certificado. Nenhuma dessas duas medidas isoladas libera um escritor permanente para rodas nem certifica a recuperação por implementos.
