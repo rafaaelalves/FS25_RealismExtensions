@@ -168,7 +168,10 @@ function Probe.consoleAtMarkedArea(scaleText)
     else
         -- Retain enough evidence to distinguish ambiguous, flat and
         -- mismatched maps without logging unbounded per-vertex output.
-        for i=1,math.min(3,#result.candidates) do
+        -- Bounded candidate count (seven defaults, one explicit). Report
+        -- EVERY candidate rather than accidentally hiding 255m, the fourth
+        -- default, whenever the sampled patch is flat or ambiguous.
+        for i=1,#result.candidates do
             local c=result.candidates[i]
             say(string.format(
                 "candidate heightScaleM=%.3f qM=%.8f evidence=%s fit=%d/%d maxResidualM=%.8f adjacentPairs=%d",
