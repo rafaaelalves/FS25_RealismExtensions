@@ -77,6 +77,39 @@ assert(math.abs(cumulativeB:getDebt("410:410")-(0.010-2*q))<0.000001)
 local mixedResult,mixedWhy=cumulative:applyOne(410,410,q,"INCREMENTAL")
 assert(mixedResult==nil and mixedWhy=="MIXED_DEBT_CONTRACT")
 
+-- Real 03-Nov scenario: request=1.5mm, native height step~3.891mm.
+-- CUMULATIVE 1.5mm demanded over 100 ticks must produce ZERO writes;
+-- increasing the same target to 3mm also must not dig a full step.
+-- Only once cumulative demand reaches 4.5mm may one verified quantum
+-- be submitted; repeated unchanged target then cannot produce a second.
+local exactBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local exactJournal=J.new(999,{unitM=1,sample=read})
+local exactCalls=0
+local exact=assert(C.new({
+    budget=exactBudget,journal=exactJournal,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        exactCalls=exactCalls+1
+        set(x,z,math.floor(y/q+0.5)*q)
+    end
+}))
+for _=1,100 do
+    local skip,reason=exact:applyOne(490,490,0.0015,"CUMULATIVE")
+    assert(skip==nil and reason=="SUB_QUANTUM_DEBT")
+end
+assert(exactCalls==0 and read(490,490)==base)
+assert(select(1,exact:applyOne(490,490,0.003,"CUMULATIVE"))==nil)
+assert(exactCalls==0)
+local exactResult=assert(exact:applyOne(490,490,0.0045,"CUMULATIVE"))
+assert(exactResult.verified and exactCalls==1)
+assert(math.abs(exactResult.beforeY-exactResult.afterY-q)<0.00005)
+assert((base-read(490,490))<=0.0045+0.00005)
+for _=1,100 do
+    local skip,reason=exact:applyOne(490,490,0.0045,"CUMULATIVE")
+    assert(skip==nil and reason=="SUB_QUANTUM_DEBT")
+end
+assert(exactCalls==1)
+
 -- A 'setter' that changes a neighboring vertex must NOT be certified as
 -- vertex-local even when the requested center vertex moved by exactly q.
 local j2=J.new(999,{unitM=1,sample=read})
