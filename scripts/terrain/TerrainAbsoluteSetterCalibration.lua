@@ -7,9 +7,12 @@ RealismExtensionsTerrainAbsoluteSetterCalibration =
 local Cal=RealismExtensionsTerrainAbsoluteSetterCalibration
 Cal.REQUEST_M=0.0015
 Cal.used=Cal.used==true
-Cal.VERSION=2
+Cal.VERSION=3
 Cal.pendingWitness=nil
 Cal.persistRequested=false
+Cal.witnessSaveAttempted=false
+Cal.witnessOriginMission=nil
+Cal.witnessOriginDirectory=nil
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -201,6 +204,12 @@ function Cal.run()
     end
     Cal.pendingWitness=witness
     Cal.persistRequested=false
+    Cal.witnessSaveAttempted=false
+    Cal.witnessOriginMission=witness~=nil and g_currentMission or nil
+    Cal.witnessOriginDirectory=witness~=nil
+        and g_currentMission~=nil
+        and g_currentMission.missionInfo~=nil
+        and g_currentMission.missionInfo.savegameDirectory or nil
     j:complete(token,false)
     -- Session-wide failsafe, regardless of apparent setter success: this
     -- research test cannot inadvertently resume ordinary native writes.
@@ -227,6 +236,10 @@ function Cal.armPersistence(confirmation)
     local trial=RealismExtensionsTerrainControlledWriteTrial
     if Cal.used~=true or Cal.pendingWitness==nil
         or Cal.persistRequested==true
+        or Cal.witnessSaveAttempted==true
+        or Cal.witnessOriginMission~=mission
+        or Cal.witnessOriginDirectory==nil
+        or info.savegameDirectory~=Cal.witnessOriginDirectory
         or g_server==nil or info==nil or info.isValid~=true
         or trial==nil or type(trial.isSinglePlayer)~="function"
         or trial.isSinglePlayer()~=true
@@ -243,6 +256,23 @@ function Cal.saveWitness(info)
     if Cal.persistRequested~=true or Cal.pendingWitness==nil then
         return false,"WITNESS_NOT_ARMED"
     end
+    -- The first callback consumes approval before any disk/API action,
+    -- including errors. No silent write on a future save after refusal.
+    Cal.persistRequested=false
+    Cal.witnessSaveAttempted=true
+    local mission=g_currentMission
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if mission==nil or mission~=Cal.witnessOriginMission
+        or info==nil or info~=mission.missionInfo
+        or info.savegameDirectory~=Cal.witnessOriginDirectory
+        or trial==nil or type(trial.isSinglePlayer)~="function"
+        or trial.isSinglePlayer()~=true
+        or RealismExtensionsConfig==nil
+        or RealismExtensionsConfig.modules==nil
+        or RealismExtensionsConfig.modules.TerrainPermanentActuator~="SHADOW" then
+        report("WITNESS SAVE REFUSED: save/session identity or singleplayer policy changed")
+        return false,"WITNESS_SAVE_SESSION_CHANGED"
+    end
     local W=RealismExtensionsTerrainAbsolutePersistenceWitness
     local rt=RealismExtensionsTerrainRuntime
     if W==nil or type(W.save)~="function"
@@ -251,7 +281,6 @@ function Cal.saveWitness(info)
     end
     local saved,reason=W.save(info,Cal.pendingWitness,rt.geometryJournal)
     if saved then
-        Cal.persistRequested=false
         report("WITNESS SAVED in copied save, separate from native geometry journal")
     else
         report("WITNESS SAVE REFUSED: "..tostring(reason))
