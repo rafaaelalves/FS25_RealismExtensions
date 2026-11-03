@@ -103,6 +103,14 @@ assert(witnessFiles[witnessPath]==nil)
 assert(select(1,C.verifyReload())==false) -- no witness saved
 assert(select(1,C.armPersistence("wrong"))==false)
 assert(witnessFiles[witnessPath]==nil)
+-- The folder name alone does not prove this is the same save-session owner.
+local genuineInfo=g_currentMission.missionInfo
+g_currentMission.missionInfo={
+    isMultiplayer=false,isValid=true,mapId="SaoCarlos",
+    savegameDirectory="/copy"
+}
+assert(select(1,C.armPersistence("COPY"))==false)
+g_currentMission.missionInfo=genuineInfo
 assert(select(1,C.armPersistence("COPY"))==true)
 assert(C.persistRequested==true)
 assert(select(1,C.saveWitness(g_currentMission.missionInfo))==true)
