@@ -9,6 +9,35 @@ assert(B.new({quantumM=0})==nil)
 assert(B.new({quantumM=0/0})==nil)
 local m=assert(B.new({quantumM=q,maxDebtM=0.10,toleranceM=0.00012}))
 assert(m.quarantined==false)
+assert(math.abs(m.toleranceM-0.00005)<1e-12)
+local strict=assert(B.new({quantumM=q,toleranceM=0.0005}))
+assert(strict.toleranceM<=0.00005)
+assert(B.new({quantumM=q,toleranceM=-0.001})==nil)
+assert(B.new({quantumM=q,toleranceM=0/0})==nil)
+
+-- A 0.2mm mismatch previously passed the 0.5mm default tolerance,
+-- letting systematic error accumulate over many nominal "successes".
+local highMismatch=assert(strict:requestTarget("mismatch",q,0.10))
+local mismatch,reasonMismatch=strict:settle(highMismatch,100,100-(q+0.0002))
+assert(mismatch~=nil and mismatch.verified==false)
+assert(reasonMismatch=="UNBOUNDED_OBSERVED_DELTA")
+assert(strict.quarantined==true)
+assert(strict.entries.mismatch.committedM==0)
+
+-- Even a small *accepted* jitter is measured and debited from the
+-- cumulative target, NOT rounded to the nominal q in accounting.
+local accounted=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local first=assert(accounted:requestTarget("measured",2*q,0.10))
+local actualFirst=q-0.00002
+local res=assert(accounted:settle(first,100,100-actualFirst))
+assert(res.verified==true)
+assert(math.abs(accounted.entries.measured.committedM-actualFirst)<1e-9)
+assert(math.abs(accounted:getDebt("measured")-(2*q-actualFirst))<1e-9)
+local second=assert(accounted:requestTarget("measured",2*q,0.10))
+assert(assert(accounted:settle(second,100,100-q)).verified)
+assert(math.abs(accounted.entries.measured.committedM-(actualFirst+q))<1e-9)
+assert(select(1,accounted:requestTarget("measured",2*q,0.10))==nil)
+assert(accounted.stats.verified==2)
 
 -- LIVE regression (Estancia Sao Carlos): the 03-Nov absolute setter
 -- request of 1.5mm returned 3.891mm, twice. Holding 1.5mm (or 3mm)
