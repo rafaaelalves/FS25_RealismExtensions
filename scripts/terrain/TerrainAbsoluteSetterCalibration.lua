@@ -7,7 +7,9 @@ RealismExtensionsTerrainAbsoluteSetterCalibration =
 local Cal=RealismExtensionsTerrainAbsoluteSetterCalibration
 Cal.REQUEST_M=0.0015
 Cal.used=Cal.used==true
-Cal.VERSION=1
+Cal.VERSION=2
+Cal.pendingWitness=nil
+Cal.persistRequested=false
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -186,6 +188,19 @@ function Cal.run()
             if entry~=nil then entry.owned=false end
         end
     end
+    -- Only isolated observed CENTER movement with no surrounding vertex
+    -- changes can be used to prepare a persistence comparison. This does
+    -- NOT prove collision, fine-wheel mesh or gameplay-level recoverability.
+    local Witness=RealismExtensionsTerrainAbsolutePersistenceWitness
+    local witness,witnessReason=nil,"WITNESS_MODULE_UNAVAILABLE"
+    if ok and Witness~=nil
+        and type(Witness.capture)=="function" then
+        witness,witnessReason=Witness.capture(
+            j,token,ctx.x,ctx.z,Cal.REQUEST_M,
+            g_currentMission~=nil and g_currentMission.missionInfo or nil)
+    end
+    Cal.pendingWitness=witness
+    Cal.persistRequested=false
     j:complete(token,false)
     -- Session-wide failsafe, regardless of apparent setter success: this
     -- research test cannot inadvertently resume ordinary native writes.
@@ -196,6 +211,75 @@ function Cal.run()
         Cal.REQUEST_M,centerY,requestedTarget,
         finite(centerDelta) and string.format("%+.6f",centerDelta) or "UNAVAILABLE",
         lower,raise,moved,valid))
+    report("WITNESS status="..(witness~=nil and "READY_NOT_SAVED" or tostring(witnessReason))
+        ..". Default remains QUIT WITHOUT SAVING. Optional cloned-save persistence test requires explicit reTerrainTrial absolutePersist COPY before user manually saves.")
     return true,nil
 end
+
+-- Explicit second confirmation AFTER the destructive calibration. Merely
+-- running the old 'absolute' command can never create/save a witness file.
+function Cal.armPersistence(confirmation)
+    if confirmation~="COPY" then
+        return false,report("WITNESS REFUSED: explicit 'reTerrainTrial absolutePersist COPY' required; only on a DISPOSABLE SAVE")
+    end
+    local mission=g_currentMission
+    local info=mission~=nil and mission.missionInfo or nil
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if Cal.used~=true or Cal.pendingWitness==nil
+        or Cal.persistRequested==true
+        or g_server==nil or info==nil or info.isValid~=true
+        or trial==nil or type(trial.isSinglePlayer)~="function"
+        or trial.isSinglePlayer()~=true
+        or RealismExtensionsConfig==nil
+        or RealismExtensionsConfig.modules==nil
+        or RealismExtensionsConfig.modules.TerrainPermanentActuator~="SHADOW" then
+        return false,report("WITNESS REFUSED: no validated isolated absolute event / singleplayer cloned-save context")
+    end
+    Cal.persistRequested=true
+    return true,report("WITNESS SAVE ARMED for cloned save. NEXT manual in-game save stores ONLY 3x3 read-only evidence; RE native writer remains quarantined. After reload run reTerrainTrial absoluteVerify. THIS IS NOT A PRODUCTION SAVE PROCEDURE.")
+end
+
+function Cal.saveWitness(info)
+    if Cal.persistRequested~=true or Cal.pendingWitness==nil then
+        return false,"WITNESS_NOT_ARMED"
+    end
+    local W=RealismExtensionsTerrainAbsolutePersistenceWitness
+    local rt=RealismExtensionsTerrainRuntime
+    if W==nil or type(W.save)~="function"
+        or rt==nil or rt.geometryJournal==nil then
+        return false,"WITNESS_MODULE_NOT_READY"
+    end
+    local saved,reason=W.save(info,Cal.pendingWitness,rt.geometryJournal)
+    if saved then
+        Cal.persistRequested=false
+        report("WITNESS SAVED in copied save, separate from native geometry journal")
+    else
+        report("WITNESS SAVE REFUSED: "..tostring(reason))
+    end
+    return saved,reason
+end
+
+function Cal.verifyReload()
+    -- Read-only and intentionally usable in a fresh reloaded session.
+    local mission=g_currentMission
+    local info=mission~=nil and mission.missionInfo or nil
+    local rt=RealismExtensionsTerrainRuntime
+    local W=RealismExtensionsTerrainAbsolutePersistenceWitness
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if W==nil or type(W.verifyReload)~="function"
+        or trial==nil or type(trial.isSinglePlayer)~="function"
+        or trial.isSinglePlayer()~=true
+        or info==nil or rt==nil or rt.geometryJournal==nil then
+        return false,report("RELOAD VERIFICATION REFUSED: no singleplayer MAIN-height context")
+    end
+    local ok,status,d=W.verifyReload(info,rt.geometryJournal)
+    report(string.format(
+        "RELOAD WITNESS status=%s match=%s centerDeltaM=%s maxDriftM=%s neighborsChanged=%s. MAIN height ONLY; command does NOT establish fine mesh persistence, collision, or actual process restart.",
+        tostring(status),tostring(ok),
+        d~=nil and tostring(d.centerDeltaM) or "UNAVAILABLE",
+        d~=nil and tostring(d.maxDriftM) or "UNAVAILABLE",
+        d~=nil and tostring(d.neighborsChanged) or "UNAVAILABLE"))
+    return ok,status,d
+end
+
 return Cal
