@@ -52,6 +52,14 @@ original[key(10,20)]=read(10,20)-0.003891
 local record,why=W.capture(j,token,10,20,0.0015,info)
 assert(record~=nil and why==nil and #record.points==9)
 assert(record.mapId=="SaoCarlos" and record.unitM==1)
+-- The visual 1.5mm request must not permit archiving a 100mm crater as
+-- a "verified persistence experiment"; the actual map step is unverified.
+local violentToken=assert(j:begin("ABS:30:30",30,30,0.70))
+original[key(30,30)]=read(30,30)-0.10
+local bad,whyBad=W.capture(j,violentToken,30,30,0.0015,info)
+assert(bad==nil and whyBad=="WITNESS_EXCESSIVE_CENTER_LOWERING")
+assert(select(1,j:complete(violentToken,false)).success==false)
+original[key(30,30)]=nil
 assert(record.version==W.VERSION)
 assert(select(1,j:complete(token,false)).success==false)
 -- Opt-in cal code controls WHETHER save is called; this function itself
