@@ -239,8 +239,8 @@ function Cal.armPersistence(confirmation)
         or Cal.witnessSaveAttempted==true
         or Cal.witnessOriginMission~=mission
         or Cal.witnessOriginDirectory==nil
-        or info.savegameDirectory~=Cal.witnessOriginDirectory
         or g_server==nil or info==nil or info.isValid~=true
+        or info.savegameDirectory~=Cal.witnessOriginDirectory
         or trial==nil or type(trial.isSinglePlayer)~="function"
         or trial.isSinglePlayer()~=true
         or RealismExtensionsConfig==nil
