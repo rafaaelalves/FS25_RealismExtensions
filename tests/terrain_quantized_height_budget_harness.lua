@@ -10,6 +10,53 @@ assert(B.new({quantumM=0/0})==nil)
 local m=assert(B.new({quantumM=q,maxDebtM=0.10,toleranceM=0.00012}))
 assert(m.quarantined==false)
 
+-- LIVE regression (Estancia Sao Carlos): the 03-Nov absolute setter
+-- request of 1.5mm returned 3.891mm, twice. Holding 1.5mm (or 3mm)
+-- is mandatory; it is NOT permissible to round a native step upward.
+local live=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local liveKey="344:387"
+local livePlan,liveWhy=live:request(liveKey,0.0015,0.10)
+assert(livePlan==nil and liveWhy=="SUB_QUANTUM_DEBT")
+livePlan,liveWhy=live:request(liveKey,0.0015,0.10)
+assert(livePlan==nil and liveWhy=="SUB_QUANTUM_DEBT")
+assert(math.abs(live:getDebt(liveKey)-0.003)<1e-10)
+livePlan=assert(live:request(liveKey,0.0015,0.10))
+assert(math.abs(livePlan.stepM-q)<1e-10)
+assert(assert(live:settle(livePlan,152.501938,152.501938-q)).verified)
+assert(math.abs(live:getDebt(liveKey)-(0.0045-q))<1e-10)
+-- Strict inequality: a deficit of just 0.5 micrometers is still not
+-- enough to authorize a whole 3.891mm native step (old +1e-6 bug).
+local early=assert(B.new({quantumM=q}))
+local badStep,badWhy=early:request("strict",q-0.0000005,0.10)
+assert(badStep==nil and badWhy=="SUB_QUANTUM_DEBT")
+local unsafeBudget,unsafeReason=early:request("strict",0,q-0.0000005)
+assert(unsafeBudget==nil and unsafeReason=="SUB_QUANTUM_DEBT")
+badStep=assert(early:request("strict",0.0000005,0.10))
+assert(math.abs(badStep.stepM-q)<1e-10)
+assert(early:cancel(badStep))
+-- Once demand is sufficient, a budget short by 0.5 micrometers must
+-- STILL deny the setter. No 'close enough' height-budget overspend.
+local noStep,budgetReason=early:request("strict",0,q-0.0000005)
+assert(noStep==nil and budgetReason=="NO_SAFE_GEOMETRY_STEP")
+assert(math.abs(early:getDebt("strict")-q)<1e-10)
+-- Stable CUMULATIVE input across many frames never counts as repeated debt.
+local liveTarget=assert(B.new({quantumM=q}))
+for _=1,100 do
+    local noPlan,noWhy=liveTarget:requestTarget("rounding",0.0015,0.10)
+    assert(noPlan==nil and noWhy=="SUB_QUANTUM_DEBT")
+end
+assert(math.abs(liveTarget:getDebt("rounding")-0.0015)<1e-10)
+assert(liveTarget.stats.requestedM==0.0015)
+assert(select(1,liveTarget:requestTarget("rounding",0.003,0.10))==nil)
+local exactlyOne=assert(liveTarget:requestTarget("rounding",0.0045,0.10))
+assert(exactlyOne.stepM==q)
+assert(assert(liveTarget:settle(exactlyOne,100,100-q)).verified)
+for _=1,100 do
+    assert(select(1,liveTarget:requestTarget("rounding",0.0045,0.10))==nil)
+end
+assert(math.abs(liveTarget.entries.rounding.committedM-q)<1e-10)
+assert(math.abs(liveTarget:getDebt("rounding")-(0.0045-q))<1e-10)
+
 -- One wheel demands 1.7mm: cannot excavate a finer main heightmap step.
 local p,why=m:request("250:250",0.0017,0.10)
 assert(p==nil and why=="SUB_QUANTUM_DEBT")
