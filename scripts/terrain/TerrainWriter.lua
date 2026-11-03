@@ -59,6 +59,9 @@ function Writer.new(options)
             callbackDisplacedVolumeM3 = 0,
             callbackMaxDisplacedVolumeM3 = 0,
             callbackVolumeMissing = 0,
+            causalNativePendingSkips = 0,
+            causalNativeStarted = 0,
+            causalNativeFinished = 0,
             massTransportSourceVolumeM3 = 0,
             massTransportTargetVolumeM3 = 0,
             massTransportRaisedVolumeM3 = 0,
@@ -186,7 +189,11 @@ function Writer:enqueue(brush)
         targetPlaneAx = tonumber(brush.targetPlaneAx) or 0,
         targetPlaneAz = tonumber(brush.targetPlaneAz) or 0,
         recoveryPreProbe = brush.recoveryPreProbe,
-        onApplied = brush.onApplied
+        skipRecoveryGeometryProbe = brush.skipRecoveryGeometryProbe == true,
+        onApplied = brush.onApplied,
+        beforeSubmit = brush.beforeSubmit,
+        onSubmitted = brush.onSubmitted,
+        trialTicket = brush.trialTicket
     }
     self.queueCount = (self.queueCount or 0) + 1
     self.stats.enqueued = self.stats.enqueued + 1
@@ -452,6 +459,51 @@ local function configureDeformationConstraints(deformation)
 end
 
 function Writer:_submitBatch(depthM, brushes, mode)
+    -- Prevent accidentally unblocking OLD RE native recovery/maintenance
+    -- commands by switching off the trial console. The experimental SHADOW
+    -- profile is a whole-writer protection, not just a wheel generator flag.
+    -- Only the explicitly commanded calibration with its own one-shot
+    -- authorization can pass through, and its native effect is still unproven.
+    local modules=RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules or nil
+    if modules~=nil and modules.TerrainPermanentActuator=="SHADOW" then
+        local explicitCalibration=modules.TerrainControlledWriteTrial==true
+            and type(brushes)=="table" and #brushes==1
+            and brushes[1].source=="CALIBRATION"
+            and mode=="LOWER"
+        if not explicitCalibration then
+            self.stats.shadowNativeBlocked=(self.stats.shadowNativeBlocked or 0)+1
+            return false,"SHADOW_PROFILE_NATIVE_WRITES_DISABLED"
+        end
+    end
+    -- Absolute safety boundary: the trial observes first. Only a verified
+    -- single RE causal wheel LOWER may pass when explicitly armed; every
+    -- recovery/maintenance/other heightmap job is also blocked in test mode.
+    if RealismExtensionsTerrainControlledWriteTrial~=nil then
+        local approved,reason=
+            RealismExtensionsTerrainControlledWriteTrial.beforeNative(
+                mode,brushes,math.abs(depthM))
+        if not approved then
+            self.stats.trialNativeBlocked=
+                (self.stats.trialNativeBlocked or 0)+1
+            return false,reason
+        end
+    end
+    -- Executed just before allocating the GIANTS native operation: a wheel
+    -- brush can wait in this writer's queue after its first-touch sample.
+    -- Fail closed if the ground moved during that wait; flush() releases its
+    -- geometry-journal lock through the existing onApplied(false) path.
+    for _, brush in ipairs(brushes or {}) do
+        if type(brush.beforeSubmit) == "function" then
+            local ok, valid, reason = pcall(brush.beforeSubmit)
+            if not ok or valid ~= true then
+                self.stats.nativePreflightRejected =
+                    (self.stats.nativePreflightRejected or 0) + 1
+                self.stats.lastSubmitError = tostring(reason or valid)
+                return false, "native preflight rejected: " .. tostring(reason or valid)
+            end
+        end
+    end
     local mission = g_currentMission
     local terrain = mission ~= nil and mission.terrainRootNode or g_terrainNode
     if TerrainDeformation == nil or terrain == nil or terrain == 0 then
@@ -540,6 +592,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             brushes[1].source == "RECOVERY"
             or brushes[1].source == "MAINTENANCE"
         )
+        and brushes[1].skipRecoveryGeometryProbe ~= true
 
     if mode == "SMOOTH" or mode == "TARGET" or recoveryRaiseMode
         or expensiveGeometryDiagnosticsEnabled() then
@@ -586,7 +639,13 @@ function Writer:_submitBatch(depthM, brushes, mode)
         )
     end
 
+    local strictCausal = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    local causalExclusiveJob = strictCausal
+        and brushes ~= nil and #brushes > 0
     local callbackTarget = {
+        causalExclusiveJob = causalExclusiveJob,
         deformation = deformation,
         owner = self,
         terrain = terrain,
@@ -599,6 +658,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     }
 
     function callbackTarget:done(state, displacedVolume, blockedObjectName)
+        if self.causalExclusiveJob then
+            -- Queue/direct native callback, not submission, ends the
+            -- isolation window. One RE native job may be in flight.
+            self.owner.nativeCausalPending=false
+            self.owner.stats.causalNativeFinished =
+                self.owner.stats.causalNativeFinished + 1
+            self.causalExclusiveJob=false
+        end
         local perfStarted = RealismExtensionsTerrainPerformance ~= nil
             and RealismExtensionsTerrainPerformance.begin() or nil
         if state ~= nil
@@ -909,6 +976,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     local q = g_terrainDeformationQueue
         or (mission ~= nil and mission.terrainDeformationQueue)
 
+    local function notifySubmitted()
+        for _,brush in ipairs(brushes or {}) do
+            if type(brush.onSubmitted)=="function" then
+                pcall(brush.onSubmitted)
+            end
+        end
+    end
+
     if machineRecoverySmooth or machineRecoveryTarget or recoveryRaiseMode then
         -- Machine recovery follows TerraFarm's direct landscaping path. It is
         -- serialized by TerrainRecovery, so each callback belongs to exactly
@@ -937,6 +1012,11 @@ function Writer:_submitBatch(depthM, brushes, mode)
             self.stats.recoveryMachineRaiseBrushes =
                 self.stats.recoveryMachineRaiseBrushes + #(brushes or {})
         end
+        if causalExclusiveJob then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
+        notifySubmitted()
         local ok, err = pcall(
             deformation.apply,
             deformation,
@@ -945,6 +1025,7 @@ function Writer:_submitBatch(depthM, brushes, mode)
             callbackTarget
         )
         if not ok then
+            if causalExclusiveJob then self.nativeCausalPending=false end
             self.stats.lastSubmitError = tostring(err)
             deformation:delete()
             return false, "machine smoothing apply failed: " .. tostring(err)
@@ -953,8 +1034,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if q ~= nil and type(q.queueJob) == "function" then
+        if causalExclusiveJob then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
+        notifySubmitted()
         local ok = pcall(q.queueJob, q, deformation, false, "done", callbackTarget)
         if not ok then
+            if causalExclusiveJob then self.nativeCausalPending=false end
             deformation:delete()
             return false, "queueJob failed"
         end
@@ -962,8 +1049,14 @@ function Writer:_submitBatch(depthM, brushes, mode)
     end
 
     if type(deformation.apply) == "function" then
+        if causalExclusiveJob then
+            self.nativeCausalPending=true
+            self.stats.causalNativeStarted=self.stats.causalNativeStarted+1
+        end
+        notifySubmitted()
         local ok = pcall(deformation.apply, deformation, false, "done", callbackTarget)
         if not ok then
+            if causalExclusiveJob then self.nativeCausalPending=false end
             deformation:delete()
             return false, "direct apply failed"
         end
@@ -976,11 +1069,24 @@ end
 
 function Writer:flush()
     if self:getQueueSize() == 0 then return 0, 0 end
+    local strictCausal = RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true
+    if strictCausal and self.nativeCausalPending == true then
+        self.stats.causalNativePendingSkips =
+            self.stats.causalNativePendingSkips + 1
+        return 0, 0
+    end
     local perfStarted = RealismExtensionsTerrainPerformance ~= nil
         and RealismExtensionsTerrainPerformance.begin() or nil
 
     local brushBudget = math.max(1, math.floor(self.options.maxBrushesPerFrame))
     local jobBudget = math.max(1, math.floor(self.options.maxJobsPerFrame))
+    -- A single asynchronous RE native job at a time prevents another RE
+    -- TARGET or LOWER from changing sampled vertices before the callback.
+    -- The conservative experimental policy trades throughput for reliable
+    -- geometry attribution; benchmark before release.
+    if strictCausal then jobBudget=1 end
     local perJob = math.max(1, math.floor(self.options.maxBrushesPerJob))
     local bucketM = math.max(0.0001, tonumber(self.options.depthBucketM) or 0.0005)
 
@@ -993,13 +1099,26 @@ function Writer:flush()
         local groupKey = tostring(brush.mode or "LOWER")
             .. ":" .. tostring(brush.source or "DEFAULT")
             .. ":" .. tostring(bucket)
+        -- A geometry-journal LOWER callback owns one before/after native
+        -- transaction. Grouping multiple callback-bearing ruts in ONE
+        -- TerrainDeformation job makes each individual callback measure the
+        -- sum of several brushes and invalidates causal depth attribution.
+        -- Keep the exact requested depth; the 0.5mm grouping bucket may
+        -- otherwise round even a one-brush physical command.
+        if brush.mode == "LOWER" and brush.onApplied ~= nil then
+            groupKey = groupKey .. ":CAUSAL:" .. tostring(consumed + 1)
+        end
         if brush.mode == "TARGET"
             or (brush.mode == "RAISE" and brush.source == "RECOVERY") then
             groupKey = groupKey
                 .. ":" .. string.format("%.3f", brush.x)
                 .. ":" .. string.format("%.3f", brush.z)
         end
-        groups[groupKey] = groups[groupKey] or { mode=brush.mode or "LOWER", depth=bucket, brushes={} }
+        local nativeDepth = (brush.mode == "LOWER"
+            and brush.onApplied ~= nil) and brush.depthM or bucket
+        groups[groupKey] = groups[groupKey] or {
+            mode=brush.mode or "LOWER", depth=nativeDepth, brushes={}
+        }
         local groupInfo = groups[groupKey]
         local group = groupInfo.brushes
         local factor = math.max(0, tonumber(self.options.coalesceDistanceFactor) or 0)
@@ -1044,8 +1163,10 @@ function Writer:flush()
             local recoveryRaise = mode == "RAISE"
                 and group[index] ~= nil
                 and group[index].source == "RECOVERY"
-            local batchLimit = (mode == "TARGET" or recoveryRaise)
-                and 1 or perJob
+            local causalLower = mode == "LOWER"
+                and group[index] ~= nil and group[index].onApplied ~= nil
+            local batchLimit = (mode == "TARGET" or recoveryRaise
+                or causalLower) and 1 or perJob
             for _ = 1, batchLimit do
                 if index > #group then break end
                 batch[#batch + 1] = group[index]
@@ -1060,6 +1181,13 @@ function Writer:flush()
                 self.stats.submittedBrushes = self.stats.submittedBrushes + #batch
             else
                 self.stats.failedJobs = self.stats.failedJobs + 1
+                -- Enqueue is not native success. Notify callback-bearing brushes
+                -- that submission itself failed so causal locks cannot leak.
+                for _, failedBrush in ipairs(batch) do
+                    if type(failedBrush.onApplied) == "function" then
+                        pcall(failedBrush.onApplied, false, nil, nil, nil, nil, nil)
+                    end
+                end
             end
         end
     end

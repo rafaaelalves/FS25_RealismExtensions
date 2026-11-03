@@ -463,3 +463,215 @@ local qb3,qj3=qw:flush()
 assert(qb3==1 and qj3==1 and qw:getQueueSize()==0)
 assert(qw.queueHead==1 and qw.queueTail==0)
 print("terrain_writer_r6_queue_harness: OK")
+
+-- A callback-bearing LOWER is a *single native transaction*. A former
+-- batch of 3 distinct 2.4mm brushes caused each wheel's journal callback
+-- to sample geometry AFTER all 3 commands, corrupting attribution. In
+-- contrast, regular no-callback brushes may still batch for throughput.
+local causal = RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=5,maxJobsPerFrame=2,maxBrushesPerJob=8,
+    depthBucketM=0.0005,minDepthM=0.0004
+})
+local beforeJobs=#created
+local confirmations={}
+for i=1,3 do
+    local ix=140+i
+    local original=10
+    assert(causal:enqueue({
+        x=ix,z=140,depthM=0.0024,radiusM=0.21,
+        onApplied=function(state)
+            assert(state==TerrainDeformation.STATE_SUCCESS)
+            confirmations[#confirmations+1]=ix
+            assert(math.abs((heights[tostring(ix)..":140"] or 10)
+                -(original-0.0024))<0.000001)
+        end
+    }))
+end
+local n1,j1=causal:flush()
+assert(n1==2 and j1==2)
+assert(#created==beforeJobs+2)
+assert(#confirmations==2)
+assert(causal:getQueueSize()==1)
+for i=beforeJobs+1,beforeJobs+2 do
+    assert(#created[i].brushes==1)
+    assert(math.abs(created[i].depth+0.0024)<0.000001,
+        "native command may not round the requested 2.4mm to 2.5mm")
+end
+local n2,j2=causal:flush()
+assert(n2==1 and j2==1)
+assert(#confirmations==3 and causal:getQueueSize()==0)
+assert(#created[beforeJobs+3].brushes==1)
+assert(math.abs(created[beforeJobs+3].depth+0.0024)<0.000001)
+print("terrain_writer_causal_single_brush_harness: OK")
+
+-- In causal mode, a native callback MUST arrive before any other RE
+-- deformation job starts, even in the following frame. This prevents RE
+-- recovery, grading, or further wheel writes from contaminating the pending
+-- journal's before/after measurements.
+local nativeQ=g_terrainDeformationQueue.queueJob
+local pendingNative={}
+g_terrainDeformationQueue.queueJob=function(self,deformation,preview,name,target)
+    pendingNative[#pendingNative+1]={name=name,target=target,d=deformation}
+    return #pendingNative
+end
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+local asyncW=RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=5,maxJobsPerFrame=4,maxBrushesPerJob=8,
+    depthBucketM=0.0005
+})
+local completed=0
+for i=1,3 do
+    assert(asyncW:enqueue({
+        x=170+i,z=170,depthM=0.0024,radiusM=0.22,
+        onApplied=function() completed=completed+1 end
+    }))
+end
+local as,aj=asyncW:flush()
+assert(as==1 and aj==1 and #pendingNative==1)
+assert(asyncW.nativeCausalPending==true)
+assert(asyncW:getQueueSize()==2)
+as,aj=asyncW:flush()
+assert(as==0 and aj==0 and #pendingNative==1)
+assert(asyncW.stats.causalNativePendingSkips==1)
+pendingNative[1].target[pendingNative[1].name](
+    pendingNative[1].target,TerrainDeformation.STATE_SUCCESS,0.01,nil)
+assert(asyncW.nativeCausalPending==false and completed==1)
+as,aj=asyncW:flush()
+assert(as==1 and aj==1 and #pendingNative==2)
+assert(asyncW.nativeCausalPending==true)
+pendingNative[2].target[pendingNative[2].name](
+    pendingNative[2].target,TerrainDeformation.STATE_SUCCESS,0.01,nil)
+assert(completed==2)
+as,aj=asyncW:flush()
+assert(as==1 and aj==1 and #pendingNative==3)
+pendingNative[3].target[pendingNative[3].name](
+    pendingNative[3].target,TerrainDeformation.STATE_SUCCESS,0.01,nil)
+assert(completed==3 and asyncW.nativeCausalPending==false)
+assert(asyncW.stats.causalNativeStarted==3)
+assert(asyncW.stats.causalNativeFinished==3)
+assert(asyncW:getQueueSize()==0)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+g_terrainDeformationQueue.queueJob=nativeQ
+print("terrain_writer_causal_async_exclusion_harness: OK")
+
+-- Fail closed BEFORE a native handle is constructed if a wheel's
+-- enqueue-time geometry sample is stale; always release causal locks via
+-- the ordinary callback-on-submission-failure path.
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+local guardW=RealismExtensionsTerrainWriter.new()
+local nativeCreated=#created
+local guardCalled=0
+local callbackFailed=false
+assert(guardW:enqueue({
+    x=193,z=193,depthM=0.0024,radiusM=0.23,
+    beforeSubmit=function()
+        guardCalled=guardCalled+1
+        return false,"QUEUED_GEOMETRY_DRIFT"
+    end,
+    onApplied=function(state)
+        callbackFailed=(state==false)
+    end
+}))
+local guardBrushes,guardJobs=guardW:flush()
+assert(guardBrushes==0 and guardJobs==0)
+assert(guardW:getQueueSize()==0)
+assert(guardCalled==1 and callbackFailed==true)
+assert(#created==nativeCreated)
+assert(guardW.stats.nativePreflightRejected==1)
+assert(guardW.nativeCausalPending~=true)
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+print("terrain_writer_native_preflight_harness: OK")
+
+-- Real TerrainWriter integration of the one-shot protective boundary.
+-- Runs *after* legacy writer tests: no production behavior is affected if
+-- TerrainControlledWriteTrial was not explicitly selected.
+dofile("scripts/terrain/TerrainControlledWriteTrial.lua")
+local Trial=RealismExtensionsTerrainControlledWriteTrial
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=true
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsConfig.modules.SoilMassTransport=false
+g_server={}
+g_currentMission.missionInfo={isMultiplayer=false}
+g_currentMission.missionDynamicInfo={isMultiplayer=false}
+RealismExtensionsTerrainRuntime={
+    nativeDamageQuarantined=false,geometryJournal={unitM=1}
+}
+RealismExtensionsTerrainNativeQueueProbe={
+    owner={},enabled=true,pollIntegrity=function()return true end
+}
+RealismExtensionsTerrainNativeSpatialProbe={
+    owner={},checkIntegrity=function()return true end
+}
+RealismExtensionsTerrainGeometryProbe={
+    position={x=901,z=901},previous={x=901,z=901,label="beforeOneShot"}
+}
+local pilot=RealismExtensionsTerrainWriter.new({
+    maxBrushesPerFrame=1,maxJobsPerFrame=1,maxBrushesPerJob=1,
+    coalesceDistanceFactor=0,minDepthM=0.0004
+})
+local beforePilot=#created
+local fakeCallback=function() end
+assert(pilot:enqueue({
+    x=900,z=900,depthM=0.002,radiusM=0.4,
+    onApplied=fakeCallback,trialTicket=1234
+}))
+local observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0)
+assert(#created==beforePilot and #queued>=1)
+assert(Trial.stats.nativeRejected>=1)
+
+Trial:consoleCommand("arm")
+assert(Trial.tryReserve(910,910)==nil) -- out-of-patch wheel cannot win
+local ticket=assert(Trial.tryReserve(901,901))
+assert(pilot:enqueue({
+    x=901,z=901,depthM=0.002,radiusM=0.4,
+    trialTicket=ticket,
+    onApplied=function(state)
+        assert(state==TerrainDeformation.STATE_SUCCESS)
+        assert(Trial.callback(ticket)==true)
+    end
+}))
+observed,jobs=pilot:flush()
+assert(observed==1 and jobs==1)
+assert(#created==beforePilot+1)
+assert(Trial.stats.nativeApproved==1 and Trial.pending==false)
+assert(Trial.armed==false)
+assert(pilot:enqueue({
+    x=902,z=902,depthM=0.002,radiusM=0.4,
+    trialTicket=ticket,onApplied=fakeCallback
+}))
+observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0)
+assert(#created==beforePilot+1)
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=false
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+-- SHADOW is independently safe even with trial controls disabled. Legacy
+-- causal-maintenance/repair or wheel writes may enqueue, but cannot reach
+-- the GIANTS native deformation constructor.
+RealismExtensionsConfig.modules.TerrainPermanentActuator="SHADOW"
+local beforeShadow=#created
+assert(pilot:enqueue({
+    x=903,z=903,depthM=0.01,radiusM=0.4,mode="LOWER",
+    onApplied=function()end
+}))
+observed,jobs=pilot:flush()
+assert(observed==0 and jobs==0 and #created==beforeShadow)
+assert((pilot.stats.shadowNativeBlocked or 0)>=1)
+-- A deliberately commanded calibration still requires the one-shot trial.
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=true
+RealismExtensionsConfig.modules.TerrainCausalRecovery=true
+RealismExtensionsTerrainGeometryProbe.position={x=904,z=904}
+RealismExtensionsTerrainGeometryProbe.previous={x=904,z=904}
+Trial:consoleCommand("arm")
+local calibrationTicket=assert(Trial.tryReserve(904,904))
+assert(pilot:enqueue({
+    x=904,z=904,depthM=0.0015,radiusM=0.45,
+    source="CALIBRATION",trialTicket=calibrationTicket,
+    onApplied=function()assert(Trial.callback(calibrationTicket)==true)end
+}))
+observed,jobs=pilot:flush()
+assert(observed==1 and jobs==1 and #created==beforeShadow+1)
+RealismExtensionsConfig.modules.TerrainPermanentActuator=nil
+RealismExtensionsConfig.modules.TerrainControlledWriteTrial=false
+RealismExtensionsConfig.modules.TerrainCausalRecovery=false
+print("terrain_writer_protected_one_shot_harness: OK")

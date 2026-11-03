@@ -38,6 +38,10 @@ RealismExtensionsBuildInfo = {
 }
 
 dofile("scripts/Config.lua")
+-- This harness intentionally tests opt-in, five-second verbose research mode;
+-- the shipped default is a quiet minute-scale stabilization profile.
+RealismExtensionsConfig.diagnostics.verbose=true
+RealismExtensionsConfig.diagnostics.windowMs=5000
 dofile("scripts/Diagnostics.lua")
 dofile("scripts/terrain/TerrainTelemetry.lua")
 

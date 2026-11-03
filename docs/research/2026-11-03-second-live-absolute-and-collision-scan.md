@@ -1,0 +1,34 @@
+# 03/11 — segunda sessão real: quantização MAIN repetida, witness sem save, CollisionProbe 40 rodas
+
+**Fonte primária:** arquivos recebidos `log(20261103-031753).txt` (2.636 linhas) e `ModMixer(20261103-031753).log`. A sessão do jogo inicia ~00:14:53 horário local; comandos ~00:16:30–00:17:18; `quit savegame` 00:17:25. O registro está documentado aqui, os logs brutos não foram enviados ao repositório.
+
+## Observações verificadas
+
+- **FS25 1.25**, mapa Estância São Carlos. Build RE em execução: `branch=64/merge commit=56340d96... run=41570196978`, que já contém a correção de `VehicleSystem.vehicles` do ensaio anterior. RC em execução `branch=51/merge commit=b85bceff... run=41457186729`, com MR+Mud e MR+Draft **ACTIVE / SOURCE_COMPATIBLE** (Mud 1.3.9.0, MR 0.26.10.08); MR+RMS, Mud+RMS e RMS+RE PTO continuam UNSUPPORTED para RMS 0.13.0.1. Não reinterpretar como RC main atualizado nem como completa certificação de todas as cadeias de hooks.
+- `reGeoMark` em (344.165, 387.319), `reGeoSnap beforeAbsolute`: MAIN unit 1m, 25 samples MAIN e 289 samples densos **da mesma API MAIN**. Sem histórico local de deformação e zero registro de roda na área marcada.
+- `reTerrainTrial absoluteCheck`: preflight para vértice (344,387), `centerY=152.501938`, pedido -1.5mm.
+- `reTerrainTrial absolute` realizado UMA vez na sessão, confirmou `setterCallOk=true`, `centerDeltaM=-0.003891`, **1/9 vértices** movidos, nenhum vértice levantado, `WITNESS status=READY_NOT_SAVED`, `quarantined=true`. Esse resultado repete a amplitude ~3.891mm da sessão de 00:04 e do episódio de 29/10, **mas a vertical-quantum calibration sistêmica ainda é UNVERIFIED**.
+- **`reTerrainTrial absolutePersist COPY` foi executado às 00:17:00 e respondeu ARMED.** Às 00:17:05, ainda na MESMA sessão e antes de qualquer registro de `WITNESS SAVED`, o usuário executou `reTerrainTrial absoluteVerify`; `NO_WITNESS_SAVED_IN_THIS_COPY`. O log passa então a `reTerrainTrial contact` e `quit savegame` às 00:17:25, **sem callback observável de save da witness**. NÃO interpretar como falha de persistência do motor; o protocolo exige **salvar manualmente a cópia, sair e recarregar**. O texto `savegame2` no caminho não constitui prova de que o save foi clonado.
+- `reTerrainTrial contact` às 00:17:18: `source=VEHICLE_SYSTEM nearMark=0 scannedWheels=40 unclassified=2 truncated=false`. A correção de acesso aos veículos **funcionou**: agora 40 wheel shapes foram enumerados. Não existiu **qualquer contato classificado dentro dos 3m da área marcada**. O relatório antigo não distinguia rodas distantes, objetos que não são o terreno, frames ambíguos e ausência de contato. Portanto o resultado é *inconclusivo sobre clipping*.
+- `TerrainNativeWheel | samples=89 distinct=18 ready=89 baseline=89 scaleMin=1 scaleMax=1` é observação passiva da escala nativa, NÃO leitura da malha fina ou do collider do vértice calibrado.
+- `TerrainAbsoluteShadow | mode=NO_WRITE sources=0 vertices=0 samples=0` e `TerrainQueueProbe | submissions=0 RE=0 other=0`: não ocorreram escritas automáticas do RE observadas na sessão. O setter manual calibrado foi deliberado e separado.
+- ModMixer boot healthy. Problemas não atribuíveis ao ensaio RE: `FS25_CBI6800CT` especializações duplicadas e `FS25_manualAttach/DetectionHandler.lua:65` fazendo `delete(nil)` ao sair. `MRMud` relata `widthRadius=false` integrity pointer drift, cujo log admite possível outer wrapper seguro: sem provas de efeito físico sem uma auditoria de callchain.
+
+## Causas técnicas tratadas nesta etapa
+
+### O diagnóstico do contato precisava informar a razão
+
+- `TerrainWheelCollisionProbe.scanMark` agora reporta contagens separadas de `NO_CONTACT`, `NON_TERRAIN_CONTACT`, `TERRAIN_CONTACT_OBSERVED`, `TERRAIN_CONTACT_OUTSIDE_MARK`, `CONTACT_FRAME_UNVERIFIED`, `ERROR`, além de histograma de recusas e distâncias até o nó `wheel.repr` e o contato físico classificado mais próximos. Continua one-shot, read-only.
+- O teste original `resolvePointFrame` comparava distância do contato com `wheel.node`, que, como no FS25, é o **parent component transform**, não obrigatoriamente o centro da roda. Em veículos com entre-eixos/equipamento longo, esse erro rejeitava contato válido. Agora exige o nó `wheel.repr` para ancorar a inferência; sem esse nó a análise **recusa** escolher o referencial. A GIANTS documenta `Wheel:loadFromXML` usando `wheel.repr` e `wheel.node` separadamente. O referencial de `getWheelShapeContactPoint` continua NÃO explicitado na LUADOC; heurísticas de proximidade **não são leitura certificada**. Não extrapolar para deformação 0,125m.
+- Harness de regressão simula parent component 4m distante da roda, dois referenciais possíveis, contato físico de terreno, sem contato, contato não-terreno, coordenadas ambíguas, rodas afastadas da área marcada e efeitos de fallback. **CI PASS no código** `9c699f39`: https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/41571884867 .
+- `TerrainAbsoluteSetterCalibration.verifyReload` agora responde **`RELOAD_NOT_YET_OBSERVED`** no próprio objeto original `g_currentMission`, inclusive quando witness já foi gravado. Isso previne um falso positivo verificando ainda em RAM. Um objeto novo de missão durante mock pode simular essa troca, mas só um reload real do jogo sustentará a conclusão.
+
+## Próximas ações (somente quando o usuário desejar testar)
+
+**Não repetir cultivo completo.** Para colisão read-only, usar **nova build** que contenha código `9c699f39` ou posterior; com veículo real carregado e roda próxima do ponto de `reGeoMark`, digitar `reTerrainTrial contact`. O relatório dirá se a roda estava longe, sem contato, com objeto não-terreno ou tinha frame ambíguo. A marca perto do vértice do setter **não garante** que uma roda permaneceu ali: a calibração anterior exige uma região livre de rodas.
+
+Para persistência, o save de fato tem de ser **uma cópia descartável identificada pelo usuário** (não inferir pelo nome); requer ensaio curto `probe`, `reGeoMark`, `reGeoSnap beforeAbsolute`, `absoluteCheck`, `absolute`, `absolutePersist COPY`, **salvar manualmente o clone**, confirmar `WITNESS SAVED` no log, **quitar sessão e recarregar o clone**, só então `absoluteVerify`. Não existe autorização para escrever num save habitual, e nem sucesso no MAIN prova restituição física/colisão fine.
+
+**Estado de liberação:** PR #64 draft; experimental `TerrainPermanentActuator="SHADOW"` intacto; nenhum merge em RE/RC main. Gate de persistência/colisão/recovery permanece bloqueado.
+
+Documentação oficial GIANTS consultada: https://gdn.giants-software.com/documentation_scripting_fs25.php?category=19&function=488&version=engine (contato físico) e https://gdn.giants-software.com/documentation_scripting_fs25.php?category=93&class=902&version=script (separação entre o nó de representação e componente físico da roda).

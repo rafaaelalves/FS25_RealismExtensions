@@ -360,6 +360,20 @@ function Recovery.isRutGenerationSuppressed(vehicle, nowMs)
     Recovery.stats.activeCombinationQueries =
         Recovery.stats.activeCombinationQueries + 1
 
+    -- In the causal geometry branch, an actively-working cultivator must NOT
+    -- immunize the whole tractor/implement combination against rutting.
+    -- The tractor's wheels can still damage wet soil ahead of the implement.
+    -- Only the *actual* worked geometry receives short-lived protection via
+    -- isRecentlyCultivated(x,z,nowMs), which is checked by the rut writer.
+    -- Keep the legacy combination guard in the isolated older recovery mode.
+    local mods=RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules or nil
+    if mods~=nil and mods.TerrainCausalRecovery==true then
+        Recovery.stats.causalCombinationSpatialOnly =
+            (Recovery.stats.causalCombinationSpatialOnly or 0)+1
+        return false
+    end
+
     local workApi = RealismExtensionsTerrainWorkContext
     local root = workApi ~= nil
         and workApi.getCombinationRoot(vehicle) or vehicle
@@ -2017,6 +2031,35 @@ local function recoverWorkedArea(
     local nowMs = g_currentMission ~= nil and g_currentMission.time or 0
     cleanupOldStamps(nowMs)
     protectWorkArea(g, nowMs)
+    -- Tillage may prepare a worked field even when the SHADOW profile has
+    -- no real RE rut to grade. Retire only its VOLATILE model exposure
+    -- within the verified GIANTS processed footprint; never mark a native
+    -- height as recovered or change saved SpatialHistory ownership.
+    if RealismExtensionsConfig~=nil
+        and RealismExtensionsConfig.modules~=nil
+        and RealismExtensionsConfig.modules.TerrainPermanentActuator=="SHADOW"
+        and runtime.absoluteShadow~=nil
+        and type(runtime.absoluteShadow.onWorkedArea)=="function" then
+        local ok=pcall(runtime.absoluteShadow.onWorkedArea,
+            runtime.absoluteShadow,g)
+        if not ok then
+            runtime.stats=runtime.stats or {}
+            runtime.stats.absoluteShadowTillageErrors=
+                (runtime.stats.absoluteShadowTillageErrors or 0)+1
+        end
+    end
+    if RealismExtensionsConfig ~= nil
+        and RealismExtensionsConfig.modules ~= nil
+        and RealismExtensionsConfig.modules.TerrainCausalRecovery == true then
+        -- An unavailable journal MUST NOT silently fall back to the legacy
+        -- R1/R7 TARGET algorithm when causal recovery was explicitly selected.
+        -- It is safer to produce no recovery than to grade unknown geography.
+        if RealismExtensionsTerrainCausalRecovery ~= nil
+            and RealismExtensionsTerrainCausalRecovery.enabled() then
+            RealismExtensionsTerrainCausalRecovery.observeWorkedArea(g, profile)
+        end
+        return
+    end
     local points = buildHistoryGuidedPoints(
         runtime.history,
         g,

@@ -33,9 +33,22 @@ function History.new(options)
         touchCounter = 0,
         lruHead = nil,
         lruTail = nil,
-        retiredCount = 0
+        retiredCount = 0,
+        recoveryObserverFaults = 0,
+        onRecovery = nil
     }
     return setmetatable(self, { __index = History })
+end
+
+-- Optional, strictly observational hook for the no-write absolute planner.
+-- Recovery has already modified logical history; never let a broken
+-- diagnostic callback interrupt physical soil repair or corrupt its ledger.
+local function notifyRecovery(self,key,remaining,applied)
+    if type(self.onRecovery)~="function" then return end
+    local ok=pcall(self.onRecovery,key,remaining,applied)
+    if not ok then
+        self.recoveryObserverFaults=(self.recoveryObserverFaults or 0)+1
+    end
 end
 
 function History:getCellCoordinates(x, z)
@@ -432,6 +445,7 @@ function History:applyRecoveryAt(x, z, raiseM, options)
         cell,
         tonumber(options.retireEpsilon) or 0.000001
     )
+    notifyRecovery(self,key,remaining,applied)
     return applied
 end
 
@@ -479,6 +493,7 @@ function History:applyRecoveryCircle(x, z, radiusM, amountM, fraction, options)
                             cell,
                             tonumber(options.retireEpsilon) or 0.000001
                         )
+                        notifyRecovery(self,key,remaining,applied)
                         recoveredCells = recoveredCells + 1
                         recoveredDepth = recoveredDepth + applied
                     end
@@ -549,6 +564,7 @@ function History:recoverParallelogram(xs, zs, xw, zw, xh, zh, options, callback)
                             cell,
                             tonumber(options.retireEpsilon) or 0.000001
                         )
+                        notifyRecovery(self,key,remaining,appliedRaiseM)
                         recoveredCells = recoveredCells + 1
                         recoveredDepthM = recoveredDepthM + appliedRaiseM
                     end
