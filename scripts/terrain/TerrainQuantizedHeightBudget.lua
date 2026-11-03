@@ -2,6 +2,10 @@
 -- FS25 main grid sampled from getTerrainHeightAtWorldPos is NOT the native
 -- 0.125m wheel-displacement surface. Its vertical step is map-dependent.
 -- No estimate based on one input delta may silently authorize a write.
+-- An authorizing step MUST be fully paid for by actual, verified budget.
+-- In particular, +1e-6 comparisons can spend a full 3.891mm step on
+-- slightly less than 3.891mm of requested damage, so do not round UP
+-- request/depth budget when deciding whether native geometry can move.
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
@@ -52,11 +56,11 @@ function Model:request(key,damageM,remainingGeometryBudgetM)
     item.debtM=math.min(self.maxDebtM,item.debtM+damageM)
     self.entries[key]=item
     self.stats.requestedM=self.stats.requestedM+damageM
-    if item.debtM+0.000001<self.quantumM then
+    if item.debtM<self.quantumM then
         self.stats.belowQuantum=self.stats.belowQuantum+1
         return nil,"SUB_QUANTUM_DEBT"
     end
-    if remainingGeometryBudgetM+0.000001<self.quantumM then
+    if remainingGeometryBudgetM<self.quantumM then
         self.stats.noBudget=self.stats.noBudget+1
         return nil,"NO_SAFE_GEOMETRY_STEP"
     end
@@ -102,11 +106,11 @@ function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
     item.debtM=math.max(0,item.demandTargetM-(item.committedM or 0))
     self.stats.requestedM=self.stats.requestedM
         +math.max(0,item.demandTargetM-old)
-    if item.debtM+0.000001<self.quantumM then
+    if item.debtM<self.quantumM then
         self.stats.belowQuantum=self.stats.belowQuantum+1
         return nil,"SUB_QUANTUM_DEBT"
     end
-    if remainingGeometryBudgetM+0.000001<self.quantumM then
+    if remainingGeometryBudgetM<self.quantumM then
         self.stats.noBudget=self.stats.noBudget+1
         return nil,"NO_SAFE_GEOMETRY_STEP"
     end
