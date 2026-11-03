@@ -1212,6 +1212,17 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
             )
         end
     end
+    -- Experimental-only persistence witness. Nothing is written unless a
+    -- specific post-calibration cloned-save confirmation was explicitly
+    -- armed by the player, in a singleplayer save.
+    local cal=RealismExtensionsTerrainAbsoluteSetterCalibration
+    if cal~=nil and cal.persistRequested==true
+        and type(cal.saveWitness)=="function" then
+        local saved,reason=cal.saveWitness(missionInfo)
+        RealismExtensionsDiagnostics.info(
+            "absolute height witness save "..(saved and "PASS" or
+                "REFUSED: "..tostring(reason)))
+    end
 end
 
 FSCareerMissionInfo.saveToXMLFile = Utils.appendedFunction(
