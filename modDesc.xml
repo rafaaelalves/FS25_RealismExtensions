@@ -71,6 +71,7 @@
         <sourceFile filename="scripts/terrain/TerrainMaintenance.lua"/>
         <sourceFile filename="scripts/terrain/TerrainTelemetry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainGeometryProbe.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainMainHeightLatticeProbe.lua"/>
         <sourceFile filename="scripts/terrain/LoadedContactRegistry.lua"/>
         <sourceFile filename="scripts/terrain/TerrainNativeWheelBridge.lua"/>
         <sourceFile filename="scripts/terrain/TerrainWheelCollisionProbe.lua"/>
