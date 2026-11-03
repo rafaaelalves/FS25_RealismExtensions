@@ -191,6 +191,14 @@ function Trial:consoleCommand(action,confirmation)
         local ok=c.run()
         return speak(ok and "Absolute one-shot executed; QUARANTINED for this session; quit copied save WITHOUT SAVING"
             or "Absolute one-shot REFUSED; no write attempted")
+    elseif action=="contact" then
+        local c=RealismExtensionsTerrainWheelCollisionProbe
+        if c==nil or type(c.consoleAtMarkedArea)~="function" then
+            return speak("NATIVE_CONTACT_OBSERVER_UNAVAILABLE")
+        end
+        local ok,report=c.consoleAtMarkedArea()
+        return speak(ok and "Wheel contact/MAIN comparison completed (READ ONLY). See RE CollisionProbe lines"
+            or "Wheel contact probe refused: "..tostring(report))
     elseif action=="absolutepersist" or action=="absoluteverify" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil then return speak("ABSOLUTE_WITNESS_MODULE_UNAVAILABLE") end
@@ -250,7 +258,7 @@ function Trial:consoleCommand(action,confirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|cancel]")
 end
 
 function Trial.installCommands()
@@ -260,7 +268,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|cancel]")
     Trial.commandsInstalled=true
     return true
 end
