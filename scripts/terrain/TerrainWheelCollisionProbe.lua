@@ -5,7 +5,7 @@
 RealismExtensionsTerrainWheelCollisionProbe =
     RealismExtensionsTerrainWheelCollisionProbe or {}
 local Probe=RealismExtensionsTerrainWheelCollisionProbe
-Probe.VERSION=1
+Probe.VERSION=2
 
 local function finite(x)
     return type(x)=="number" and x==x
@@ -31,8 +31,11 @@ end
 
 -- GIANTS documents the 4-component contact-point tuple but does not state
 -- in that API description whether its coordinates are local or world.
--- Compute both interpretations and accept one only when the wheel-node
--- proximity check decisively discriminates them. Ambiguity is not evidence.
+-- Compute both interpretations and accept one only when proximity to the
+-- actual wheel representation ('wheel.repr') discriminates them. Wheel.node
+-- is a physics PARENT COMPONENT and may be many meters away from the tire.
+-- Ambiguity is not evidence. 'repr' is a spatial approximation, not a
+-- certified native contact collider center.
 function Probe.resolvePointFrame(node,raw,options)
     options=options or {}
     local maxDist=tonumber(options.maxWheelContactDistanceM) or 3.0
@@ -45,10 +48,17 @@ function Probe.resolvePointFrame(node,raw,options)
         or type(localToWorld)~="function" then
         return nil,"FRAME_TRANSFORMS_UNAVAILABLE"
     end
-    local o,nx,ny,nz=pcall(getWorldTranslation,node)
-    if not o then return nil,"WHEEL_ORIGIN_UNAVAILABLE" end
+    -- Never substitute component-root coordinates for a missing wheel
+    -- reference: on tractors/harvesters with long components a 3m
+    -- contact envelope around the root rejects physically valid wheels.
+    local repr=options.wheelCenterNode
+    if type(repr)~="number" or repr==0 then
+        return nil,"WHEEL_REPR_UNAVAILABLE"
+    end
+    local o,nx,ny,nz=pcall(getWorldTranslation,repr)
+    if not o then return nil,"WHEEL_REPR_POSITION_UNAVAILABLE" end
     local origin=position(nil,nx,ny,nz)
-    if origin==nil then return nil,"WHEEL_ORIGIN_UNAVAILABLE" end
+    if origin==nil then return nil,"WHEEL_REPR_POSITION_UNAVAILABLE" end
     local ok,lx,ly,lz=pcall(localToWorld,node,raw.x,raw.y,raw.z)
     if not ok then return nil,"LOCAL_TRANSFORM_UNAVAILABLE" end
     local fromLocal=position(nil,lx,ly,lz)
@@ -108,7 +118,11 @@ function Probe.sampleWheel(vehicle,wheel,terrainId,options)
             physicsScale=p.displacementScale},nil
     end
     local resolved,why=Probe.resolvePointFrame(wheel.node,
-        {x=x,y=y,z=z},options)
+        {x=x,y=y,z=z},{
+            wheelCenterNode=wheel.repr,
+            maxWheelContactDistanceM=options~=nil
+                and options.maxWheelContactDistanceM or nil
+        })
     if resolved==nil then
         return {state="CONTACT_FRAME_UNVERIFIED",
             reason=why,terrainContact=true,
@@ -177,6 +191,12 @@ function Probe.scanMark(mission,markX,markZ,options)
     local examined=0
     local visited=0
     local rejected=0
+    local states={NO_CONTACT=0,NON_TERRAIN_CONTACT=0,
+        TERRAIN_CONTACT_OBSERVED=0,CONTACT_FRAME_UNVERIFIED=0,
+        TERRAIN_CONTACT_OUTSIDE_MARK=0,ERROR=0}
+    local errors={}
+    local closestReprM=nil
+    local closestContactM=nil
     local maxWheels=math.floor(tonumber(options.maxWheels) or 512)
     maxWheels=math.max(1,math.min(2048,maxWheels))
     local maxVehicles=math.floor(tonumber(options.maxVehicles) or 256)
@@ -191,18 +211,48 @@ function Probe.scanMark(mission,markX,markZ,options)
                 for i,wheel in ipairs(list) do
                     if examined>=maxWheels then break end
                     examined=examined+1
-                    local p,reason=Probe.sampleWheel(vehicle,wheel,terrainId,options)
-                    if p~=nil and p.contact~=nil then
-                        local d=planar(p.contact,markX,markZ)
-                        if d<=radius then
-                            p.distanceToMarkM=d
-                            p.wheelIndex=i
-                            results[#results+1]=p
+                    -- wheel.repr is closer to the physical tire than
+                    -- wheel.node, which is the vehicle COMPONENT root.
+                    if type(wheel.repr)=="number" and wheel.repr~=0
+                        and type(getWorldTranslation)=="function" then
+                        local ok,wx,wy,wz=pcall(getWorldTranslation,wheel.repr)
+                        if ok and finite(wx) and finite(wy) and finite(wz) then
+                            local d=math.sqrt((wx-markX)^2+(wz-markZ)^2)
+                            closestReprM=closestReprM==nil and d
+                                or math.min(closestReprM,d)
                         end
-                    elseif p~=nil and p.state=="CONTACT_FRAME_UNVERIFIED" then
+                    end
+                    local p,reason=Probe.sampleWheel(vehicle,wheel,terrainId,options)
+                    if p~=nil then
+                        local state=p.state
+                        if states[state]~=nil then
+                            states[state]=states[state]+1
+                        else
+                            states.ERROR=states.ERROR+1
+                            errors[tostring(state)]=(errors[tostring(state)] or 0)+1
+                        end
+                        if p.contact~=nil then
+                            local d=planar(p.contact,markX,markZ)
+                            closestContactM=closestContactM==nil and d
+                                or math.min(closestContactM,d)
+                            if d<=radius then
+                                p.distanceToMarkM=d
+                                p.wheelIndex=i
+                                results[#results+1]=p
+                            else
+                                states.TERRAIN_CONTACT_OUTSIDE_MARK=
+                                    states.TERRAIN_CONTACT_OUTSIDE_MARK+1
+                            end
+                        elseif state=="CONTACT_FRAME_UNVERIFIED" then
+                            rejected=rejected+1
+                            local why=tostring(p.reason or "UNKNOWN_FRAME")
+                            errors[why]=(errors[why] or 0)+1
+                        end
+                    else
                         rejected=rejected+1
-                    elseif reason~=nil then
-                        rejected=rejected+1
+                        states.ERROR=states.ERROR+1
+                        local why=tostring(reason or "UNKNOWN_SAMPLE_FAILURE")
+                        errors[why]=(errors[why] or 0)+1
                     end
                 end
             end
@@ -215,7 +265,10 @@ function Probe.scanMark(mission,markX,markZ,options)
     return {
         state="READ_ONLY",vehicleSource=source,results=results,
         scannedWheels=examined,scannedVehicles=visited,
-        unclassified=rejected,
+        unclassified=rejected,states=states,errorReasons=errors,
+        nearestWheelReprM=closestReprM,
+        nearestTerrainContactM=closestContactM,
+        radiusM=radius,
         truncated=examined>=maxWheels or visited>maxVehicles,
         provesFineSurfaceHeight=false,
         authorizesTerrainWrite=false
@@ -228,10 +281,32 @@ function Probe.consoleAtMarkedArea()
     if p==nil then return false,"MARK_AREA_FIRST" end
     local report,why=Probe.scanMark(g_currentMission,p.x,p.z)
     if report==nil then return false,why end
+    local counts=report.states or {}
     local lines={string.format(
-        "RE CollisionProbe | READ ONLY | source=%s nearMark=%d scannedWheels=%d unclassified=%d truncated=%s. Contact point coordinate frame inferred (NOT engine-certified); MAIN height != fine 0.125m restitution.",
+        "RE CollisionProbe | READ ONLY | source=%s nearMark=%d scannedWheels=%d noContact=%d nonTerrain=%d terrainTotal=%d terrainOutsideMark=%d frameUnknown=%d errors=%d unclassified=%d nearestWheelReprM=%s nearestTerrainContactM=%s radiusM=%.1f truncated=%s. Contact point coordinate frame inferred (NOT engine-certified); MAIN height != fine 0.125m restitution.",
         tostring(report.vehicleSource),#report.results,report.scannedWheels,
-        report.unclassified,tostring(report.truncated))}
+        counts.NO_CONTACT or 0,counts.NON_TERRAIN_CONTACT or 0,
+        counts.TERRAIN_CONTACT_OBSERVED or 0,
+        counts.TERRAIN_CONTACT_OUTSIDE_MARK or 0,
+        counts.CONTACT_FRAME_UNVERIFIED or 0,counts.ERROR or 0,
+        report.unclassified,
+        report.nearestWheelReprM~=nil
+            and string.format("%.2f",report.nearestWheelReprM) or "UNAVAILABLE",
+        report.nearestTerrainContactM~=nil
+            and string.format("%.2f",report.nearestTerrainContactM) or "UNAVAILABLE",
+        report.radiusM,tostring(report.truncated))}
+    local hints={}
+    for reason,count in pairs(report.errorReasons or {}) do
+        hints[#hints+1]=reason.."="..tostring(count)
+    end
+    table.sort(hints)
+    if #hints>0 then
+        lines[#lines+1]="RE CollisionProbe | skippedReasons=["
+            ..table.concat(hints,",").."] (NO terrain write)"
+    end
+    if #report.results==0 then
+        lines[#lines+1]="RE CollisionProbe | No classified terrain-wheel contact near mark. Check nearestWheelReprM and terrainOutsideMark before interpreting clipping; no negative collision conclusion."
+    end
     for i=1,math.min(4,#report.results) do
         local s=report.results[i]
         lines[#lines+1]=string.format(
