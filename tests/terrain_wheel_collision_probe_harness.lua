@@ -94,6 +94,7 @@ local old=getWheelShapeContactPoint
 getWheelShapeContactPoint=nil
 assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
 getWheelShapeContactPoint=old
+g_currentMission=mission
 RealismExtensionsTerrainGeometryProbe={position={x=100,z=100}}
 local result,line=P.consoleAtMarkedArea()
 assert(result==true and line:find("READ ONLY",1,true))
