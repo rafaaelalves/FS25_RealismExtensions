@@ -76,3 +76,11 @@ Evidence: prior **exact-package source audits** of both versions were discussed 
 ## Status
 
 **Decision recorded. No RE/RC runtime files, tests, build, feature branch, or experimental implementation created by this ADR.** Reassess after a focused one-tractor hardware/actuator feasibility spike; preserve historical exact ZIP/source notes if retrieved.
+
+## 2026-11-02 — Realistic Physics rewritten 1.0: truck/trailer physics and HSS compatibility revision
+
+The [exact-source audit](../research/2026-11-02-realistic-physics-rewrite-1.0.0.0-full-stack-audit.md) compares the old Realistic Physics 1.20.2.0 with the new **rewritten** 1.0.0.0 (version counter reset). The 167 generic category/type profile Lua files have been replaced by a 13-module architecture with physical truck/trailer axle suspension (leaf/rigid/air/hydraulic), load leveling, GIANTS-shop selectable configuration, hitch/axle mass balance and cargo center-of-mass shift. The code provides real functional candidates for a future **TrailerSuspensionCapability** or **TrailerLoadDistribution** design, distinct from tractor front active suspension.
+
+**Revised ownership caution:** HSS 2.0.3.1's 1.20.x RP-specific normalization looks for §wheel.physics.stOrig§. The rewritten RP has **no §stOrig§ marker**, instead writing §rsDamper0§ and its own physical suspension state. Thus the HSS interoperability patch studied in [HSS 2.0.3.1 PR #72](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/72) does **not demonstrate compatibility with rewritten RP**; their active spring/damper/height writes and MR wheel ownership still overlap. Compare as alternatives rather than combining all three.
+
+The rewritten RP also independently scales all vehicle tire friction with **0.72 default**, introduces its own wheel wetness/load/size and lateral stiffness model, and composes wheel-hop grip pulses. This is incompatible with our *single authoritative traction owner* principle from ADR 0002 unless a bounded contract is negotiated. **Do not absorb those physical multipliers or add RP in the main MR/Mud/Reifen/RMS/RC stack now.** A positive, clean-room **read-only-first trailer hitch/CoM diagnostic** and shop configuration precedent merit future research. No production code or prototype is authorized by this note.
