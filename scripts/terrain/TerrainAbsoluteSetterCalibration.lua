@@ -12,6 +12,7 @@ Cal.pendingWitness=nil
 Cal.persistRequested=false
 Cal.witnessSaveAttempted=false
 Cal.witnessOriginMission=nil
+Cal.witnessOriginInfo=nil
 Cal.witnessOriginDirectory=nil
 
 local function finite(v)
@@ -206,6 +207,8 @@ function Cal.run()
     Cal.persistRequested=false
     Cal.witnessSaveAttempted=false
     Cal.witnessOriginMission=witness~=nil and g_currentMission or nil
+    Cal.witnessOriginInfo=witness~=nil and g_currentMission~=nil
+        and g_currentMission.missionInfo or nil
     Cal.witnessOriginDirectory=witness~=nil
         and g_currentMission~=nil
         and g_currentMission.missionInfo~=nil
@@ -238,6 +241,7 @@ function Cal.armPersistence(confirmation)
         or Cal.persistRequested==true
         or Cal.witnessSaveAttempted==true
         or Cal.witnessOriginMission~=mission
+        or Cal.witnessOriginInfo~=info
         or Cal.witnessOriginDirectory==nil
         or g_server==nil or info==nil or info.isValid~=true
         or info.savegameDirectory~=Cal.witnessOriginDirectory
@@ -264,6 +268,7 @@ function Cal.saveWitness(info)
     local trial=RealismExtensionsTerrainControlledWriteTrial
     if mission==nil or mission~=Cal.witnessOriginMission
         or info==nil or info~=mission.missionInfo
+        or info~=Cal.witnessOriginInfo
         or info.savegameDirectory~=Cal.witnessOriginDirectory
         or trial==nil or type(trial.isSinglePlayer)~="function"
         or trial.isSinglePlayer()~=true
