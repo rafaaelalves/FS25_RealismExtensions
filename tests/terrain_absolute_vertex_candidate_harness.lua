@@ -110,6 +110,50 @@ for _=1,100 do
 end
 assert(exactCalls==1)
 
+-- Real 03-Nov readback examples are close to q*n, but world float
+-- roundoff can put them microscopically BELOW the native lattice.
+-- An absolute target of before-q is then hazardous for floor quantizers:
+-- before-q lands below the NEXT boundary and may lower two full quanta.
+-- The interior 0.75q target is safe for both floor and nearest rounding.
+local floorJournal=J.new(999,{unitM=1,sample=read})
+local floorBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local yBelow=base-0.000007
+set(491,490,yBelow)
+local legacyTarget=yBelow-q
+assert(math.abs((yBelow-math.floor(legacyTarget/q)*q)-2*q)
+    <0.00002) -- old before-q would cause ~2q in a floor quantizer
+local floorCalls,floorTarget=0,nil
+local floorCandidate=assert(C.new({
+    budget=floorBudget,journal=floorJournal,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        floorCalls=floorCalls+1
+        floorTarget=y
+        set(x,z,math.floor(y/q)*q)
+    end
+}))
+local floorResult=assert(floorCandidate:applyOne(491,490,q))
+assert(floorResult.verified==true and floorCalls==1)
+assert(math.abs(floorTarget-(yBelow-0.75*q))<0.000000001)
+assert(math.abs(floorResult.beforeY-floorResult.afterY-q)<0.00005)
+assert(floorBudget.quarantined==false)
+local floorResult2,floorReason=floorCandidate:applyOne(491,490,q,"CUMULATIVE")
+assert(floorResult2==nil and floorReason=="MIXED_DEBT_CONTRACT")
+
+-- The same interior target must NOT allow a native setter that changes
+-- continuous world height by 0.75q to be certified as a full q step.
+local continuousBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local continuousCandidate=assert(C.new({
+    budget=continuousBudget,
+    journal=J.new(999,{unitM=1,sample=read}),
+    explicitWrite=true,verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)set(x,z,y) end
+}))
+local continuous,continuousWhy=continuousCandidate:applyOne(492,490,q)
+assert(continuous~=nil and continuous.verified==false)
+assert(continuousWhy=="UNBOUNDED_OBSERVED_DELTA")
+assert(continuousBudget.quarantined==true)
+
 -- A 'setter' that changes a neighboring vertex must NOT be certified as
 -- vertex-local even when the requested center vertex moved by exactly q.
 local j2=J.new(999,{unitM=1,sample=read})
@@ -118,7 +162,7 @@ local bad=assert(C.new({
     budget=b2,journal=j2,explicitWrite=true,
     verifyExclusive=function()return true end,
     writeHeight=function(x,z,y)
-        set(x,z,y)
+        set(x,z,math.floor(y/q+0.5)*q)
         set(x+1,z,read(x+1,z)-q)
     end
 }))
@@ -139,7 +183,7 @@ local diagonal=assert(C.new({
     budget=bd,journal=jd,explicitWrite=true,
     verifyExclusive=function()return true end,
     writeHeight=function(x,z,y)
-        set(x,z,y)
+        set(x,z,math.floor(y/q+0.5)*q)
         set(x+1,z+1,read(x+1,z+1)-q)
     end
 }))
