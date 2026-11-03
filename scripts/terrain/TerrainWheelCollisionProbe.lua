@@ -154,9 +154,20 @@ function Probe.scanMark(mission,markX,markZ,options)
     if type(terrainId)~="number" or terrainId==0 then
         return nil,"TERRAIN_NODE_UNAVAILABLE"
     end
-    local vehicles=mission.vehicles
+    -- GIANTS FS25 keeps loaded vehicles in VehicleSystem.vehicles, not
+    -- mission.vehicles. The old lookup was dead on the live Sao Carlos
+    -- session (2026-11-03: MISSION_VEHICLE_LIST_UNAVAILABLE).
+    -- Prefer the native FS25 owner; legacy fallback is for compatible
+    -- tests/hosts and may not exist in production.
+    local system=mission.vehicleSystem
+    local vehicles=type(system)=="table" and system.vehicles or nil
+    local source="VEHICLE_SYSTEM"
     if type(vehicles)~="table" then
-        return nil,"MISSION_VEHICLE_LIST_UNAVAILABLE"
+        vehicles=mission.vehicles
+        source="LEGACY_MISSION"
+    end
+    if type(vehicles)~="table" then
+        return nil,"VEHICLE_SYSTEM_LIST_UNAVAILABLE"
     end
     local radius=tonumber(options.radiusM) or 3
     if not finite(radius) or radius<0.2 or radius>10 then
@@ -202,7 +213,7 @@ function Probe.scanMark(mission,markX,markZ,options)
         return a.distanceToMarkM<b.distanceToMarkM
     end)
     return {
-        state="READ_ONLY",results=results,
+        state="READ_ONLY",vehicleSource=source,results=results,
         scannedWheels=examined,scannedVehicles=visited,
         unclassified=rejected,
         truncated=examined>=maxWheels or visited>maxVehicles,
@@ -218,9 +229,9 @@ function Probe.consoleAtMarkedArea()
     local report,why=Probe.scanMark(g_currentMission,p.x,p.z)
     if report==nil then return false,why end
     local lines={string.format(
-        "RE CollisionProbe | READ ONLY | nearMark=%d scannedWheels=%d unclassified=%d truncated=%s. Contact point coordinate frame inferred (NOT engine-certified); MAIN height != fine 0.125m restitution.",
-        #report.results,report.scannedWheels,report.unclassified,
-        tostring(report.truncated))}
+        "RE CollisionProbe | READ ONLY | source=%s nearMark=%d scannedWheels=%d unclassified=%d truncated=%s. Contact point coordinate frame inferred (NOT engine-certified); MAIN height != fine 0.125m restitution.",
+        tostring(report.vehicleSource),#report.results,report.scannedWheels,
+        report.unclassified,tostring(report.truncated))}
     for i=1,math.min(4,#report.results) do
         local s=report.results[i]
         lines[#lines+1]=string.format(
