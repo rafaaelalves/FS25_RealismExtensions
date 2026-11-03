@@ -77,19 +77,28 @@ vehicle.isAddedToPhysics=true
 local bad={node=0,physics={wheelShape=7}}
 assert(select(1,P.sampleWheel(vehicle,bad,999))==nil)
 -- One-shot bounded vehicle scan, never 250ms per-wheel logging.
+-- In live FS25 loaded vehicles are owned by mission.vehicleSystem.
+-- The old mission.vehicles-only lookup caused a real runtime refusal.
 local mission={
-    terrainRootNode=999,vehicles={vehicle}
+    terrainRootNode=999,
+    vehicleSystem={vehicles={vehicle}},
+    vehicles={} -- force preference for the authoritative FS25 list
 }
 vehicle.spec_wheels={wheels={wheel}}
 local scan=assert(P.scanMark(mission,100,100,{radiusM=3}))
 assert(scan.state=="READ_ONLY" and #scan.results==1)
+assert(scan.vehicleSource=="VEHICLE_SYSTEM")
 assert(scan.results[1].wheelIndex==1)
 assert(scan.provesFineSurfaceHeight==false)
 assert(scan.authorizesTerrainWrite==false)
 assert(scan.truncated==false)
 scan=P.scanMark(mission,110,100,{radiusM=1})
 assert(#scan.results==0)
-assert(select(1,P.scanMark({terrainRootNode=999,vehicles={}},100,100))~=nil)
+local legacy=assert(P.scanMark({terrainRootNode=999,vehicles={vehicle}},100,100))
+assert(legacy.vehicleSource=="LEGACY_MISSION")
+assert(#legacy.results==1)
+local blocked,reason=P.scanMark({terrainRootNode=999},100,100)
+assert(blocked==nil and reason=="VEHICLE_SYSTEM_LIST_UNAVAILABLE")
 local old=getWheelShapeContactPoint
 getWheelShapeContactPoint=nil
 assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
