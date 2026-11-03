@@ -4,7 +4,10 @@
 RealismExtensionsTerrainAbsolutePersistenceWitness =
     RealismExtensionsTerrainAbsolutePersistenceWitness or {}
 local Witness=RealismExtensionsTerrainAbsolutePersistenceWitness
-Witness.VERSION=1
+Witness.VERSION=2
+-- Defensive cap for this 1.5mm single-vertex research command.
+-- 12mm is NOT a universal map quantum nor a release acceptance criterion.
+Witness.MAX_CENTER_LOWER_M=0.012
 Witness.FILE_NAME="realismExtensionsAbsolutePersistenceWitness.xml"
 Witness.ROOT="realismExtensionsAbsolutePersistenceWitness"
 Witness.TOLERANCE_M=0.0005
@@ -50,7 +53,16 @@ local function validate(data)
         local key=tostring(ix)..":"..tostring(iz)
         if seen[key] then return false,"DUPLICATE_WITNESS_VERTEX" end
         seen[key]=true
-        if ix==0 and iz==0 then centerCount=centerCount+1 end
+        local delta=p.afterY-p.beforeY
+        if ix==0 and iz==0 then
+            centerCount=centerCount+1
+            if delta>=-Witness.TOLERANCE_M
+                or -delta>Witness.MAX_CENTER_LOWER_M then
+                return false,"UNTRUSTED_WITNESS_CENTER_AMPLITUDE"
+            end
+        elseif math.abs(delta)>Witness.TOLERANCE_M then
+            return false,"UNTRUSTED_WITNESS_COLLATERAL"
+        end
     end
     if centerCount~=1 then return false,"NO_WITNESS_CENTER" end
     return true,nil
@@ -78,6 +90,9 @@ function Witness.capture(journal,token,x,z,requestedM,info)
         if isCenter then
             if delta>=-Witness.TOLERANCE_M then
                 return nil,"WITNESS_NO_MEASURABLE_CENTER_LOWERING"
+            end
+            if -delta>Witness.MAX_CENTER_LOWER_M then
+                return nil,"WITNESS_EXCESSIVE_CENTER_LOWERING"
             end
             changed=changed+1
         elseif math.abs(delta)>Witness.TOLERANCE_M then
