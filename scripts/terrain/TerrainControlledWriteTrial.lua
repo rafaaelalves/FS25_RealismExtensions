@@ -191,6 +191,14 @@ function Trial:consoleCommand(action,confirmation)
         local ok=c.run()
         return speak(ok and "Absolute one-shot executed; QUARANTINED for this session; quit copied save WITHOUT SAVING"
             or "Absolute one-shot REFUSED; no write attempted")
+    elseif action=="lattice" then
+        local c=RealismExtensionsTerrainMainHeightLatticeProbe
+        if c==nil or type(c.consoleAtMarkedArea)~="function" then
+            return speak("MAIN_LATTICE_OBSERVER_UNAVAILABLE")
+        end
+        local ok,result=c.consoleAtMarkedArea(confirmation)
+        return speak(ok and "MAIN vertex lattice comparison completed (READ ONLY; quantum NOT VERIFIED). See RE Main Lattice lines"
+            or "MAIN lattice probe refused: "..tostring(result))
     elseif action=="contact" then
         local c=RealismExtensionsTerrainWheelCollisionProbe
         if c==nil or type(c.consoleAtMarkedArea)~="function" then
@@ -258,7 +266,7 @@ function Trial:consoleCommand(action,confirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
 end
 
 function Trial.installCommands()
@@ -268,7 +276,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
     Trial.commandsInstalled=true
     return true
 end
