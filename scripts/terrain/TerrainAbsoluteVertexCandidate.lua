@@ -126,9 +126,21 @@ function Candidate:applyOne(x,z,damageM,contract)
     end
     local before=journal:getHeight(x,z)
     if not finite(before) then return abort("PRE_HEIGHT_UNAVAILABLE") end
-    -- Absolute height request is bounded to ONE verified quantum. Unlike
-    -- ADDITIVE SOFT CIRCLE, this proposes no change to other height vertices.
-    local target=before-plan.stepM
+    -- Request the INTERIOR of the next lower quantization cell, not
+    -- its top/bottom boundary. On a 16-bit MAIN map, before-q can fall
+    -- a few floating-point ULPs *below* a cell boundary and accidentally
+    -- request TWO steps if the native setter truncates downwards. A
+    -- 0.75q proposal reaches one lower cell under either floor or
+    -- nearest-cell quantization when the observed height is already on
+    -- the native lattice. The FULL q must be funded in advance and
+    -- readback must confirm exactly one q afterwards.
+    --
+    -- This deliberately does not authorize any map with an unverified
+    -- vertical step or promise the engine follows either quantizer.
+    -- If the real setter accepts 0.75q continuously or performs a
+    -- different rounding rule, the post-write check FAILS CLOSED.
+    local interiorFraction=0.75
+    local target=before-plan.stepM*interiorFraction
     local ok,writeResult=pcall(self.writeHeight,x,z,target)
     -- A native setter adapter can signal refusal via boolean false without
     -- raising. Treat it as failure, never as a successful geometry write.
