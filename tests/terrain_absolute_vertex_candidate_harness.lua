@@ -140,6 +140,46 @@ assert(floorBudget.quarantined==false)
 local floorResult2,floorReason=floorCandidate:applyOne(491,490,q,"CUMULATIVE")
 assert(floorResult2==nil and floorReason=="MIXED_DEBT_CONTRACT")
 
+-- Matrix against alternative quantizers and map height scales.
+-- No explicit 255m default is allowed in production. Each mock injects
+-- its OWN q and a small +/- jitter in MAIN's returned height.
+for _,scaleQ in ipairs({255/65535,0.0015,0.01}) do
+    for _,quantizer in ipairs({"FLOOR","NEAREST"}) do
+        for _,fractionalReadback in ipairs({-0.002,0,0.002}) do
+            local grid=scaleQ*40000
+            local now=grid+fractionalReadback*scaleQ
+            local simHeight=now
+            local thisJournal=J.new(999,{unitM=1,
+                sample=function(x,z)
+                    if x==600 and z==600 then return simHeight end
+                    return grid
+                end
+            })
+            local thisBudget=assert(B.new({
+                quantumM=scaleQ,toleranceM=0.00005
+            }))
+            local thisWriter=assert(C.new({
+                budget=thisBudget,journal=thisJournal,explicitWrite=true,
+                verifyExclusive=function()return true end,
+                writeHeight=function(x,z,y)
+                    local k=y/scaleQ
+                    if quantizer=="FLOOR" then
+                        simHeight=math.floor(k)*scaleQ
+                    else
+                        simHeight=math.floor(k+0.5)*scaleQ
+                    end
+                end
+            }))
+            local step,why=thisWriter:applyOne(600,600,scaleQ)
+            assert(step~=nil and step.verified==true
+                and why==nil, "rounding safety: "..quantizer)
+            assert(now-simHeight>0 and now-simHeight<=scaleQ*1.01)
+            assert(thisBudget.quarantined==false)
+            assert(thisBudget.stats.verified==1)
+        end
+    end
+end
+
 -- The same interior target must NOT allow a native setter that changes
 -- continuous world height by 0.75q to be certified as a full q step.
 local continuousBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
