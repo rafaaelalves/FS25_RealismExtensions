@@ -306,6 +306,13 @@ function Cal.verifyReload()
         or info==nil or rt==nil or rt.geometryJournal==nil then
         return false,report("RELOAD VERIFICATION REFUSED: no singleplayer MAIN-height context")
     end
+    -- A player can type 'absoluteVerify' immediately after 'absolutePersist'
+    -- in the same session. Even a freshly written sidecar cannot certify a
+    -- save/reload when the same mission remains resident in RAM.
+    if Cal.witnessOriginMission~=nil and mission==Cal.witnessOriginMission then
+        report("RELOAD WITNESS status=RELOAD_NOT_YET_OBSERVED match=false. This is the ORIGINAL session, even if the witness was saved. Quit/reload the COPIED save before claiming persistence.")
+        return false,"RELOAD_NOT_YET_OBSERVED"
+    end
     local ok,status,d=W.verifyReload(info,rt.geometryJournal)
     report(string.format(
         "RELOAD WITNESS status=%s match=%s centerDeltaM=%s maxDriftM=%s neighborsChanged=%s. MAIN height ONLY; command does NOT establish fine mesh persistence, collision, or actual process restart.",
