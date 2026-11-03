@@ -141,7 +141,7 @@ function Trial.isSinglePlayer()
     return true
 end
 
-function Trial:consoleCommand(action)
+function Trial:consoleCommand(action,confirmation)
     if not Trial.enabled() then
         return speak("Inactive in this build; no trial controls installed")
     end
@@ -191,6 +191,17 @@ function Trial:consoleCommand(action)
         local ok=c.run()
         return speak(ok and "Absolute one-shot executed; QUARANTINED for this session; quit copied save WITHOUT SAVING"
             or "Absolute one-shot REFUSED; no write attempted")
+    elseif action=="absolutepersist" or action=="absoluteverify" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil then return speak("ABSOLUTE_WITNESS_MODULE_UNAVAILABLE") end
+        if action=="absolutepersist" then
+            local ok=c.armPersistence(confirmation)
+            return speak(ok and "Witness save explicitly ARMED for copied save only"
+                or "Witness save REFUSED; no witness file will be written")
+        end
+        local ok,status=c.verifyReload()
+        return speak("MAIN absolute witness reload comparison: "
+            ..tostring(status).." (read-only)")
     elseif action=="cancel" or action=="observe" then
         if Trial.pending then
             return speak("A native RE job is already in flight; cannot undo it. Further RE writes remain disarmed.")
@@ -239,7 +250,7 @@ function Trial:consoleCommand(action)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|cancel]")
 end
 
 function Trial.installCommands()
@@ -249,7 +260,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|cancel]")
     Trial.commandsInstalled=true
     return true
 end
