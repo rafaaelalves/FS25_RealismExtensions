@@ -118,6 +118,18 @@ assert(C.persistRequested==false and witnessFiles[witnessPath]~=nil)
 assert(C.witnessSaveAttempted==true)
 assert(select(1,C.armPersistence("COPY"))==false)
 assert(select(1,C.saveWitness(g_currentMission.missionInfo))==false)
+-- A sidecar that was saved *in this session* must NOT be misreported as
+-- a successful reload (the old code accepted it as an immediate match).
+local inMemoryMatch,inMemoryStatus=C.verifyReload()
+assert(inMemoryMatch==false and inMemoryStatus=="RELOAD_NOT_YET_OBSERVED")
+local originalMission=g_currentMission
+local originalJournal=rt.geometryJournal
+-- Emulate a fresh mission and fresh native journal reading persisted MAIN
+-- coordinates. This mock does NOT itself prove GIANTS save persistence.
+g_currentMission={time=20000,missionInfo={
+    isMultiplayer=false,isValid=true,
+    mapId="SaoCarlos",savegameDirectory="/copy"}}
+rt.geometryJournal=J.new(999,{unitM=1,sample=height})
 local matches,status,details=C.verifyReload()
 assert(matches==true and status=="MAIN_HEIGHT_MATCHES_SAVED_WITNESS")
 assert(details.matchedVertices==9 and details.provesReloadOccurred==false)
@@ -126,6 +138,8 @@ assert(details.matchedVertices==9 and details.provesReloadOccurred==false)
 h[key(11,21)]=100.02
 assert(select(1,C.verifyReload())==false)
 h[key(11,21)]=nil
+g_currentMission=originalMission
+rt.geometryJournal=originalJournal
 assert(select(1,C.run())==false and calls==1)
 
 -- Explicit GIANTS setter errors consume the one shot, release locks and
