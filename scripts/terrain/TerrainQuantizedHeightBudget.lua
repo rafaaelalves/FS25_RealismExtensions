@@ -23,9 +23,17 @@ function Model.new(options)
     if not finite(quantum) or quantum<0.00025 or quantum>0.05 then
         return nil,"QUANTUM_UNVERIFIED"
     end
+    -- The previous default tolerated 0.5mm per single ~3.9mm step,
+    -- enough to hide systematic amplification over many successful
+    -- operations. Keep readback jitter conservative AND scale with q.
+    local requestedTolerance=tonumber(options.toleranceM) or 0.00005
+    if not finite(requestedTolerance) or requestedTolerance<=0 then
+        return nil,"INVALID_READBACK_TOLERANCE"
+    end
+    local tolerance=math.min(requestedTolerance,0.00005,quantum*0.02)
     return setmetatable({
         quantumM=quantum,
-        toleranceM=math.max(0.00005,tonumber(options.toleranceM) or 0.0005),
+        toleranceM=tolerance,
         maxDebtM=math.max(quantum,tonumber(options.maxDebtM) or 0.10),
         entries={},
         nextId=0,
@@ -170,9 +178,20 @@ function Model:settle(plan,beforeY,afterY)
         return {verified=false,loweringM=lowered,
             debtM=item.debtM},"UNBOUNDED_OBSERVED_DELTA"
     end
-    item.debtM=math.max(0,item.debtM-plan.stepM)
+    -- Native ownership is a measured height, not the nominal request.
+    -- Debit the ACTUAL measured lowering so rounding/readback error cannot
+    -- silently accumulate through a series of apparently successful steps.
+    -- A writer can still change terrain without our attribution: this
+    -- remains a bounded observation, not proof of native causality.
+    if lowered>item.debtM+self.toleranceM then
+        self.stats.anomalies=self.stats.anomalies+1
+        self.quarantined=true
+        return {verified=false,loweringM=lowered,
+            debtM=item.debtM},"OBSERVED_LOWERING_EXCEEDS_DEBT"
+    end
+    item.debtM=math.max(0,item.debtM-lowered)
     if item.mode=="TARGET" then
-        item.committedM=(item.committedM or 0)+plan.stepM
+        item.committedM=(item.committedM or 0)+lowered
         item.debtM=math.max(0,(item.demandTargetM or 0)-item.committedM)
     end
     self.stats.verified=self.stats.verified+1
