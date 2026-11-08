@@ -1,6 +1,7 @@
 dofile("scripts/tracks/NativeTireTrackAdapter.lua")
 dofile("scripts/tracks/VisualTrackJournal.lua")
 dofile("scripts/tracks/VisualTrackChunkStore.lua")
+dofile("scripts/tracks/VisualTrackArchive.lua")
 dofile("scripts/tracks/VisualTrackRuntime.lua")
 local A=RealismExtensionsNativeTireTrackAdapter
 local R=RealismExtensionsVisualTrackRuntime
@@ -60,6 +61,22 @@ assert(R.getDiagnostics().chunkPointReferences<=500)
 assert(R.getDiagnostics().visualGroundDepthSamples>=152)
 assert(R.getDiagnostics().visualGroundDepthNonZero>=152)
 assert(math.abs(R.getDiagnostics().visualGroundDepthMax-0.01)<1e-9)
+-- Archive API exports only VISUAL TireTrack evidence: this is NOT
+-- a runtime save or native fine terrain reconstruction operation.
+local world={mapId="synthetic",terrainFingerprint="test-i3d-fixture",
+    terrainSizeM=2048,mainUnitM=1}
+assert(select(1,R.exportVisualArchive(nil))==nil)
+local archive=assert(R.exportVisualArchive(world))
+assert(archive.authorizesTerrainWrites==false
+    and archive.authorizesPhysicalReplay==false)
+local isolated=assert(R.inspectVisualArchive(archive,world))
+assert(isolated~=R.chunkStore)
+assert(isolated:getStats().pointReferences==
+    R.chunkStore:getStats().pointReferences)
+local other={mapId="synthetic",terrainFingerprint="wrong",
+    terrainSizeM=2048,mainUnitM=1}
+assert(select(1,R.inspectVisualArchive(archive,other))==nil)
+assert(R.active==true and R.getDiagnostics().active==true)
 local observerCount=#A.observers
 R.shutdown()
 assert(not R.active and #A.observers==observerCount-1)
