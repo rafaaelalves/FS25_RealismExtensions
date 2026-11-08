@@ -1,7 +1,7 @@
 RealismExtensionsVisualTrackJournal = RealismExtensionsVisualTrackJournal or {}
 local Journal = RealismExtensionsVisualTrackJournal
 
-Journal.VERSION = 3
+Journal.VERSION = 4
 Journal.EXPECTED_CREATE_ARGS = 2
 Journal.EXPECTED_POINT_ARGS = 15
 Journal.EXPECTED_CUT_ARGS = 1
@@ -16,6 +16,9 @@ Journal.DEFAULTS = {
     -- Bound even a never-cut continuous wheel track, splitting a visual
     -- polyline rather than losing points or trusting it as a native rut.
     maxPointsPerOpenFragment = 1024,
+    -- A unique native ID for each vehicle/session must not accumulate
+    -- unbounded empty track headers in the observer.
+    maxTrackedNativeIds = 8192,
     terrainOnly = true,
     retainClosedFragments = true
 }
@@ -146,6 +149,7 @@ function Journal.new(options)
         sinks={},
         sequence=0,
         logicalTrackSequence=0,
+        accessSequence=0,
         retainedPoints=0,
         closedQueue={},
         closedQueueHead=1,
@@ -163,6 +167,8 @@ function Journal.new(options)
             sinkErrors=0,
             fragmentsFinalized=0,
             boundedSegmentSplits=0,
+            nativeIdEvictions=0,
+            nativeIdCapRefusals=0,
             visualGroundDepthSamples=0,
             visualGroundDepthNonZero=0,
             visualGroundDepthMin=nil,
@@ -180,6 +186,54 @@ end
 function Journal:_nextLogicalTrackId()
     self.logicalTrackSequence=self.logicalTrackSequence+1
     return self.logicalTrackSequence
+end
+
+function Journal:_touch(track)
+    self.accessSequence=self.accessSequence+1
+    track.lastTouched=self.accessSequence
+end
+
+local function maxTrackedIds(settings)
+    local n=tonumber(settings.maxTrackedNativeIds)
+    if not validNumber(n) then n=8192 end
+    return math.max(1,math.floor(n))
+end
+
+-- Runtime visual observer only. Reclaim an OLD INACTIVE native ID; never
+-- discard the open wheel fragment that is currently capturing geometry.
+-- An evicted ID's subsequent points are intentionally rejected until a new
+-- createTrack arrives, rather than linked to the wrong physical vehicle.
+-- The retained-snapshot mode refuses growth at capacity, without deleting
+-- historical visual track generations.
+function Journal:_ensureNativeIdCapacity()
+    local limit=maxTrackedIds(self.settings)
+    if #self.tracks<limit then return true end
+    if self.settings.retainClosedFragments~=false then
+        self.stats.nativeIdCapRefusals=
+            self.stats.nativeIdCapRefusals+1
+        return false
+    end
+    local oldest,oldestIndex=nil,nil
+    for i,track in ipairs(self.tracks) do
+        if #track.fragments==0 and
+            (oldest==nil or track.lastTouched<oldest.lastTouched) then
+            oldest,oldestIndex=track,i
+        end
+    end
+    if oldest==nil then
+        self.stats.nativeIdCapRefusals=
+            self.stats.nativeIdCapRefusals+1
+        return false
+    end
+    self.tracksByNativeId[oldest.nativeTrackId]=nil
+    local last=self.tracks[#self.tracks]
+    self.tracks[oldestIndex]=last
+    if last~=oldest then
+        last.trackListIndex=oldestIndex
+    end
+    self.tracks[#self.tracks]=nil
+    self.stats.nativeIdEvictions=self.stats.nativeIdEvictions+1
+    return true
 end
 
 function Journal:addFragmentSink(sink)
@@ -326,6 +380,10 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
         self.stats.nativeIdReuses=self.stats.nativeIdReuses+1
     end
 
+    if existing==nil and not self:_ensureNativeIdCapacity() then
+        return false
+    end
+
     local track={
         logicalTrackId=self:_nextLogicalTrackId(),
         nativeTrackId=nativeTrackId,
@@ -335,6 +393,7 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
         fragments={}
     }
     self.tracksByNativeId[nativeTrackId]=track
+    self:_touch(track)
     if existing~=nil and self.settings.retainClosedFragments==false
         and existing.trackListIndex~=nil then
         -- Native tire track ids may be re-used every vehicle/movement.
@@ -356,6 +415,7 @@ function Journal:onPoint(nativeTrackId,point)
         self.stats.rejectedCalls=self.stats.rejectedCalls+1
         return false
     end
+    self:_touch(track)
 
     -- Native TireTracks:addTrackPoint receives WheelPhysics
     -- getGroundAttributes().groundDepth. This is ONLY a visual track
@@ -459,6 +519,7 @@ function Journal:onCut(nativeTrackId)
         return false
     end
     self:_finalizeFragment(track,track.fragments[#track.fragments],"CUT")
+    self:_touch(track)
     self.stats.cuts=self.stats.cuts+1
     return true
 end
