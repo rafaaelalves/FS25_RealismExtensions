@@ -92,11 +92,17 @@ function Runtime.getDiagnostics()
         rejectedCalls = stats.rejectedCalls or 0,
         sinkErrors = stats.sinkErrors or 0,
         fragmentsFinalized = stats.fragmentsFinalized or 0,
+        boundedSegmentSplits = stats.boundedSegmentSplits or 0,
         retainedPoints = Runtime.journal ~= nil
             and Runtime.journal.retainedPoints or 0,
         chunkCount = chunkStats.chunks or 0,
         chunkFragments = chunkStats.fragments or 0,
         chunkPointReferences = chunkStats.pointReferences or 0,
+        chunkEvictedFragments = chunkStats.evictedFragments or 0,
+        chunkEvictedPointReferences = chunkStats.evictedPointReferences or 0,
+        chunkEvictedChunks = chunkStats.evictedChunks or 0,
+        chunkOverflowRefusals = chunkStats.overflowRefusals or 0,
+        maxStoredPointReferences = chunkStats.maxStoredPointReferences or 0,
         lastRejectReason = Runtime.journal ~= nil
             and Runtime.journal.lastRejectReason or nil
     }
