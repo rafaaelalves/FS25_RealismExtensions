@@ -95,6 +95,7 @@
         <sourceFile filename="scripts/tracks/NativeTireTrackBootstrap.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackJournal.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackChunkStore.lua"/>
+        <sourceFile filename="scripts/tracks/VisualTrackArchive.lua"/>
         <sourceFile filename="scripts/tracks/VisualTrackRuntime.lua"/>
         <sourceFile filename="scripts/Core.lua"/>
     </extraSourceFiles>
