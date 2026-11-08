@@ -128,4 +128,45 @@ assert(incomplete.mainGeometryReason=="NO_BOUNDED_MEASURED_PATH")
 assert(incomplete.authorizesMainWrite==false)
 
 
+-- 07-Nov-2026 Fiat 180-90 DT live regression (game v1.25.1,
+-- Estancia Sao Carlos, RE 93339e2b, 3 sources/1 MAIN vertex/5
+-- growth observations). The actual log reports 19.836 mm across
+-- logical sources but ONLY 6.708 mm at the single shared vertex,
+-- and a maximum MAIN cell support of 6.6%. Never let 3 wheel
+-- sources turn into 19.836 mm of geometrical excavation.
+local fiat=assert(P.new({unitM=1,verifiedQuantumM=q,maxSources=8}))
+local fiatFootprint={
+    available=true,supportWidthM=0.30,footprintLengthM=0.22,
+    dirX=1,dirZ=0,pathContinuity=true
+}
+local fiatOne=assert(fiat:observe("fiat-A",344.02,387.02,
+    0.003000,0,nil,fiatFootprint))
+assert(fiatOne.mainGeometryState=="FINE_ONLY_OR_UNREPRESENTABLE")
+assert(fiatOne.authorizesMainWrite==false)
+assert(fiat:observe("fiat-A",344.02,387.02,
+    0.006708,0,nil,fiatFootprint).addedM>0)
+assert(fiat:observe("fiat-B",344.12,387.02,
+    0.006708,0,nil,fiatFootprint).addedM>0)
+assert(fiat:observe("fiat-C",344.02,387.12,
+    0.003000,0,nil,fiatFootprint).addedM>0)
+assert(fiat:observe("fiat-C",344.02,387.12,
+    0.006420,0,nil,fiatFootprint).addedM>0)
+local v=assert(fiat:getVertex(344,387))
+assert(v.sourceCount==3)
+assert(math.abs(v.demandM-0.006708)<1e-9)
+assert(math.abs(fiat.stats.accumulatedM-0.019836)<1e-9)
+assert(fiat.stats.mainFootprintSamples==5)
+assert(fiat.stats.mainFineOnly==5 and fiat.stats.mainResearchCandidates==0)
+assert(math.abs(fiat.stats.maxMainCellCoverage01-0.066)<1e-9)
+assert(fiat:summary():find("vertexDemandSumM=0.006708",1,true))
+assert(fiat:summary():find("mainFineOnly=5",1,true))
+for _=1,100 do
+    local unchanged=assert(fiat:observe("fiat-A",344.02,387.02,
+        0.006708,0,nil,fiatFootprint))
+    assert(unchanged.state=="UNCHANGED" and unchanged.addedM==0)
+end
+assert(math.abs(v.demandM-0.006708)<1e-9)
+assert(math.abs(fiat.stats.accumulatedM-0.019836)<1e-9)
+assert(v.lastMainGeometryScreen.authorizesMainWrite==false)
+
 print("terrain_absolute_height_planner_harness: OK")
