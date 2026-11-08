@@ -1,7 +1,7 @@
 RealismExtensionsVisualTrackRuntime = RealismExtensionsVisualTrackRuntime or {}
 local Runtime = RealismExtensionsVisualTrackRuntime
 
-Runtime.VERSION = 2
+Runtime.VERSION = 3
 Runtime.active = Runtime.active == true
 Runtime.journal = Runtime.journal
 Runtime.chunkStore = Runtime.chunkStore
@@ -73,6 +73,31 @@ end
 function Runtime.queryChunks(x,z,radiusM)
     if Runtime.chunkStore == nil then return {} end
     return Runtime.chunkStore:queryCircle(x,z,radiusM)
+end
+
+-- Produces a map-bound, serializable archive of visual-only closed fragments.
+-- A trusted caller must provide the map fingerprint from a verified source.
+-- This does not write any file or persist physical fine-rut deformation.
+function Runtime.exportVisualArchive(world)
+    if Runtime.active~=true or Runtime.chunkStore==nil then
+        return nil,"VISUAL_CAPTURE_INACTIVE"
+    end
+    local Archive=RealismExtensionsVisualTrackArchive
+    if Archive==nil or type(Archive.export)~="function" then
+        return nil,"VISUAL_ARCHIVE_UNAVAILABLE"
+    end
+    return Archive.export(Runtime.chunkStore,world)
+end
+
+-- Inspect a saved visual archive into an ISOLATED in-memory store. It does
+-- not attach archived points to the live adapter, change live chunks, or
+-- replay a tire-track point into the GIANTS renderer/terrain.
+function Runtime.inspectVisualArchive(snapshot,world)
+    local Archive=RealismExtensionsVisualTrackArchive
+    if Archive==nil or type(Archive.import)~="function" then
+        return nil,"VISUAL_ARCHIVE_UNAVAILABLE"
+    end
+    return Archive.import(snapshot,world)
 end
 
 function Runtime.getDiagnostics()
