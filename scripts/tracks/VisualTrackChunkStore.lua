@@ -2,10 +2,15 @@ RealismExtensionsVisualTrackChunkStore =
     RealismExtensionsVisualTrackChunkStore or {}
 local Store = RealismExtensionsVisualTrackChunkStore
 
-Store.VERSION = 1
+Store.VERSION = 2
 Store.DEFAULTS = {
     chunkSizeM = 64,
-    maxQueryChunks = 256
+    maxQueryChunks = 256,
+    -- Visual track fragments are research/visual evidence, NOT verified
+    -- native fine rut geometry. Never grow an unbounded in-memory history.
+    maxStoredChunks = 8192,
+    maxStoredFragments = 40000,
+    maxStoredPointReferences = 160000
 }
 
 local function validNumber(v)
@@ -28,7 +33,14 @@ function Store.new(options)
         chunks={},
         chunkCount=0,
         fragmentCount=0,
-        pointReferences=0
+        pointReferences=0,
+        chronology={},
+        chronologyHead=1,
+        chronologyTail=0,
+        evictedFragments=0,
+        evictedPointReferences=0,
+        evictedChunks=0,
+        overflowRefusals=0
     }
     return setmetatable(self,{__index=Store})
 end
@@ -66,12 +78,91 @@ local function makeChunkFragment(track,sourceFragment,origin)
     }
 end
 
+local function cap(value, fallback)
+    local n=tonumber(value)
+    if not validNumber(n) then return fallback end
+    return math.max(1,math.floor(n))
+end
+
+-- Evict the OLDEST CLOSED fragment, even when points are shared across
+-- multiple spatial chunks. Never evict only one point from the middle of
+-- a polyline and accidentally retain a fake physical continuity witness.
+-- This is visual capture storage: eviction is LOSS OF HISTORY, never an
+-- instruction to erase or recover native soil geometry.
+function Store:_enforceCaps()
+    local maxChunks=cap(self.settings.maxStoredChunks,8192)
+    local maxFragments=cap(self.settings.maxStoredFragments,40000)
+    local maxPoints=cap(self.settings.maxStoredPointReferences,160000)
+    while (self.chunkCount>maxChunks
+            or self.fragmentCount>maxFragments
+            or self.pointReferences>maxPoints)
+        and self.chronologyHead<=self.chronologyTail do
+        local entry=self.chronology[self.chronologyHead]
+        self.chronology[self.chronologyHead]=nil
+        self.chronologyHead=self.chronologyHead+1
+        if entry~=nil then
+            local chunk=self.chunks[entry.chunkKey]
+            if chunk~=nil then
+                local at=nil
+                for i,fragment in ipairs(chunk.fragments) do
+                    if fragment==entry.fragment then
+                        at=i
+                        break
+                    end
+                end
+                if at~=nil then
+                    table.remove(chunk.fragments,at)
+                    chunk.revision=(chunk.revision or 0)+1
+                    self.fragmentCount=math.max(0,self.fragmentCount-1)
+                    local n=#(entry.fragment.points or {})
+                    self.pointReferences=math.max(0,self.pointReferences-n)
+                    self.evictedFragments=self.evictedFragments+1
+                    self.evictedPointReferences=self.evictedPointReferences+n
+                    if #chunk.fragments==0 then
+                        self.chunks[entry.chunkKey]=nil
+                        self.chunkCount=math.max(0,self.chunkCount-1)
+                        self.evictedChunks=self.evictedChunks+1
+                    end
+                end
+            end
+        end
+    end
+    -- Drop consumed queue slots periodically to keep chronological metadata
+    -- bounded as well; a continuously used farm cannot grow it forever.
+    if self.chronologyHead>256
+        and self.chronologyHead>self.chronologyTail*0.5 then
+        local fresh={}
+        local tail=0
+        for i=self.chronologyHead,self.chronologyTail do
+            local entry=self.chronology[i]
+            if entry~=nil then
+                tail=tail+1
+                fresh[tail]=entry
+            end
+        end
+        self.chronology=fresh
+        self.chronologyHead=1
+        self.chronologyTail=tail
+    end
+end
+
 function Store:_appendFragment(chunk,fragment)
-    if #(fragment.points or {})==0 then return false end
+    local n=#(fragment.points or {})
+    if n==0 then return false end
+    if n>cap(self.settings.maxStoredPointReferences,160000) then
+        -- Reject this huge fragment in its entirety; no partial geometry.
+        self.overflowRefusals=self.overflowRefusals+1
+        return false
+    end
     chunk.fragments[#chunk.fragments+1]=fragment
     chunk.revision=(chunk.revision or 0)+1
     self.fragmentCount=self.fragmentCount+1
-    self.pointReferences=self.pointReferences+#fragment.points
+    self.pointReferences=self.pointReferences+n
+    self.chronologyTail=self.chronologyTail+1
+    self.chronology[self.chronologyTail]={
+        chunkKey=chunk.key,fragment=fragment
+    }
+    self:_enforceCaps()
     return true
 end
 
@@ -183,6 +274,13 @@ function Store:clear()
     self.chunkCount=0
     self.fragmentCount=0
     self.pointReferences=0
+    self.chronology={}
+    self.chronologyHead=1
+    self.chronologyTail=0
+    self.evictedFragments=0
+    self.evictedPointReferences=0
+    self.evictedChunks=0
+    self.overflowRefusals=0
 end
 
 function Store:getStats()
@@ -190,7 +288,14 @@ function Store:getStats()
         chunks=self.chunkCount,
         fragments=self.fragmentCount,
         pointReferences=self.pointReferences,
-        chunkSizeM=self.settings.chunkSizeM
+        chunkSizeM=self.settings.chunkSizeM,
+        maxStoredChunks=self.settings.maxStoredChunks,
+        maxStoredFragments=self.settings.maxStoredFragments,
+        maxStoredPointReferences=self.settings.maxStoredPointReferences,
+        evictedFragments=self.evictedFragments,
+        evictedPointReferences=self.evictedPointReferences,
+        evictedChunks=self.evictedChunks,
+        overflowRefusals=self.overflowRefusals
     }
 end
 
