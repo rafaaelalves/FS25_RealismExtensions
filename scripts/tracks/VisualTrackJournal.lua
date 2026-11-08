@@ -1,7 +1,7 @@
 RealismExtensionsVisualTrackJournal = RealismExtensionsVisualTrackJournal or {}
 local Journal = RealismExtensionsVisualTrackJournal
 
-Journal.VERSION = 2
+Journal.VERSION = 3
 Journal.EXPECTED_CREATE_ARGS = 2
 Journal.EXPECTED_POINT_ARGS = 15
 Journal.EXPECTED_CUT_ARGS = 1
@@ -13,6 +13,9 @@ Journal.DEFAULTS = {
     maxChordErrorM = 0.04,
     maxDirectionDeltaRad = math.rad(6),
     maxRetainedPoints = 75000,
+    -- Bound even a never-cut continuous wheel track, splitting a visual
+    -- polyline rather than losing points or trusting it as a native rut.
+    maxPointsPerOpenFragment = 1024,
     terrainOnly = true,
     retainClosedFragments = true
 }
@@ -158,7 +161,8 @@ function Journal.new(options)
             rejectedCalls=0,
             prunedPoints=0,
             sinkErrors=0,
-            fragmentsFinalized=0
+            fragmentsFinalized=0,
+            boundedSegmentSplits=0
         }
     }
     return setmetatable(self,{__index=Journal})
@@ -288,6 +292,15 @@ function Journal:_finalizeFragment(track,fragment,reason)
         fragment.points={}
         fragment.pruned=true
         self.retainedPoints=math.max(0,self.retainedPoints-n)
+        -- The finalized fragment is already copied to spatial chunk
+        -- storage. Retaining its empty metadata in track.fragments would
+        -- grow without limit across repeated cut/restart cycles.
+        for i=#track.fragments,1,-1 do
+            if track.fragments[i]==fragment then
+                table.remove(track.fragments,i)
+                break
+            end
+        end
     end
     return true
 end
@@ -318,7 +331,16 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
         fragments={}
     }
     self.tracksByNativeId[nativeTrackId]=track
-    self.tracks[#self.tracks+1]=track
+    if existing~=nil and self.settings.retainClosedFragments==false
+        and existing.trackListIndex~=nil then
+        -- Native tire track ids may be re-used every vehicle/movement.
+        -- Replace retired metadata in the runtime-only observer.
+        track.trackListIndex=existing.trackListIndex
+        self.tracks[track.trackListIndex]=track
+    else
+        self.tracks[#self.tracks+1]=track
+        track.trackListIndex=#self.tracks
+    end
     self.stats.creates=self.stats.creates+1
     return true
 end
@@ -342,6 +364,17 @@ function Journal:onPoint(nativeTrackId,point)
     end
 
     local f=self:_currentFragment(track)
+    local maxPoints=math.max(16,math.floor(
+        tonumber(self.settings.maxPointsPerOpenFragment) or 1024))
+    if #f.points>=maxPoints then
+        local carry=copyPoint(f.points[#f.points])
+        self:_finalizeFragment(track,f,"BOUNDED_SEGMENT")
+        f=self:_currentFragment(track)
+        -- One shared endpoint preserves the track path across chunks.
+        -- Neither fragment is a certified physical soil deformation.
+        self:_accept(f,carry)
+        self.stats.boundedSegmentSplits=self.stats.boundedSegmentSplits+1
+    end
     local accepted=f.points
     if #accepted==0 then
         self:_accept(f,point)
