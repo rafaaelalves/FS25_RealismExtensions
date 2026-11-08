@@ -152,6 +152,10 @@ function Store:_appendFragment(chunk,fragment)
     if n>cap(self.settings.maxStoredPointReferences,160000) then
         -- Reject this huge fragment in its entirety; no partial geometry.
         self.overflowRefusals=self.overflowRefusals+1
+        if #chunk.fragments==0 and self.chunks[chunk.key]==chunk then
+            self.chunks[chunk.key]=nil
+            self.chunkCount=math.max(0,self.chunkCount-1)
+        end
         return false
     end
     chunk.fragments[#chunk.fragments+1]=fragment
@@ -173,6 +177,7 @@ function Store:addFragment(track,sourceFragment,origin)
 
     local currentChunk,currentFragment=nil,nil
     local previousPoint=nil
+    local stored=false
 
     for _,point in ipairs(points) do
         if validNumber(point.x) and validNumber(point.z) then
@@ -181,7 +186,8 @@ function Store:addFragment(track,sourceFragment,origin)
 
             if currentChunk~=chunk then
                 if currentChunk~=nil and currentFragment~=nil then
-                    self:_appendFragment(currentChunk,currentFragment)
+                    stored=self:_appendFragment(currentChunk,currentFragment)
+                        or stored
                 end
                 currentChunk=chunk
                 currentFragment=makeChunkFragment(track,sourceFragment,origin)
@@ -201,10 +207,10 @@ function Store:addFragment(track,sourceFragment,origin)
     end
 
     if currentChunk~=nil and currentFragment~=nil then
-        self:_appendFragment(currentChunk,currentFragment)
+        stored=self:_appendFragment(currentChunk,currentFragment) or stored
     end
 
-    return true
+    return stored
 end
 
 function Store:rebuildFromJournalSnapshot(snapshot,options)
