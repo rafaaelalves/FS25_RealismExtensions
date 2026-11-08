@@ -1024,8 +1024,11 @@ function RealismExtensionsCore:update(dt)
                 if RealismExtensionsVisualTrackRuntime ~= nil
                     and RealismExtensionsConfig.modules.VisualTrackCapture == true then
                     local v = RealismExtensionsVisualTrackRuntime.getDiagnostics()
-                    RealismExtensionsDiagnostics.verbose(string.format(
-                        "VisualTrackCapture | active=%s create=%d reuse=%d points=%d accepted=%d deferred=%d cuts=%d gapCuts=%d nonTerrain=%d finalized=%d retained=%d chunks=%d chunkFragments=%d chunkPoints=%d rejected=%d sinkErrors=%d",
+                    -- One bounded, periodic summary even without verbose
+                    -- diagnostics. Visual TireTrack capture != readback of
+                    -- native 0.125m wheel-sink geometry or ownership.
+                    RealismExtensionsDiagnostics.info(string.format(
+                        "VisualTrackCapture | active=%s tracks=%d reused=%d points=%d accepted=%d deferred=%d cuts=%d segmented=%d fragments=%d chunkRefs=%d retained=%d chunks=%d evicted=%d evictedPointRefs=%d overflow=%d rejected=%d observerSinkErrors=%d (visualOnly=true, nativeFineRutDepthUnverified=true)",
                         tostring(v.active),
                         v.creates or 0,
                         v.nativeIdReuses or 0,
@@ -1033,13 +1036,14 @@ function RealismExtensionsCore:update(dt)
                         v.pointsAccepted or 0,
                         v.pointsDeferred or 0,
                         v.cuts or 0,
-                        v.gapCuts or 0,
-                        v.nonTerrainSkipped or 0,
-                        v.fragmentsFinalized or 0,
-                        v.retainedPoints or 0,
-                        v.chunkCount or 0,
+                        v.boundedSegmentSplits or 0,
                         v.chunkFragments or 0,
                         v.chunkPointReferences or 0,
+                        v.retainedPoints or 0,
+                        v.chunkCount or 0,
+                        v.chunkEvictedFragments or 0,
+                        v.chunkEvictedPointReferences or 0,
+                        v.chunkOverflowRefusals or 0,
                         v.rejectedCalls or 0,
                         v.sinkErrors or 0
                     ))
