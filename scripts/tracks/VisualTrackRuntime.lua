@@ -93,6 +93,10 @@ function Runtime.getDiagnostics()
         sinkErrors = stats.sinkErrors or 0,
         fragmentsFinalized = stats.fragmentsFinalized or 0,
         boundedSegmentSplits = stats.boundedSegmentSplits or 0,
+        visualGroundDepthSamples = stats.visualGroundDepthSamples or 0,
+        visualGroundDepthNonZero = stats.visualGroundDepthNonZero or 0,
+        visualGroundDepthMin = stats.visualGroundDepthMin,
+        visualGroundDepthMax = stats.visualGroundDepthMax,
         retainedPoints = Runtime.journal ~= nil
             and Runtime.journal.retainedPoints or 0,
         chunkCount = chunkStats.chunks or 0,
