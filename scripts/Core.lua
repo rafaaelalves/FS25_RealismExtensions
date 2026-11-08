@@ -1028,10 +1028,13 @@ function RealismExtensionsCore:update(dt)
                     -- diagnostics. Visual TireTrack capture != readback of
                     -- native 0.125m wheel-sink geometry or ownership.
                     RealismExtensionsDiagnostics.info(string.format(
-                        "VisualTrackCapture | active=%s tracks=%d reused=%d points=%d accepted=%d deferred=%d cuts=%d segmented=%d fragments=%d chunkRefs=%d retained=%d chunks=%d evicted=%d evictedPointRefs=%d overflow=%d visualDepthSamples=%d visualDepthNonzero=%d visualDepthMin=%s visualDepthMax=%s rejected=%d observerSinkErrors=%d (visualOnly=true, nativeFineRutDepthUnverified=true)",
+                        "VisualTrackCapture | active=%s tracks=%d reused=%d trackedNativeIds=%d nativeIdEvictions=%d nativeIdCapRefusals=%d points=%d accepted=%d deferred=%d cuts=%d segmented=%d fragments=%d chunkRefs=%d retained=%d chunks=%d evicted=%d evictedPointRefs=%d overflow=%d visualDepthSamples=%d visualDepthNonzero=%d visualDepthMin=%s visualDepthMax=%s rejected=%d observerSinkErrors=%d (visualOnly=true, nativeFineRutDepthUnverified=true)",
                         tostring(v.active),
                         v.creates or 0,
                         v.nativeIdReuses or 0,
+                        v.trackedNativeIds or 0,
+                        v.nativeIdEvictions or 0,
+                        v.nativeIdCapRefusals or 0,
                         v.pointsSeen or 0,
                         v.pointsAccepted or 0,
                         v.pointsDeferred or 0,
