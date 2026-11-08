@@ -83,6 +83,13 @@ function Runtime.getDiagnostics()
         active = Runtime.active == true,
         creates = stats.creates or 0,
         nativeIdReuses = stats.nativeIdReuses or 0,
+        trackedNativeIds = Runtime.journal~=nil
+            and #Runtime.journal.tracks or 0,
+        maxTrackedNativeIds = Runtime.journal~=nil
+            and tonumber(Runtime.journal.settings.maxTrackedNativeIds)
+            or 0,
+        nativeIdEvictions = stats.nativeIdEvictions or 0,
+        nativeIdCapRefusals = stats.nativeIdCapRefusals or 0,
         pointsSeen = stats.pointsSeen or 0,
         pointsAccepted = stats.pointsAccepted or 0,
         pointsDeferred = stats.pointsDeferred or 0,
