@@ -370,6 +370,24 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
     end
 
     local existing=self.tracksByNativeId[nativeTrackId]
+    local needsNewSlot=existing==nil
+        or self.settings.retainClosedFragments~=false
+
+    -- A native ID REUSE in retained-snapshot mode also consumes another
+    -- historical header. Never bypass the cap merely because its ID
+    -- exists. On refusal, retire the old track ID so a later point cannot
+    -- be falsely attached to the previous generation.
+    if needsNewSlot and not self:_ensureNativeIdCapacity() then
+        if existing~=nil then
+            self:_finalizeFragment(existing,
+                existing.fragments[#existing.fragments],
+                "NATIVE_ID_REUSE_REFUSED")
+            existing.retired=true
+            self.tracksByNativeId[nativeTrackId]=nil
+        end
+        return false
+    end
+
     if existing~=nil then
         self:_finalizeFragment(
             existing,
@@ -378,10 +396,6 @@ function Journal:onCreate(nativeTrackId,width,atlasIndex,timestampMs)
         )
         existing.retired=true
         self.stats.nativeIdReuses=self.stats.nativeIdReuses+1
-    end
-
-    if existing==nil and not self:_ensureNativeIdCapacity() then
-        return false
     end
 
     local track={
