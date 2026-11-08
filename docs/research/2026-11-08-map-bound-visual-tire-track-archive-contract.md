@@ -4,7 +4,7 @@
 
 The user wants the FS25 RE terrain module to **produce exactly the authorized lowering** and eventually retain and repair physical wheel ruts. The MAIN (coarse) heightmap readback and its ~3.891 mm candidate vertical quantum do NOT expose the GIANTS native finer wheel deformation grid. The standard GIANTS tire track specialization calls `spec.tireTrackSystem:addTrackPoint` with the `groundDepth` returned by `wheel.physics:getGroundAttributes()`. This is a **rendering/track observation** and cannot be certified as permanent deformable soil geometry or as post-load collision readback.
 
-Official FS25 reference: https://gdn.giants-software.com/documentation_scripting_fs25.php?category=78&class=811&version=engine and WheelPhysics class https://gdn.giants-software.com/documentation_scripting_fs25.php?category=91&class=888&version=script
+Official FS25 reference: https://gdn.giants-software.com/documentation_scripting_fs25.php?category=78&class=811&version=engine and WheelPhysics class https://github.com/umbraprior/FS25-Community-LUADOC/blob/main/docs/script/Wheels/WheelPhysics.md
 
 The PR64 runtime already observes these visual calls via `NativeTireTrackAdapter`; `VisualTrackJournal` simplifies and segments paths, then `VisualTrackChunkStore` bounds spatial memory. None of the new work authorizes a terrain setter.
 
