@@ -162,7 +162,11 @@ function Journal.new(options)
             prunedPoints=0,
             sinkErrors=0,
             fragmentsFinalized=0,
-            boundedSegmentSplits=0
+            boundedSegmentSplits=0,
+            visualGroundDepthSamples=0,
+            visualGroundDepthNonZero=0,
+            visualGroundDepthMin=nil,
+            visualGroundDepthMax=nil
         }
     }
     return setmetatable(self,{__index=Journal})
@@ -351,6 +355,26 @@ function Journal:onPoint(nativeTrackId,point)
     if track==nil or type(point)~="table" then
         self.stats.rejectedCalls=self.stats.rejectedCalls+1
         return false
+    end
+
+    -- Native TireTracks:addTrackPoint receives WheelPhysics
+    -- getGroundAttributes().groundDepth. This is ONLY a visual track
+    -- argument, not an independent measurement of physical fine-rut
+    -- height or persisted world terrain. Keep the names explicit.
+    if point.onTerrain==true and validNumber(point.groundDepth) then
+        local d=point.groundDepth
+        self.stats.visualGroundDepthSamples=
+            self.stats.visualGroundDepthSamples+1
+        if math.abs(d)>0.00001 then
+            self.stats.visualGroundDepthNonZero=
+                self.stats.visualGroundDepthNonZero+1
+        end
+        self.stats.visualGroundDepthMin=
+            self.stats.visualGroundDepthMin==nil
+                and d or math.min(self.stats.visualGroundDepthMin,d)
+        self.stats.visualGroundDepthMax=
+            self.stats.visualGroundDepthMax==nil
+                and d or math.max(self.stats.visualGroundDepthMax,d)
     end
 
     if self.settings.terrainOnly==true and point.onTerrain~=true then
