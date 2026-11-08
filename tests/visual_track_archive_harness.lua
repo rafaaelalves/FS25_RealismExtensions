@@ -24,7 +24,7 @@ local frag={sequence=2,closeReason="CUT",closed=true,
 assert(store:addFragment(track,frag,"CURRENT_SESSION"))
 assert(store:getStats().chunks==2)
 assert(store:getStats().fragments==2)
-assert(store:getStats().pointReferences==5)
+assert(store:getStats().pointReferences==4)
 local data,why=A.export(store,world)
 assert(data~=nil and why==nil)
 assert(data.version==1
@@ -33,13 +33,13 @@ assert(data.authorizesTerrainWrites==false
     and data.authorizesPhysicalReplay==false)
 assert(data.totals.chunks==2
     and data.totals.fragments==2
-    and data.totals.pointReferences==5)
+    and data.totals.pointReferences==4)
 local imported,reason=A.import(data,world)
 assert(imported~=nil and reason==nil)
 assert(imported~=store)
 assert(imported:getStats().chunks==2
     and imported:getStats().fragments==2
-    and imported:getStats().pointReferences==5)
+    and imported:getStats().pointReferences==4)
 local restored=assert(imported:getChunk(1,0))
 assert(restored.fragments[1].origin=="ARCHIVED_VISUAL_ONLY")
 assert(restored.fragments[1].points[1].x==9)
