@@ -1,7 +1,7 @@
 RealismExtensionsTerrainSurfaceResponse = RealismExtensionsTerrainSurfaceResponse or {}
 local Surface = RealismExtensionsTerrainSurfaceResponse
 
-Surface.VERSION = 1
+Surface.VERSION = 2
 
 local HARD_KEYS = { "ASPHALT", "CONCRETE", "PAVE", "COBBLE", "CEMENT" }
 local GRAVEL_KEYS = { "GRAVEL", "STONE", "ROCK" }
@@ -108,6 +108,20 @@ local function profile(category, source, deformability, staticCap, slipCap, minW
         minWetness = minWetness or 0,
         minLongitudinalSlip = minSlip or 0
     }
+end
+
+function Surface.classifyTerrainAt(x, z)
+    local category, name, weight = terrainCategoryAt(x, z)
+    return {
+        category = category or "UNKNOWN",
+        name = name,
+        weight = tonumber(weight) or 0
+    }
+end
+
+function Surface.isMunicipalMaintenanceSurface(x, z)
+    local info = Surface.classifyTerrainAt(x, z)
+    return info.category == "GRAVEL" or info.category == "DIRT", info
 end
 
 function Surface.resolve(context, x, z)

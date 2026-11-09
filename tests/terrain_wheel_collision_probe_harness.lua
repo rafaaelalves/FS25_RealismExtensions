@@ -1,0 +1,152 @@
+-- Pure-GIANTS-mock collision probe: no native edit, no fine-mesh claim.
+dofile("scripts/terrain/TerrainWheelCollisionProbe.lua")
+local P=RealismExtensionsTerrainWheelCollisionProbe
+local mode="LOCAL"
+local origin={100,50,100}
+local reprOrigin={100,50,100}
+local contactObject=999
+local calls=0
+local terrainCalls=0
+g_server={}
+getWorldTranslation=function(node)
+    assert(node==101 or node==102)
+    if node==102 then
+        return reprOrigin[1],reprOrigin[2],reprOrigin[3]
+    end
+    return origin[1],origin[2],origin[3]
+end
+localToWorld=function(node,x,y,z)
+    assert(node==101)
+    return origin[1]+x,origin[2]+y,origin[3]+z
+end
+getWheelShapeContactPoint=function(node,shape)
+    calls=calls+1
+    assert(node==101 and shape==7)
+    if mode=="NO_CONTACT" then return nil end
+    if mode=="WORLD" then return 100,49.45,100,0.01 end
+    if mode=="NONFINITE" then return 0,0/0,0 end
+    if mode=="OFFSET" then return 4,-0.55,0,0.01 end
+    return 0,-0.55,0,0.01
+end
+getWheelShapeContactObject=function(node,shape)
+    assert(node==101 and shape==7)
+    return contactObject,0
+end
+getTerrainHeightAtWorldPos=function(terrain,x,y,z)
+    terrainCalls=terrainCalls+1
+    assert(terrain==999 and y==0)
+    assert((math.abs(x-100)<0.001 or math.abs(x-104)<0.001)
+        and math.abs(z-100)<0.001)
+    return 49.5
+end
+local vehicle={isServer=true,isAddedToPhysics=true}
+local wheel={node=101,repr=102,physics={wheelShape=7,displacementScale=0.75}}
+local s,why=P.sampleWheel(vehicle,wheel,999)
+assert(s and not why)
+assert(s.state=="TERRAIN_CONTACT_OBSERVED")
+assert(s.terrainContact==true and s.frame=="LOCAL_INFERRED")
+assert(math.abs(s.contact.y-49.45)<0.00001)
+assert(math.abs(s.contactMinusMainM+0.05)<0.00001)
+assert(s.skinWidthM==0.01 and s.physicsScale==0.75)
+assert(s.authorizesTerrainWrite==false and s.provesFineSurfaceHeight==false)
+assert(s.provesCollisionAgreement==false)
+mode="WORLD"
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s.frame=="WORLD_INFERRED")
+assert(math.abs(s.contactMinusMainM+0.05)<0.00001)
+-- Critical regression: the physics parent stays near vehicle center while
+-- the actual tire representation is 4m away. Old 3m root-envelope rejected
+-- a physically valid local-space contact; new repr anchor accepts it.
+mode="OFFSET"
+reprOrigin={104,49.50,100}
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s~=nil and s.state=="TERRAIN_CONTACT_OBSERVED")
+assert(s.frame=="LOCAL_INFERRED" and math.abs(s.contact.x-104)<0.001)
+mode="LOCAL"
+reprOrigin={100,50,100}
+contactObject=1000
+local oldHeightCalls=terrainCalls
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s.state=="NON_TERRAIN_CONTACT")
+assert(s.terrainContact==false and s.contactMinusMainM==nil)
+assert(terrainCalls==oldHeightCalls)
+contactObject=999
+mode="NO_CONTACT"
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s.state=="NO_CONTACT" and s.terrainContact==false)
+mode="NONFINITE"
+assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
+mode="LOCAL"
+origin={0,0,0}
+reprOrigin={0,0,0}
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s.state=="CONTACT_FRAME_UNVERIFIED")
+assert(s.reason=="FRAME_AMBIGUOUS")
+assert(s.contactMinusMainM==nil)
+origin={100,50,100}
+reprOrigin={100,50,100}
+local oldRepr=wheel.repr
+wheel.repr=nil
+s=P.sampleWheel(vehicle,wheel,999)
+assert(s.state=="CONTACT_FRAME_UNVERIFIED"
+    and s.reason=="WHEEL_REPR_UNAVAILABLE")
+wheel.repr=oldRepr
+vehicle.isServer=false
+assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
+vehicle.isServer=true
+vehicle.isAddedToPhysics=false
+assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
+vehicle.isAddedToPhysics=true
+local bad={node=0,physics={wheelShape=7}}
+assert(select(1,P.sampleWheel(vehicle,bad,999))==nil)
+-- One-shot bounded vehicle scan, never 250ms per-wheel logging.
+-- In live FS25 loaded vehicles are owned by mission.vehicleSystem.
+-- The old mission.vehicles-only lookup caused a real runtime refusal.
+local mission={
+    terrainRootNode=999,
+    vehicleSystem={vehicles={vehicle}},
+    vehicles={} -- force preference for the authoritative FS25 list
+}
+vehicle.spec_wheels={wheels={wheel}}
+local scan=assert(P.scanMark(mission,100,100,{radiusM=3}))
+assert(scan.state=="READ_ONLY" and #scan.results==1)
+assert(scan.vehicleSource=="VEHICLE_SYSTEM")
+assert(scan.results[1].wheelIndex==1)
+assert(scan.provesFineSurfaceHeight==false)
+assert(scan.authorizesTerrainWrite==false)
+assert(scan.truncated==false)
+assert(scan.states.TERRAIN_CONTACT_OBSERVED==1
+    and scan.states.TERRAIN_CONTACT_OUTSIDE_MARK==0)
+assert(scan.nearestWheelReprM==0 and scan.nearestTerrainContactM==0)
+scan=P.scanMark(mission,110,100,{radiusM=1})
+assert(#scan.results==0)
+assert(scan.states.TERRAIN_CONTACT_OBSERVED==1
+    and scan.states.TERRAIN_CONTACT_OUTSIDE_MARK==1)
+assert(math.abs(scan.nearestWheelReprM-10)<0.0001)
+assert(math.abs(scan.nearestTerrainContactM-10)<0.0001)
+mode="NO_CONTACT"
+scan=assert(P.scanMark(mission,100,100))
+assert(scan.states.NO_CONTACT==1 and scan.unclassified==0)
+mode="LOCAL"
+contactObject=1000
+scan=assert(P.scanMark(mission,100,100))
+assert(scan.states.NON_TERRAIN_CONTACT==1 and scan.unclassified==0)
+contactObject=999
+local legacy=assert(P.scanMark({terrainRootNode=999,vehicles={vehicle}},100,100))
+assert(legacy.vehicleSource=="LEGACY_MISSION")
+assert(#legacy.results==1)
+local blocked,reason=P.scanMark({terrainRootNode=999},100,100)
+assert(blocked==nil and reason=="VEHICLE_SYSTEM_LIST_UNAVAILABLE")
+local old=getWheelShapeContactPoint
+getWheelShapeContactPoint=nil
+assert(select(1,P.sampleWheel(vehicle,wheel,999))==nil)
+getWheelShapeContactPoint=old
+g_currentMission=mission
+RealismExtensionsTerrainGeometryProbe={position={x=100,z=100}}
+local result,line=P.consoleAtMarkedArea()
+assert(result==true and line:find("READ ONLY",1,true))
+assert(line:find("Contact point coordinate frame inferred",1,true))
+assert(line:find("nearestWheelReprM=0.00",1,true))
+assert(line:find("terrainTotal=1",1,true))
+assert(calls>0)
+print("terrain_wheel_collision_probe_harness: OK")

@@ -9,6 +9,7 @@ on:
       - "perf/**"
       - "test/**"
       - "diag/**"
+      - "integration/**"
       - "chore/**"
       - "research/**"
     paths-ignore:
