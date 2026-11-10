@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 2
+Model.VERSION = 3
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -183,7 +183,18 @@ function Model:settle(plan,beforeY,afterY)
     -- silently accumulate through a series of apparently successful steps.
     -- A writer can still change terrain without our attribution: this
     -- remains a bounded observation, not proof of native causality.
-    if lowered>item.debtM+self.toleranceM then
+    -- A readback tolerance answers "did one q-sized step happen?", NOT
+    -- "may we excavate a little more than the player requested?" These
+    -- are separate contracts. The former 50-micrometer allowance here
+    -- permitted q+0.02mm of measured lowering against a demand of q.
+    -- Allow only a tiny floating-point comparison allowance (<=1nm
+    -- for normal map quantums), never the 50um quantizer readback band.
+    -- Any observed excess quarantines the research writer. This does not
+    -- undo an already executed native edit; actual engine proof is still
+    -- required before enabling automatic terrain writes.
+    local accountingRoundoffM=math.max(0.000000001,
+        math.abs(item.debtM)*0.0000001)
+    if lowered>item.debtM+accountingRoundoffM then
         self.stats.anomalies=self.stats.anomalies+1
         self.quarantined=true
         return {verified=false,loweringM=lowered,
