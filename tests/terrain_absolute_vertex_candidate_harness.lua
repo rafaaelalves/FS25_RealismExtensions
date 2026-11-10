@@ -228,6 +228,30 @@ assert(strictJournal.observations["650:650"].owned==false)
 assert(strictCandidate:applyOne(650,650,2*q,"CUMULATIVE")==nil)
 assert(strictNativeCalls==1)
 
+-- Center lowers by EXACTLY one authorized quantum, but the right
+-- neighbor also changes by just 20um. Prior generic journal resolution
+-- (50um) silently ignored the collateral and could certify the vertex.
+-- The isolated absolute research path must detect this and FAIL CLOSED.
+local microJournal=J.new(999,{unitM=1,sample=read})
+local microBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local micro=assert(C.new({
+    budget=microBudget,journal=microJournal,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        set(x,z,math.floor(y/q+0.5)*q)
+        set(x+1,z,read(x+1,z)-0.00002)
+    end
+}))
+local microside,microWhy=micro:applyOne(71,70,q,"CUMULATIVE")
+assert(microside~=nil and microside.verified==false)
+assert(microWhy=="UNTRUSTED_NATIVE_SIDE_EFFECT")
+assert(microside.footprint.movedVertices==2)
+assert(microside.footprint.maxLowerM>=q-0.000001)
+assert(microBudget.quarantined==true)
+assert(microJournal.observations["71:70"].owned==false)
+assert(microJournal.observations["72:70"].owned==false)
+assert(microJournal.pendingCount==0)
+
 -- A 'setter' that changes a neighboring vertex must NOT be certified as
 -- vertex-local even when the requested center vertex moved by exactly q.
 local j2=J.new(999,{unitM=1,sample=read})
