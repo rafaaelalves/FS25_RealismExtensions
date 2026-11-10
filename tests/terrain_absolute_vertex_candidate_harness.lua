@@ -171,11 +171,22 @@ for _,scaleQ in ipairs({255/65535,0.0015,0.01}) do
                 end
             }))
             local step,why=thisWriter:applyOne(600,600,scaleQ)
-            assert(step~=nil and step.verified==true
-                and why==nil, "rounding safety: "..quantizer)
+            -- Positive readback bias estimates a little MORE than the
+            -- q-sized physical step. That cannot be approved when only
+            -- q was authorized, even though it is inside the general
+            -- 50um quantizer matching tolerance: fail closed instead.
+            if fractionalReadback>0 then
+                assert(step~=nil and step.verified==false)
+                assert(why=="OBSERVED_LOWERING_EXCEEDS_DEBT")
+                assert(thisBudget.quarantined==true)
+                assert(thisBudget.stats.verified==0)
+            else
+                assert(step~=nil and step.verified==true
+                    and why==nil, "rounding safety: "..quantizer)
+                assert(thisBudget.quarantined==false)
+                assert(thisBudget.stats.verified==1)
+            end
             assert(now-simHeight>0 and now-simHeight<=scaleQ*1.01)
-            assert(thisBudget.quarantined==false)
-            assert(thisBudget.stats.verified==1)
         end
     end
 end
@@ -193,6 +204,29 @@ local continuous,continuousWhy=continuousCandidate:applyOne(492,490,q)
 assert(continuous~=nil and continuous.verified==false)
 assert(continuousWhy=="UNBOUNDED_OBSERVED_DELTA")
 assert(continuousBudget.quarantined==true)
+
+-- A native setter returning just q + 0.02mm is within the old
+-- readback tolerance but exceeds a vertex's EXACT q demand. Reject
+-- before certifying the geometry, untrust the touched vertex, and do
+-- not perform any automatic reversal of a real engine write.
+local strictJournal=J.new(999,{unitM=1,sample=read})
+local strictBudget=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local strictNativeCalls=0
+local strictCandidate=assert(C.new({
+    budget=strictBudget,journal=strictJournal,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,y)
+        strictNativeCalls=strictNativeCalls+1
+        set(x,z,read(x,z)-(q+0.00002))
+    end
+}))
+local over,overWhy=strictCandidate:applyOne(650,650,q,"CUMULATIVE")
+assert(over~=nil and over.verified==false)
+assert(overWhy=="OBSERVED_LOWERING_EXCEEDS_DEBT")
+assert(strictNativeCalls==1 and strictBudget.quarantined==true)
+assert(strictJournal.observations["650:650"].owned==false)
+assert(strictCandidate:applyOne(650,650,2*q,"CUMULATIVE")==nil)
+assert(strictNativeCalls==1)
 
 -- A 'setter' that changes a neighboring vertex must NOT be certified as
 -- vertex-local even when the requested center vertex moved by exactly q.
