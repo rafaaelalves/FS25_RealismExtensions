@@ -131,16 +131,85 @@ function Resolver.resolveCapability(vehicle)
     return result
 end
 
-local function hasInputPowerTakeOff(object)
-    if object == nil then return false end
-
+-- FS25 PowerTakeOffs tracks attached cardans through *both* sides:
+-- input.connectedOutput / connectedVehicle, and the matching output's
+-- connectedInput / connectedVehicle. These are connection evidence, not a
+-- guarantee that the shaft is transmitting torque right now.
+local function getNativeInputPowerTakeOffs(object)
+    if object == nil then return nil end
+    local methodInputs = nil
     if type(object.getInputPowerTakeOffs) == "function" then
         local ok, inputs = pcall(object.getInputPowerTakeOffs, object)
-        if ok and tableHasEntries(inputs) then return true end
+        if ok and type(inputs) == "table" then
+            methodInputs = inputs
+            if tableHasEntries(inputs) then return inputs end
+        end
+    end
+    local spec = object.spec_powerTakeOffs
+    if spec ~= nil and type(spec.inputPowerTakeOffs) == "table" then
+        -- Preserve the v1.6 classification fallback: some mod methods
+        -- expose an empty list even when the native spec has PTO inputs.
+        if tableHasEntries(spec.inputPowerTakeOffs)
+            or methodInputs == nil then
+            return spec.inputPowerTakeOffs
+        end
+    end
+    return methodInputs
+end
+
+local function hasInputPowerTakeOff(object)
+    return tableHasEntries(getNativeInputPowerTakeOffs(object))
+end
+
+-- Read-only, deliberately *not* used to authorize gear changes or as a
+-- substitute for GIANTS/Manual Attach on/off and physical torque semantics.
+-- Nil/inconsistent native fields are UNKNOWN rather than a false claim that
+-- a visible cardan is connected or disconnected.
+function Resolver.getInputConnectionEvidence(object)
+    local result = {
+        declared = 0,
+        linked = 0,
+        unlinked = 0,
+        uncertain = 0,
+        status = "UNKNOWN"
+    }
+    local inputs = getNativeInputPowerTakeOffs(object)
+    if inputs == nil then return result end
+
+    for _, input in pairs(inputs) do
+        result.declared = result.declared + 1
+        if type(input) ~= "table" then
+            result.uncertain = result.uncertain + 1
+        else
+            local vehicle = input.connectedVehicle
+            local output = input.connectedOutput
+            if vehicle == nil and output == nil then
+                result.unlinked = result.unlinked + 1
+            elseif vehicle ~= nil
+                and type(output) == "table"
+                and output.connectedInput == input
+                and output.connectedVehicle == object then
+                result.linked = result.linked + 1
+            else
+                -- Partial reference, stale reciprocal pointer, or a mod
+                -- presenting a different connection lifecycle.
+                result.uncertain = result.uncertain + 1
+            end
+        end
     end
 
-    local spec = object.spec_powerTakeOffs
-    return spec ~= nil and tableHasEntries(spec.inputPowerTakeOffs)
+    if result.declared == 0 then
+        result.status = "NO_INPUT"
+    elseif result.linked == result.declared then
+        result.status = "LINKED"
+    elseif result.unlinked == result.declared then
+        result.status = "DECLARED_UNLINKED"
+    elseif result.uncertain > 0 then
+        result.status = "UNKNOWN"
+    else
+        result.status = "MIXED"
+    end
+    return result
 end
 
 local function readPtoRpm(object)

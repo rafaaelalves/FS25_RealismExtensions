@@ -27,6 +27,9 @@ local tool = {
     getConsumedPtoTorque = function() return ptoActive and 0.12 or 0 end,
     mrPtoCurrentRpm = 296, mrPtoCurrentRpmRatio = 0.74,
     mrPowerConsumerForcePtoRpm = true, mrBalerLastNeededPower = 19,
+    mrBalerLastTonsPerHour=18.5, mrBalerSpeedLimit=12.5,
+    spec_woodCrusher={mrFeedingActive=false, mrWaitingForFillLevel=true,
+        mrCrushingPowerWanted=24},
     spec_powerTakeOffs = {
         inputPowerTakeOffs = { {connectedVehicle = {}} }
     },
@@ -59,9 +62,13 @@ local state = {
 RealismExtensionsPTO = {
     getVehicleState = function(v) assert(v==vehicle); return state end
 }
-RealismExtensionsPTOResolver = {
-    isPtoEngaged = function(v) assert(v==vehicle); return ptoActive,"native" end
-}
+dofile("scripts/pto/PTOModel.lua")
+dofile("scripts/pto/PTOProfiles.lua")
+dofile("scripts/pto/PTOResolver.lua")
+RealismExtensionsPTOResolver.isPtoEngaged = function(v)
+    assert(v==vehicle)
+    return ptoActive,"native"
+end
 g_localPlayer = {
     getCurrentVehicle = function() return vehicle end
 }
@@ -83,12 +90,36 @@ assert(report[2]:find("maxPtoDemand=400",1,true))
 assert(report[2]:find("mrMinPtoRot=125",1,true))
 assert(report[3]:find("inputPto=1",1,true))
 assert(report[3]:find("connectedInput=1",1,true))
+-- A single connectedVehicle pointer did not establish reciprocal linkage.
+assert(report[3]:find("ptoLink=UNKNOWN",1,true))
+assert(report[3]:find("verifiedLinks=0",1,true))
+assert(report[3]:find("uncertainLinks=1",1,true))
+local input=tool.spec_powerTakeOffs.inputPowerTakeOffs[1]
+local nativeOutput={connectedInput=input,connectedVehicle=tool}
+input.connectedOutput=nativeOutput
+report=I.snapshot(vehicle)
+assert(report[3]:find("ptoLink=LINKED",1,true))
+assert(report[3]:find("verifiedLinks=1",1,true))
+-- Link state is sampled afresh; nothing needs an attach/detach callback.
+input.connectedOutput=nil
+input.connectedVehicle=nil
+report=I.snapshot(vehicle)
+assert(report[3]:find("ptoLink=DECLARED_UNLINKED",1,true))
+assert(report[3]:find("unlinkedInputs=1",1,true))
+input.connectedOutput=nativeOutput
+input.connectedVehicle={}
+assert(report[3]:find("connectedInput=1",1,true)==nil)
 assert(report[3]:find("rawConsumerRPM=400",1,true))
 assert(report[3]:find("liveConsumerRPM=0",1,true))
 assert(report[3]:find("mrPtoCurrentRPM=296",1,true))
 assert(report[3]:find("mrPtoRpmRatio=0.74",1,true))
 assert(report[3]:find("forcePtoRpm=true",1,true))
 assert(report[3]:find("mrBalerPowerKW=19",1,true))
+assert(report[3]:find("mrBalerTonsPerHour=18.5",1,true))
+assert(report[3]:find("mrBalerSpeedLimit=12.5",1,true))
+assert(report[3]:find("mrFeedingActive=false",1,true))
+assert(report[3]:find("mrFeedingWaiting=true",1,true))
+assert(report[3]:find("mrCrusherPowerWanted=24",1,true))
 assert(report[3]:find("turnedOn=false",1,true))
 assert(report[3]:find("powerMinKW=2",1,true))
 assert(report[3]:find("powerMaxKW=12",1,true))
@@ -113,11 +144,16 @@ tool.mrPtoCurrentRpm=nil
 tool.mrPtoCurrentRpmRatio=nil
 tool.mrPowerConsumerForcePtoRpm=nil
 tool.mrBalerLastNeededPower=nil
+tool.mrBalerLastTonsPerHour=nil
+tool.mrBalerSpeedLimit=nil
+tool.spec_woodCrusher=nil
 tool.mrLastNeededPtoPower=nil
 tool.getConsumedPtoTorque=nil
 report=I.snapshot(vehicle)
 assert(report[3]:find("mrPtoRpmRatio=-",1,true))
 assert(report[3]:find("mrBalerPowerKW=-",1,true))
+assert(report[3]:find("mrBalerTonsPerHour=-",1,true))
+assert(report[3]:find("mrFeedingActive=-",1,true))
 assert(report[3]:find("mrLoadKW=-",1,true))
 assert(report[3]:find("mrTorqueKNm=-",1,true))
 -- Horsch-style non-mechanical auxiliary power is still visible to the
@@ -141,6 +177,7 @@ tool.spec_powerTakeOffs.inputPowerTakeOffs={}
 report=I.snapshot(vehicle)
 assert(report[3]:find("inputPto=0",1,true))
 assert(report[3]:find("connectedInput=0",1,true))
+assert(report[3]:find("ptoLink=NO_INPUT",1,true))
 -- Cycle/corrupt tree does not loop indefinitely or mutate equipment.
 tool.getAttachedImplements=function() return {{object=vehicle}} end
 assert(#I.snapshot(vehicle)==3)

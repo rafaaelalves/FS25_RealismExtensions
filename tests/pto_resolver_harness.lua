@@ -678,4 +678,76 @@ local missing=R.collectRequirements(fiat)
 assert(missing.driveEvidenceStatus=="UNKNOWN")
 fiat.getAttachedImplements=function() return {{object=avatar}} end
 
+-- V1.7 read-only connection evidence, using reciprocal native references.
+-- Unlike the existence of an input shaft, this state is recomputed on every
+-- inspection. It must never alter selector interlocks or load ownership.
+local getLinks = R.getInputConnectionEvidence
+assert(getLinks(nil).status=="UNKNOWN")
+local noPto={spec_powerTakeOffs={inputPowerTakeOffs={}}}
+assert(getLinks(noPto).status=="NO_INPUT")
+assert(getLinks({}).status=="UNKNOWN")
+local nativeInput={}
+local hooked={
+    configFileName="/mods/nativeLinkTest.xml",
+    spec_powerTakeOffs={inputPowerTakeOffs={nativeInput}},
+    getInputPowerTakeOffs=function(self)
+        return self.spec_powerTakeOffs.inputPowerTakeOffs
+    end
+}
+local evidence=getLinks(hooked)
+assert(evidence.status=="DECLARED_UNLINKED")
+assert(evidence.declared==1 and evidence.linked==0
+    and evidence.unlinked==1 and evidence.uncertain==0)
+-- A half-populated connection is never evidence of physical torque.
+nativeInput.connectedVehicle=fiat
+evidence=getLinks(hooked)
+assert(evidence.status=="UNKNOWN" and evidence.uncertain==1)
+local output={connectedVehicle=hooked,connectedInput=nativeInput}
+nativeInput.connectedOutput=output
+evidence=getLinks(hooked)
+assert(evidence.status=="LINKED")
+assert(evidence.linked==1 and evidence.uncertain==0)
+-- The opposite output must agree, otherwise a stale/foreign input is UNKNOWN.
+output.connectedInput={}
+assert(getLinks(hooked).status=="UNKNOWN")
+output.connectedInput=nativeInput
+output.connectedVehicle=nil
+assert(getLinks(hooked).status=="UNKNOWN")
+output.connectedVehicle=hooked
+assert(getLinks(hooked).status=="LINKED")
+-- Manual attach/reconnect changes are visible without a topology refresh.
+nativeInput.connectedOutput=nil
+nativeInput.connectedVehicle=nil
+assert(getLinks(hooked).status=="DECLARED_UNLINKED")
+nativeInput.connectedVehicle=fiat
+nativeInput.connectedOutput=output
+assert(getLinks(hooked).status=="LINKED")
+local second={}
+hooked.spec_powerTakeOffs.inputPowerTakeOffs[2]=second
+evidence=getLinks(hooked)
+assert(evidence.status=="MIXED")
+assert(evidence.declared==2 and evidence.linked==1
+    and evidence.unlinked==1)
+-- Failure or partial/corrupt list uses UNKNOWN, not "disconnected".
+second.connectedVehicle=fiat
+assert(getLinks(hooked).status=="UNKNOWN")
+hooked.getInputPowerTakeOffs=function() error("third party API failed") end
+assert(getLinks(hooked).status=="UNKNOWN")
+hooked.getInputPowerTakeOffs=nil
+hooked.spec_powerTakeOffs.inputPowerTakeOffs={nativeInput}
+assert(getLinks(hooked).status=="LINKED")
+-- Observing linkage is not interpreting the consumer work state. Existing
+-- interlocks must still obtain live activity from the implement.
+local live=false
+hooked.getIsPowerTakeOffActive=function() return live end
+hooked.getIsTurnedOn=function() return live end
+hooked.getAttachedImplements=function() return {} end
+fiat.getAttachedImplements=function() return {{object=hooked}} end
+local off,offSource=R.isPtoEngaged(fiat)
+assert(off==false and offSource=="NO_ACTIVE_CONSUMER")
+live=true
+local on,onSource=R.isPtoEngaged(fiat)
+assert(on==true and onSource=="IMPLEMENT_PTO_ACTIVE")
+live=false
+
 print("pto_resolver_harness: OK")
