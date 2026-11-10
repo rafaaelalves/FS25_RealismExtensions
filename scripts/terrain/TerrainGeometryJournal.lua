@@ -187,10 +187,21 @@ end
 -- Resample immediately before submission, reject changed ground, and rebase
 -- the callback delta to these just-in-time heights. This is NOT a global
 -- lock on third-party writers while GIANTS executes the native queue job.
-function Journal:validateBeforeSubmit(token)
+function Journal:validateBeforeSubmit(token,maxAllowedDriftM)
     if type(token)~="table" or token.active~=true
         or self.pendingByLogicalKey[token.key]~=token then
         return false,"STALE_OR_INVALID_TOKEN"
+    end
+    -- Preserve the 2mm legacy queue threshold for unrelated callers.
+    -- The one-vertex ABSOLUTE actuator supplies a much tighter threshold:
+    -- a 0.1mm foreign edit is NOT harmless during a ~3.891mm transaction.
+    local maxDrift=0.002
+    if maxAllowedDriftM~=nil then
+        if not finite(maxAllowedDriftM)
+            or maxAllowedDriftM<=0 then
+            return false,"INVALID_SUBMISSION_DRIFT_LIMIT"
+        end
+        maxDrift=math.min(maxDrift,maxAllowedDriftM)
     end
     local afterQueue={}
     local largestDrift=0
@@ -207,11 +218,11 @@ function Journal:validateBeforeSubmit(token)
     self.stats.submitChecks=self.stats.submitChecks+1
     self.stats.submitMaxDriftM=math.max(
         self.stats.submitMaxDriftM,largestDrift)
-    if largestDrift>0.002 then
+    if largestDrift>maxDrift then
         -- Do not dig into an altered patch or count queue-wait changes as a
         -- new RE rut. Invalidate any trusted first-touch baseline affected.
         for i,p in ipairs(token.points) do
-            if math.abs(afterQueue[i]-p.beforeY)>0.002 then
+            if math.abs(afterQueue[i]-p.beforeY)>maxDrift then
                 local entry=self.observations[p.key]
                 if entry~=nil then
                     entry.owned=false
