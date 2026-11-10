@@ -174,7 +174,13 @@ function Candidate:applyOne(x,z,damageM,contract)
     -- Even then, this is NOT verified to synchronize/affect fine physical ruts.
     local after=journal:getHeight(x,z)
     local measured,measurementReason=budget:settle(plan,before,after)
-    local footprint,footprintReason=journal:complete(token,true)
+    -- A coarse generic 50um movement threshold can miss collateral
+    -- changes smaller than readback quantizer tolerance. Require ~1um
+    -- precision for ALL vertices in the isolated 3x3 absolute trial;
+    -- uncertain/noisy engines fail closed rather than certify ownership.
+    local collateralThresholdM=math.min(budget.toleranceM,0.000001)
+    local footprint,footprintReason=journal:complete(
+        token,true,collateralThresholdM)
     local tolerance=budget.toleranceM
     local safe=ok and measured~=nil and measured.verified==true
         and footprint~=nil and footprint.movedVertices==1
