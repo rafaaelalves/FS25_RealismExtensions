@@ -29,6 +29,12 @@ Example: `q=255/65535 m ≈ 3.89105 mm`, a q-sized cumulative target, measured `
 - If any competing writer moves terrain by 0.1 mm inside this window, there is **no RE setter call**; the candidate aborts and permanently quarantines this isolated research budget for the mission. Future attempts must obtain a new verified epoch, not silently retry against shifted ground.
 - Important remaining race: no Lua-level preflight can globally lock unrelated third-party C++/Lua writers between the final read and physical setter. This is a defensive fail-closed gate, NOT absolute C++ isolation.
 
+## Additional after-write collateral check
+
+`TerrainGeometryJournal:complete(token,successful,maxChangeIgnoreM)` now accepts a **strictly smaller** post-write per-vertex movement threshold, preserving its pre-existing 50µm default for unrelated writers. The research-only absolute candidate passes `min(budget.toleranceM,1µm)`. A neighbor moving 20µm was previously invisible to the generic completion threshold; now it is counted as a second changed vertex. Even when the center moves by exactly the requested q and the debt ledger settles successfully, the candidate fails the **one-and-only-one vertex** footprint criterion, quarantines future writes and revokes ownership of every affected vertex. No automatic reverse height edit is attempted.
+
+This improves sensitivity, but cannot assert a global native/physics lock, nor can it certify true collision geometry from MAIN readback alone. An engine with genuine >1µm read noise will fail closed pending additional calibration. New regression in `terrain_absolute_vertex_candidate_harness.lua` simulates this 20µm collateral.
+
 ## Tests and evidence
 
 - `tests/terrain_quantized_height_budget_harness.lua`: rejects 10–20 µm excess with full q demand despite passing 50 µm step-matching threshold; verifies budget quarantine and unchanged debt. A 20 µm shortfall, however, is credited by its actual measured amount. Runs on both contract types.
