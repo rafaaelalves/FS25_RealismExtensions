@@ -126,7 +126,18 @@ function Candidate:applyOne(x,z,damageM,contract)
     local strictDriftM=math.min(budget.toleranceM,0.00001)
     local preflight,preReason=journal:validateBeforeSubmit(
         token,strictDriftM)
-    if not preflight then return abort(preReason) end
+    if not preflight then
+        -- A foreign MAIN height edit after the journal lock makes the
+        -- experimental geometry epoch ambiguous. Even though OUR native
+        -- setter was not called, retrying a stale cumulative target in
+        -- the same session could attribute that foreign edit to RE.
+        -- Permanently stop this research budget until a NEW isolated
+        -- calibration/session; preserve debt only for diagnosis.
+        if preReason=="QUEUED_GEOMETRY_DRIFT" then
+            budget.quarantined=true
+        end
+        return abort(preReason)
+    end
     local stillOk,stillExclusive=pcall(self.verifyExclusive)
     if not stillOk or stillExclusive~=true then
         return abort("EXCLUSIVITY_CHANGED")
