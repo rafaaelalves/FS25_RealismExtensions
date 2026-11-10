@@ -240,10 +240,21 @@ function Journal:validateBeforeSubmit(token,maxAllowedDriftM)
     return true,nil
 end
 
-function Journal:complete(token,successful)
+function Journal:complete(token,successful,maxChangeIgnoreM)
     if type(token)~="table" or token.active~=true
         or self.pendingByLogicalKey[token.key]~=token then
         return nil,"STALE_OR_INVALID_TOKEN"
+    end
+    -- 50um is the legacy generic queue journal threshold, but the
+    -- isolated absolute setter must not conceal a 20um NEIGHBOR change
+    -- merely because the center moved by exactly one native quantum.
+    -- Research caller can request a STRICTER threshold, never loosen it.
+    local changeThreshold=0.00005
+    if maxChangeIgnoreM~=nil then
+        if not finite(maxChangeIgnoreM) or maxChangeIgnoreM<=0 then
+            return nil,"INVALID_COMPLETION_MOVEMENT_LIMIT"
+        end
+        changeThreshold=math.min(changeThreshold,maxChangeIgnoreM)
     end
     -- Release ALL locks even if the engine failed.
     token.active=false
@@ -280,7 +291,7 @@ function Journal:complete(token,successful)
     for i,p in ipairs(token.points) do
         local y=after[i]
         local delta=y-p.beforeY
-        if math.abs(delta)>0.00005 then
+        if math.abs(delta)>changeThreshold then
             result.movedVertices=result.movedVertices+1
             result.deltaSumM=result.deltaSumM+delta
             local entry=self.observations[p.key]
