@@ -322,6 +322,45 @@ local lostResult,lostWhy=lost:applyOne(130,130,q)
 assert(lostResult==nil and lostWhy=="EXCLUSIVITY_CHANGED")
 assert(writes==beforeGuardWrites)
 assert(lost.budget.stats.pending==0)
+-- A third-party writer moves the MAIN center by only 0.1mm after
+-- Journal.begin and before the absolute setter. The old generic 2mm
+-- queue threshold allowed that and would attribute it as part of RE's
+-- q-sized readback. Strict ABSOLUTE preflight must REFUSE WITH ZERO
+-- setters called and preserve the caller's cumulative target debt.
+set(665,665,base)
+local competingJournal=J.new(999,{unitM=1,sample=read})
+local competingBudget=assert(B.new({quantumM=q}))
+local originalPreflight=competingJournal.validateBeforeSubmit
+local injected=false
+function competingJournal:validateBeforeSubmit(token,allowedDriftM)
+    assert(allowedDriftM<=0.00001)
+    if not injected then
+        injected=true
+        set(665,665,read(665,665)-0.0001)
+    end
+    return originalPreflight(self,token,allowedDriftM)
+end
+local competingCalls=0
+local competing=assert(C.new({
+    budget=competingBudget,journal=competingJournal,
+    explicitWrite=true,
+    verifyExclusive=function() return true end,
+    writeHeight=function(x,z,y)
+        competingCalls=competingCalls+1
+        set(x,z,y)
+    end
+}))
+local competingResult,competingWhy=
+    competing:applyOne(665,665,q,"CUMULATIVE")
+assert(competingResult==nil and competingWhy=="QUEUED_GEOMETRY_DRIFT")
+assert(competingCalls==0)
+assert(competingJournal.pendingCount==0)
+assert(competingBudget.stats.pending==0)
+assert(math.abs(competingBudget:getDebt("665:665")-q)<1e-10)
+assert(competingBudget.quarantined==false)
+-- Never recover/rebase the foreign edit as an RE-owned rut.
+assert(competingJournal.observations["665:665"]==nil)
+
 -- A setter adapter returning false is failure, even without an exception.
 local j4=J.new(999,{unitM=1,sample=read})
 local b4=assert(B.new({quantumM=q}))
