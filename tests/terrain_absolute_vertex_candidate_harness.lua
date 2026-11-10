@@ -357,7 +357,9 @@ assert(competingCalls==0)
 assert(competingJournal.pendingCount==0)
 assert(competingBudget.stats.pending==0)
 assert(math.abs(competingBudget:getDebt("665:665")-q)<1e-10)
-assert(competingBudget.quarantined==false)
+assert(competingBudget.quarantined==true)
+assert(competing:applyOne(665,665,q,"CUMULATIVE")==nil)
+assert(competingCalls==0)
 -- Never recover/rebase the foreign edit as an RE-owned rut.
 assert(competingJournal.observations["665:665"]==nil)
 
