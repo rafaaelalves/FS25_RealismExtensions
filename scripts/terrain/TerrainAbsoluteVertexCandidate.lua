@@ -118,7 +118,14 @@ function Candidate:applyOne(x,z,damageM,contract)
         self.stats.refused=self.stats.refused+1
         return nil,reason
     end
-    local preflight,preReason=journal:validateBeforeSubmit(token)
+    -- Read/validate the entire 3x3 neighborhood again just before the
+    -- physical setter. A broad 2mm queue-drift allowance is too large
+    -- when we are proving a single ~3.9mm quantized vertex step.
+    -- A foreign 0.1mm edit must NOT be silently folded into the next
+    -- "exact" height update or certified as RE-owned geometry.
+    local strictDriftM=math.min(budget.toleranceM,0.00001)
+    local preflight,preReason=journal:validateBeforeSubmit(
+        token,strictDriftM)
     if not preflight then return abort(preReason) end
     local stillOk,stillExclusive=pcall(self.verifyExclusive)
     if not stillOk or stillExclusive~=true then
