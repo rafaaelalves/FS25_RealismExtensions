@@ -24,6 +24,44 @@ assert(reasonMismatch=="UNBOUNDED_OBSERVED_DELTA")
 assert(strict.quarantined==true)
 assert(strict.entries.mismatch.committedM==0)
 
+-- A 20-micrometer overshoot *is* close to one native quantum, so it
+-- passes the 50um quantization readback check. But it is STILL more
+-- actual terrain removed than the FULL authorized debt of q. Do not
+-- mistakenly apply that readback tolerance as a material budget.
+local excess=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local excessPlan=assert(excess:requestTarget("strict-budget",q,0.10))
+local excessive,excessReason=excess:settle(
+    excessPlan,100,100-(q+0.00002))
+assert(excessive~=nil and excessive.verified==false)
+assert(excessReason=="OBSERVED_LOWERING_EXCEEDS_DEBT")
+assert(excess.quarantined==true)
+assert(excess.stats.anomalies==1)
+assert(excess.entries["strict-budget"].committedM==0)
+assert(math.abs(excess:getDebt("strict-budget")-q)<1e-10)
+assert(select(1,excess:requestTarget("strict-budget",2*q,0.10))==nil)
+
+-- The same safety rule applies to true incremental damage contracts;
+-- no extra native material removal is accepted as an authorized write.
+local incrementalExcess=assert(B.new({quantumM=q}))
+local incrementalPlan=assert(incrementalExcess:request("inc",q,0.10))
+local incBad,incWhy=incrementalExcess:settle(
+    incrementalPlan,100,100-(q+0.00001))
+assert(incBad.verified==false
+    and incWhy=="OBSERVED_LOWERING_EXCEEDS_DEBT")
+assert(incrementalExcess.quarantined)
+assert(math.abs(incrementalExcess:getDebt("inc")-q)<1e-10)
+
+-- Noise below the booked quantum remains an accepted measurement but is
+-- credited at the actual measured amount, NEVER the nominal q.
+local smallShortfall=assert(B.new({quantumM=q}))
+local shortPlan=assert(smallShortfall:requestTarget("noise",q,0.10))
+local short=assert(smallShortfall:settle(
+    shortPlan,100,100-(q-0.00002)))
+assert(short.verified==true and not smallShortfall.quarantined)
+assert(math.abs(smallShortfall.entries.noise.committedM-(q-0.00002))
+    <1e-9)
+assert(math.abs(smallShortfall:getDebt("noise")-0.00002)<1e-9)
+
 -- Even a small *accepted* jitter is measured and debited from the
 -- cumulative target, NOT rounded to the nominal q in accounting.
 local accounted=assert(B.new({quantumM=q,toleranceM=0.00005}))
