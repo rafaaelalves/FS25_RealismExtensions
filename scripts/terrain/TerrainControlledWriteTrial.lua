@@ -141,7 +141,7 @@ function Trial.isSinglePlayer()
     return true
 end
 
-function Trial:consoleCommand(action,confirmation)
+function Trial:consoleCommand(action,confirmation,extraConfirmation)
     if not Trial.enabled() then
         return speak("Inactive in this build; no trial controls installed")
     end
@@ -181,6 +181,18 @@ function Trial:consoleCommand(action,confirmation)
         local ok,reason=c.run()
         return ok and speak("Calibration queued with isolated native writer")
             or speak("Calibration refused; check native journal and RE Terrain Calibration output")
+    elseif action=="absolutestep" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil or type(c.runOneStep)~="function" then
+            return speak("ONE_QUANTUM_ACCEPTANCE_UNAVAILABLE")
+        end
+        -- Requires explicit candidate quantum in METERS and literal COPY.
+        -- The numeric argument does not certify the map's heightScale.
+        local matched,why=c.runOneStep(confirmation,extraConfirmation)
+        return speak(matched and
+            "ONE QUANTUM MATCHED IN THIS SESSION, NOT VERIFIED PERSISTENT. Check RE Absolute Cal lines for strict result and optional copied-save witness."
+            or "ONE QUANTUM NOT CERTIFIED: "..tostring(why)
+                ..". Do not save the disposable test.")
     elseif action=="absolutecheck" or action=="absolute" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil then return speak("ABSOLUTE_DIAGNOSTIC_UNAVAILABLE") end
@@ -188,9 +200,11 @@ function Trial:consoleCommand(action,confirmation)
             c.inspect()
             return speak("Absolute 3x3 research preflight checked, NO WRITE")
         end
-        local ok=c.run()
-        return speak(ok and "Absolute one-shot executed; QUARANTINED for this session; quit copied save WITHOUT SAVING"
-            or "Absolute one-shot REFUSED; no write attempted")
+        -- The older 1.5mm destructive diagnostic has been repeated twice
+        -- and predictably rounded to ~3.891mm; it is not a useful
+        -- release acceptance test. Keep its old source for regression
+        -- harnesses, but DO NOT expose it as an interactive write action.
+        return speak("LEGACY_SUB_QUANTUM_CALIBRATION_DISABLED. Use reTerrainTrial absoluteStep <quantum_m> COPY ONLY in a verified disposable singleplayer clone. No write.")
     elseif action=="lattice" then
         local c=RealismExtensionsTerrainMainHeightLatticeProbe
         if c==nil or type(c.consoleAtMarkedArea)~="function" then
@@ -266,7 +280,7 @@ function Trial:consoleCommand(action,confirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
 end
 
 function Trial.installCommands()
@@ -276,7 +290,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absolute|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
     Trial.commandsInstalled=true
     return true
 end
