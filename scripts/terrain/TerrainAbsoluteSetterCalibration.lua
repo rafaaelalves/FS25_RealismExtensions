@@ -7,7 +7,7 @@ RealismExtensionsTerrainAbsoluteSetterCalibration =
 local Cal=RealismExtensionsTerrainAbsoluteSetterCalibration
 Cal.REQUEST_M=0.0015
 Cal.used=Cal.used==true
-Cal.VERSION=3
+Cal.VERSION=4
 Cal.pendingWitness=nil
 Cal.persistRequested=false
 Cal.witnessSaveAttempted=false
@@ -24,8 +24,13 @@ local function report(s)
     if type(print)=="function" then print(line) end
     return line
 end
-local function absoluteContext()
+local function absoluteContext(requiredDepthM)
     if Cal.used then return nil,"SESSION_ONE_SHOT_ALREADY_CONSUMED" end
+    requiredDepthM=requiredDepthM or Cal.REQUEST_M
+    if not finite(requiredDepthM) or requiredDepthM<=0
+        or requiredDepthM>0.012 then
+        return nil,"INVALID_RESEARCH_DEPTH"
+    end
     local cfg=RealismExtensionsConfig
     local m=cfg~=nil and cfg.modules or nil
     if m==nil or m.TerrainPermanentActuator~="SHADOW"
@@ -107,7 +112,7 @@ local function absoluteContext()
         return nil,"COMPLETE_THREE_BY_THREE_NEIGHBORHOOD_UNAVAILABLE"
     end
     local remaining,why=journal:getLoweringBudget(x,z,radius,0.10,0.12)
-    if not finite(remaining) or remaining<Cal.REQUEST_M then
+    if not finite(remaining) or remaining<requiredDepthM then
         return nil,"UNTRUSTED_OR_EXHAUSTED_TERRAIN_"..tostring(why or remaining)
     end
     return {rt=rt,journal=journal,writer=writer,
@@ -226,6 +231,128 @@ function Cal.run()
     report("WITNESS status="..(witness~=nil and "READY_NOT_SAVED" or tostring(witnessReason))
         ..". Default remains QUIT WITHOUT SAVING. Optional cloned-save persistence test requires explicit reTerrainTrial absolutePersist COPY before user manually saves.")
     return true,nil
+end
+
+-- A controlled ONE-QUANTUM experiment, unlike the legacy sub-quantum
+-- 1.5mm diagnostic. Caller supplies a CANDIDATE q from independent map
+-- evidence; this does NOT certify the map's heightScale/rounding policy.
+-- The only accepted place to execute this is a real DISPOSABLE CLONED SAVE.
+-- Never invoke as an autonomous wheel-writer or on a normal game save.
+function Cal.runOneStep(quantumInput,confirmation)
+    if confirmation~="COPY" then
+        return false,report("ONE STEP REFUSED: explicit quantum in METERS and COPY acknowledgement required; copied disposable save ONLY")
+    end
+    local q=tonumber(quantumInput)
+    if not finite(q) or q<0.00025 or q>0.012 then
+        return false,report("ONE STEP REFUSED: invalid candidate vertical quantum (meters). NO WRITE.")
+    end
+    local ctx,why=absoluteContext(q)
+    if ctx==nil then
+        return false,report("ONE STEP REFUSED BEFORE WRITE: "..tostring(why))
+    end
+    local B=RealismExtensionsTerrainQuantizedHeightBudget
+    local Candidate=RealismExtensionsTerrainAbsoluteVertexCandidate
+    local W=RealismExtensionsTerrainAbsolutePersistenceWitness
+    if B==nil or Candidate==nil or W==nil
+        or type(B.new)~="function"
+        or type(Candidate.new)~="function"
+        or type(W.capture)~="function" then
+        return false,report("ONE STEP REFUSED: research modules unavailable")
+    end
+    local budget,reason=B.new({quantumM=q,toleranceM=0.00005})
+    if budget==nil then
+        return false,report("ONE STEP REFUSED: "..tostring(reason))
+    end
+    local mission=g_currentMission
+    local info=mission~=nil and mission.missionInfo or nil
+    local snapshot={}
+    for _,v in ipairs(ctx.points) do
+        local y=ctx.journal:getHeight(v.x,v.z)
+        if not finite(y) then
+            return false,report("ONE STEP REFUSED: PRE_HEIGHT_UNAVAILABLE")
+        end
+        snapshot[#snapshot+1]={key=v.key,x=v.x,z=v.z,beforeY=y}
+    end
+    local candidate,candidateWhy=Candidate.new({
+        budget=budget,journal=ctx.journal,explicitWrite=true,
+        verifyExclusive=function()
+            local rt=RealismExtensionsTerrainRuntime
+            local tr=RealismExtensionsTerrainControlledWriteTrial
+            local gp=RealismExtensionsTerrainGeometryProbe
+            if rt~=ctx.rt or rt.geometryJournal~=ctx.journal
+                or rt.nativeDamageQuarantined==true
+                or g_currentMission~=mission
+                or tr==nil or type(tr.isSinglePlayer)~="function"
+                or tr.isSinglePlayer()~=true
+                or tr.armed or tr.pending or tr.reserved~=nil
+                or ctx.writer.nativeCausalPending==true
+                or ctx.writer:getQueueSize()~=0
+                or gp==nil or gp.position==nil
+                or gp.previous==nil
+                or math.abs(gp.position.x-ctx.x)>ctx.unitM
+                or math.abs(gp.position.z-ctx.z)>ctx.unitM
+                or gp.previous.label~="beforeAbsolute" then
+                return false
+            end
+            return true
+        end,
+        writeHeight=function(x,z,target)
+            return setTerrainHeightAtWorldPos(ctx.journal.terrain,
+                x,0,z,target)
+        end
+    })
+    if candidate==nil then
+        return false,report("ONE STEP REFUSED: "..tostring(candidateWhy))
+    end
+
+    -- The game mission may move to a new save session after a failure.
+    -- Consume THIS one-shot BEFORE the very first call which could write.
+    Cal.used=true
+    Cal.pendingWitness=nil
+    Cal.persistRequested=false
+    Cal.witnessSaveAttempted=false
+    Cal.witnessOriginMission=nil
+    Cal.witnessOriginInfo=nil
+    Cal.witnessOriginDirectory=nil
+    local result,whyStep=candidate:applyOne(ctx.x,ctx.z,q,"CUMULATIVE")
+    ctx.rt.nativeDamageQuarantined=true
+    -- A research setter can NEVER grant recovery ownership, even if a
+    -- one-step match happened at the center. Foreign writers may run.
+    for _,v in ipairs(snapshot) do
+        local e=ctx.journal.observations[v.key]
+        if e~=nil then e.owned=false end
+    end
+    local oneStepMatched=result~=nil and result.verified==true
+    local witness,witnessWhy=nil,"ONE_STEP_NOT_VERIFIED"
+    if oneStepMatched then
+        witness,witnessWhy=W.capture(ctx.journal,
+            {points=snapshot},ctx.x,ctx.z,q,info)
+    end
+    if witness~=nil then
+        Cal.pendingWitness=witness
+        Cal.witnessOriginMission=mission
+        Cal.witnessOriginInfo=info
+        Cal.witnessOriginDirectory=info~=nil
+            and info.savegameDirectory or nil
+    end
+    report(string.format(
+        "ONE STEP RESULT experimental=true matched=%s error=%s proposedQuantumM=%.8f actualLowerM=%s centerBeforeM=%s centerAfterM=%s witness=%s singleShotConsumed=true quarantined=true; NEVER production authorization",
+        tostring(oneStepMatched),tostring(whyStep),
+        q,
+        result~=nil and finite(result.beforeY)
+            and finite(result.afterY)
+            and string.format("%.8f",result.beforeY-result.afterY)
+            or "-",
+        result~=nil and tostring(result.beforeY) or "-",
+        result~=nil and tostring(result.afterY) or "-",
+        witness~=nil and "READY_NOT_SAVED" or tostring(witnessWhy)))
+    if witness~=nil then
+        report("EXPLICIT CLONED-SAVE PERSISTENCE OPTION: reTerrainTrial absolutePersist COPY; manually SAVE cloned game; quit and RELOAD cloned save; then reTerrainTrial absoluteVerify. Without that opt-in, QUIT WITHOUT SAVING.")
+    else
+        report("ONE STEP NOT VERIFIED. Do not save this test; quit disposable copy without saving. No native retry is permitted in this session.")
+    end
+    return oneStepMatched,witness~=nil and "ONE_STEP_MATCHED_NOT_PERSISTED"
+        or (whyStep or witnessWhy)
 end
 
 -- Explicit second confirmation AFTER the destructive calibration. Merely
