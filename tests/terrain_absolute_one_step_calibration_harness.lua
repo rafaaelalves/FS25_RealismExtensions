@@ -106,13 +106,24 @@ assert(journal.observations["10:20"].owned==false)
 assert(C.pendingWitness~=nil)
 assert(C.pendingWitness.maxReadbackDriftM==0.00001)
 assert(C.witnessOriginDirectory==info.savegameDirectory)
+local validWitness=C.pendingWitness
 assert(select(1,C.runOneStep(q,"COPY"))==false)
 assert(writes==1)
 local witnessPath=RealismExtensionsTerrainAbsolutePersistenceWitness.path(info)
 assert(saved[witnessPath]==nil)
 assert(select(1,C.verifyReload())==false)
 assert(select(1,C.armPersistence("COPY"))==true)
-assert(select(1,C.saveWitness(info))==true)
+-- FS25's FSCareerMissionInfo.saveToXMLFile callback may be supplied a
+-- DIFFERENT Lua object from mission.missionInfo, but still represent the
+-- same in-progress career, path and map. This exact source-check bug was
+-- observed live 11-Nov after "WITNESS SAVE ARMED": the old code refused
+-- with WITNESS_SAVE_SESSION_CHANGED. The copy is legitimate here.
+local callbackInfo={mapId=info.mapId,isValid=true,
+    savegameDirectory=info.savegameDirectory,
+    isMultiplayer=false}
+assert(callbackInfo~=info and callbackInfo~=g_currentMission.missionInfo)
+assert(select(1,C.saveWitness(callbackInfo))==true)
+assert(C.witnessSaveAttempted==true)
 assert(saved[witnessPath]~=nil)
 assert(select(1,C.verifyReload())==false) -- same mission
 local previousMission=g_currentMission
