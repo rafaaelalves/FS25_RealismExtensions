@@ -386,27 +386,71 @@ function Cal.armPersistence(confirmation)
     return true,report("WITNESS SAVE ARMED for cloned save. NEXT manual in-game save stores ONLY 3x3 read-only evidence; RE native writer remains quarantined. After reload run reTerrainTrial absoluteVerify. THIS IS NOT A PRODUCTION SAVE PROCEDURE.")
 end
 
-function Cal.saveWitness(info)
-    if Cal.persistRequested~=true or Cal.pendingWitness==nil then
-        return false,"WITNESS_NOT_ARMED"
-    end
-    -- The first callback consumes approval before any disk/API action,
-    -- including errors. No silent write on a future save after refusal.
-    Cal.persistRequested=false
-    Cal.witnessSaveAttempted=true
+local function witnessInfoMapId(info)
+    if type(info)~="table" then return nil end
+    local id=tostring(info.mapId or info.mapTitle or "")
+    return id~="" and id or nil
+end
+
+-- The FSCareerMissionInfo:saveToXMLFile appended callback may pass an
+-- equivalent save context that is NOT the SAME TABLE/OBJECT REFERENCE as
+-- g_currentMission.missionInfo. The old triple reference equality guard
+-- refused a genuine game save despite matching mission+map+directory.
+-- Require the SAME live mission, exact immutable path and map identity,
+-- and positive singleplayer/server policy; never use object equality as
+-- a substitute for verifying save identity. One-shot consent is consumed
+-- on ANY callback, including a refusal. No silent retry.
+local function witnessSaveContextStatus(info)
     local mission=g_currentMission
-    local trial=RealismExtensionsTerrainControlledWriteTrial
-    if mission==nil or mission~=Cal.witnessOriginMission
-        or info==nil or info~=mission.missionInfo
-        or info~=Cal.witnessOriginInfo
+    if mission==nil or mission~=Cal.witnessOriginMission then
+        return false,"WITNESS_SAVE_MISSION_CHANGED"
+    end
+    local currentInfo=mission.missionInfo
+    local original=Cal.witnessOriginInfo
+    local expected=Cal.pendingWitness
+    if g_server==nil or type(info)~="table"
+        or type(currentInfo)~="table" or type(original)~="table"
+        or type(expected)~="table"
+        or info.isValid~=true or currentInfo.isValid~=true
+        or original.isValid~=true then
+        return false,"WITNESS_SAVE_CONTEXT_INVALID"
+    end
+    if type(Cal.witnessOriginDirectory)~="string"
+        or Cal.witnessOriginDirectory==""
         or info.savegameDirectory~=Cal.witnessOriginDirectory
-        or trial==nil or type(trial.isSinglePlayer)~="function"
+        or currentInfo.savegameDirectory~=Cal.witnessOriginDirectory
+        or original.savegameDirectory~=Cal.witnessOriginDirectory then
+        return false,"WITNESS_SAVE_DIRECTORY_CHANGED"
+    end
+    local mapId=expected.mapId
+    if type(mapId)~="string" or mapId==""
+        or witnessInfoMapId(info)~=mapId
+        or witnessInfoMapId(currentInfo)~=mapId
+        or witnessInfoMapId(original)~=mapId then
+        return false,"WITNESS_SAVE_MAP_CHANGED"
+    end
+    local trial=RealismExtensionsTerrainControlledWriteTrial
+    if trial==nil or type(trial.isSinglePlayer)~="function"
         or trial.isSinglePlayer()~=true
         or RealismExtensionsConfig==nil
         or RealismExtensionsConfig.modules==nil
         or RealismExtensionsConfig.modules.TerrainPermanentActuator~="SHADOW" then
-        report("WITNESS SAVE REFUSED: save/session identity or singleplayer policy changed")
-        return false,"WITNESS_SAVE_SESSION_CHANGED"
+        return false,"WITNESS_SAVE_POLICY_CHANGED"
+    end
+    return true,nil
+end
+
+function Cal.saveWitness(info)
+    if Cal.persistRequested~=true or Cal.pendingWitness==nil then
+        return false,"WITNESS_NOT_ARMED"
+    end
+    -- First callback consumes approval BEFORE any disk/API access.
+    Cal.persistRequested=false
+    Cal.witnessSaveAttempted=true
+    local valid,reason=witnessSaveContextStatus(info)
+    if not valid then
+        report("WITNESS SAVE REFUSED: "..tostring(reason))
+        return false,reason
     end
     local W=RealismExtensionsTerrainAbsolutePersistenceWitness
     local rt=RealismExtensionsTerrainRuntime
