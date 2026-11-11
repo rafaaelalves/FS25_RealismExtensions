@@ -104,6 +104,7 @@ assert(getHeight(11,20)==base and getHeight(11,21)==base)
 assert(journal.pendingCount==0)
 assert(journal.observations["10:20"].owned==false)
 assert(C.pendingWitness~=nil)
+assert(C.pendingWitness.maxReadbackDriftM==0.00001)
 assert(C.witnessOriginDirectory==info.savegameDirectory)
 assert(select(1,C.runOneStep(q,"COPY"))==false)
 assert(writes==1)
@@ -124,6 +125,14 @@ runtime.geometryJournal=freshJournal()
 local match,status,details=C.verifyReload()
 assert(match==true and status=="MAIN_HEIGHT_MATCHES_SAVED_WITNESS")
 assert(details.matchedVertices==9)
+-- A 20um drift across a SAVE/RELOAD is NOT acceptable even though
+-- the older diagnostic's 500um witness would have marked it matching.
+heights[key(11,21)]=base+0.00002
+local altered,alteredStatus,alteredDetails=C.verifyReload()
+assert(altered==false and alteredStatus=="RELOAD_HEIGHT_MISMATCH")
+assert(alteredDetails.neighborsChanged==1)
+heights[key(11,21)]=nil
+assert(select(1,C.verifyReload())==true)
 g_currentMission=previousMission
 
 -- Simulated engine overshoot: center moves 20um too deep, *within*
