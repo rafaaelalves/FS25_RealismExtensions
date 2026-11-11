@@ -325,8 +325,11 @@ function Cal.runOneStep(quantumInput,confirmation)
     local oneStepMatched=result~=nil and result.verified==true
     local witness,witnessWhy=nil,"ONE_STEP_NOT_VERIFIED"
     if oneStepMatched then
+        -- A one-step *acceptance* witness must not reuse the legacy
+        -- 0.5mm exploratory readback allowance. Reject >10um drift on
+        -- save/reload even when the central quantum looked correct.
         witness,witnessWhy=W.capture(ctx.journal,
-            {points=snapshot},ctx.x,ctx.z,q,info)
+            {points=snapshot},ctx.x,ctx.z,q,info,0.00001)
     end
     if witness~=nil then
         Cal.pendingWitness=witness
