@@ -36,6 +36,14 @@ local function validate(data)
         or type(data.points)~="table" or #data.points~=9 then
         return false,"INVALID_WITNESS"
     end
+    -- Legacy exploratory 1.5mm trial retains its 0.5mm tolerance.
+    -- A new one-quantum acceptance witness provides a tighter bound
+    -- which must survive serialization and subsequent save/reload.
+    local epsilon=data.maxReadbackDriftM or Witness.TOLERANCE_M
+    if not finite(epsilon) or epsilon<0.0000001
+        or epsilon>Witness.TOLERANCE_M then
+        return false,"INVALID_WITNESS_READBACK_LIMIT"
+    end
     local seen,centerCount={},0
     local u=data.unitM
     for _,p in ipairs(data.points) do
@@ -56,11 +64,11 @@ local function validate(data)
         local delta=p.afterY-p.beforeY
         if ix==0 and iz==0 then
             centerCount=centerCount+1
-            if delta>=-Witness.TOLERANCE_M
+            if delta>=-epsilon
                 or -delta>Witness.MAX_CENTER_LOWER_M then
                 return false,"UNTRUSTED_WITNESS_CENTER_AMPLITUDE"
             end
-        elseif math.abs(delta)>Witness.TOLERANCE_M then
+        elseif math.abs(delta)>epsilon then
             return false,"UNTRUSTED_WITNESS_COLLATERAL"
         end
     end
@@ -68,7 +76,8 @@ local function validate(data)
     return true,nil
 end
 
-function Witness.capture(journal,token,x,z,requestedM,info)
+function Witness.capture(journal,token,x,z,requestedM,info,
+    maxReadbackDriftM)
     if type(journal)~="table" or type(journal.getHeight)~="function"
         or not finite(journal.unitM)
         or type(token)~="table" or type(token.points)~="table"
@@ -78,7 +87,13 @@ function Witness.capture(journal,token,x,z,requestedM,info)
     local identity=mapId(info)
     if identity==nil then return nil,"WITNESS_MAP_ID_UNAVAILABLE" end
     local data={version=Witness.VERSION,mapId=identity,
-        unitM=journal.unitM,x=x,z=z,requestedM=requestedM,points={}}
+        unitM=journal.unitM,x=x,z=z,requestedM=requestedM,points={},
+        maxReadbackDriftM=maxReadbackDriftM}
+    local epsilon=maxReadbackDriftM or Witness.TOLERANCE_M
+    if not finite(epsilon) or epsilon<0.0000001
+        or epsilon>Witness.TOLERANCE_M then
+        return nil,"INVALID_WITNESS_READBACK_LIMIT"
+    end
     local changed=0
     for _,p in ipairs(token.points) do
         local after=journal:getHeight(p.x,p.z)
@@ -88,14 +103,14 @@ function Witness.capture(journal,token,x,z,requestedM,info)
         local delta=after-p.beforeY
         local isCenter=p.x==x and p.z==z
         if isCenter then
-            if delta>=-Witness.TOLERANCE_M then
+            if delta>=-epsilon then
                 return nil,"WITNESS_NO_MEASURABLE_CENTER_LOWERING"
             end
             if -delta>Witness.MAX_CENTER_LOWER_M then
                 return nil,"WITNESS_EXCESSIVE_CENTER_LOWERING"
             end
             changed=changed+1
-        elseif math.abs(delta)>Witness.TOLERANCE_M then
+        elseif math.abs(delta)>epsilon then
             return nil,"WITNESS_COLLATERAL_VERTEX_MOVEMENT"
         end
         data.points[#data.points+1]={
@@ -125,9 +140,10 @@ function Witness.save(info,data,journal)
         or type(journal.getHeight)~="function" then
         return false,"WITNESS_GRID_CHANGED"
     end
+    local epsilon=data.maxReadbackDriftM or Witness.TOLERANCE_M
     for _,p in ipairs(data.points) do
         local y=journal:getHeight(p.x,p.z)
-        if not finite(y) or math.abs(y-p.afterY)>Witness.TOLERANCE_M then
+        if not finite(y) or math.abs(y-p.afterY)>epsilon then
             return false,"WITNESS_CHANGED_BEFORE_SAVE"
         end
     end
@@ -140,6 +156,10 @@ function Witness.save(info,data,journal)
     xml:setFloat(root.."#x",data.x)
     xml:setFloat(root.."#z",data.z)
     xml:setFloat(root.."#requestedM",data.requestedM)
+    if data.maxReadbackDriftM~=nil then
+        xml:setFloat(root.."#maxReadbackDriftM",
+            data.maxReadbackDriftM)
+    end
     xml:setInt(root.."#vertexCount",9)
     for i,p in ipairs(data.points) do
         local key=string.format("%s.points.point(%d)",root,i-1)
@@ -170,6 +190,7 @@ local function read(info)
         unitM=xml:getFloat(root.."#unitM",-1),
         x=xml:getFloat(root.."#x"),z=xml:getFloat(root.."#z"),
         requestedM=xml:getFloat(root.."#requestedM"),
+        maxReadbackDriftM=xml:getFloat(root.."#maxReadbackDriftM"),
         points={}}
     local count=xml:getInt(root.."#vertexCount",-1)
     if count==9 then
@@ -197,6 +218,7 @@ function Witness.verifyReload(info,journal)
         or type(journal.getHeight)~="function" then
         return false,"WITNESS_MAIN_GRID_MISMATCH"
     end
+    local epsilon=data.maxReadbackDriftM or Witness.TOLERANCE_M
     local centerMoved,neighborsMoved,maxDrift=0,0,0
     local centerDelta=nil
     for _,p in ipairs(data.points) do
@@ -206,8 +228,8 @@ function Witness.verifyReload(info,journal)
         maxDrift=math.max(maxDrift,math.abs(drift))
         if p.x==data.x and p.z==data.z then
             centerDelta=y-p.beforeY
-            if math.abs(drift)>Witness.TOLERANCE_M then centerMoved=1 end
-        elseif math.abs(drift)>Witness.TOLERANCE_M then
+            if math.abs(drift)>epsilon then centerMoved=1 end
+        elseif math.abs(drift)>epsilon then
             neighborsMoved=neighborsMoved+1
         end
     end
