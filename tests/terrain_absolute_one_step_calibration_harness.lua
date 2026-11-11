@@ -125,6 +125,39 @@ assert(callbackInfo~=info and callbackInfo~=g_currentMission.missionInfo)
 assert(select(1,C.saveWitness(callbackInfo))==true)
 assert(C.witnessSaveAttempted==true)
 assert(saved[witnessPath]~=nil)
+
+-- Reject misdirected callbacks even if they happen after an otherwise
+-- legitimate one-shot. Approval is consumed on EVERY attempt.
+local originalRecord=saved[witnessPath]
+local function trialCallback(malformed,expectedReason)
+    C.pendingWitness=validWitness
+    C.persistRequested=true
+    C.witnessSaveAttempted=false
+    local accepted,reason=C.saveWitness(malformed)
+    assert(accepted==false and reason==expectedReason,
+        tostring(reason))
+    assert(C.persistRequested==false and C.witnessSaveAttempted==true)
+    assert(saved[witnessPath]==originalRecord)
+    assert(select(1,C.saveWitness(callbackInfo))==false)
+end
+trialCallback({mapId=info.mapId,isValid=true,
+    savegameDirectory="/different-career"},
+    "WITNESS_SAVE_DIRECTORY_CHANGED")
+trialCallback({mapId="WRONG_MAP",isValid=true,
+    savegameDirectory=info.savegameDirectory},
+    "WITNESS_SAVE_MAP_CHANGED")
+trialCallback({mapId=info.mapId,isValid=false,
+    savegameDirectory=info.savegameDirectory},
+    "WITNESS_SAVE_CONTEXT_INVALID")
+local originalMission=g_currentMission
+g_currentMission={time=12000,missionInfo=info}
+trialCallback(callbackInfo,"WITNESS_SAVE_MISSION_CHANGED")
+g_currentMission=originalMission
+-- A controlled session change back to singleplayer after the trial
+-- cannot be used to claim another native write; the budget stays shut.
+C.pendingWitness=validWitness
+C.persistRequested=false
+C.witnessSaveAttempted=true
 assert(select(1,C.verifyReload())==false) -- same mission
 local previousMission=g_currentMission
 g_currentMission={time=20000,missionInfo={
