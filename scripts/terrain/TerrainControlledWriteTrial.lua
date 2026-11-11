@@ -150,7 +150,7 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
         local q=RealismExtensionsTerrainNativeQueueProbe
         local sp=RealismExtensionsTerrainNativeSpatialProbe
         return speak(string.format(
-            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s markedCenter=%s scopeRadius=%.2fm absoluteUsed=%s. OBSERVE is non-writing; absolute is a single destructive copied-save diagnostic only.",
+            "mode=%s armed=%s reserved=%s pending=%s approved=%d rejected=%d callbacks=%d queueProbe=%s spatialProbe=%s markedCenter=%s scopeRadius=%.2fm absoluteUsed=%s. OBSERVE is non-writing; legacy 1.5mm absolute CLI DISABLED; absoluteStep <candidate_q_m> COPY is a SINGLE disposable-clone physical trial.",
             Trial.armed and "ONE_SHOT_ARMED" or "OBSERVE",
             tostring(Trial.armed),tostring(Trial.reserved or "-"),
             tostring(Trial.pending),Trial.stats.nativeApproved or 0,
