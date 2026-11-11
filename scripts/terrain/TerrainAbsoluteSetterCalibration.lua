@@ -134,7 +134,7 @@ function Cal.inspect()
     end
     -- Point samples expose heights but do not certify the vertical quantum.
     return true,report(string.format(
-        "CHECK READY x=%.3f z=%.3f mainUnitM=%.4f vertices=9 centerY=%.6f requestedAbsoluteDownM=%.5f quantum=UNVERIFIED consumed=false. NO WRITE. Run absolute ONLY on a disposable copy; exit WITHOUT SAVE.",
+        "CHECK READY x=%.3f z=%.3f mainUnitM=%.4f vertices=9 centerY=%.6f LEGACY_requestedAbsoluteDownM=%.5f quantum=UNVERIFIED consumed=false. NO WRITE. Legacy sub-quantum 'absolute' console test DISABLED. For ONE-STEP acceptance on disposable clone use reTerrainTrial absoluteStep <candidate_q_m> COPY.",
         ctx.x,ctx.z,ctx.unitM,hs[5],Cal.REQUEST_M))
 end
 
