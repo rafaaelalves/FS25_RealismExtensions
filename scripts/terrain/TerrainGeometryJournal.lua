@@ -459,7 +459,7 @@ function Journal:finishRecovery(token,success)
         local delta=y-p.beforeY
         if p.key==token.targetKey then
             target=y
-        elseif math.abs(delta)>0.002 then
+        elseif math.abs(delta)>Journal.OWNED_HEIGHT_DRIFT_M then
             collateral=collateral+1
             local e=self.observations[p.key]
             if e~=nil then e.owned=false;e.observedHeightM=y end
@@ -469,28 +469,33 @@ function Journal:finishRecovery(token,success)
     local beforeDeficit=token.targetOriginalY-token.targetBeforeY
     local afterDeficit=token.targetOriginalY-target
     local gain=beforeDeficit-math.max(0,afterDeficit)
+    -- "Improved" must never be confused with "physically restored".
+    -- On the measured 255/65535m MAIN lattice, the former 4mm closure
+    -- threshold accepted ONE WHOLE q-sized hole (~3.891mm) as repaired.
+    -- Retain the immutable baseline until the residual is small enough
+    -- to be unrepresentable as an entire native MAIN step.
+    local completedToleranceM=0.0011
+    local noUnownedMovement=collateral==0
+    local targetInBounds=target<=token.targetOriginalY
+            +Journal.OWNED_HEIGHT_DRIFT_M
+        and target>=token.targetBeforeY
+            -Journal.OWNED_HEIGHT_DRIFT_M
+    local safe=noUnownedMovement and targetInBounds
+    local completed=safe and afterDeficit<=completedToleranceM
     local e=self.observations[token.targetKey]
     if e~=nil then
         e.observedHeightM=target
-        if collateral>0 then
-            -- A native brush that moved other vertices cannot be trusted as
-            -- vertex-local. Stop automatic regrading rather than accumulating
-            -- more off-footprint damage on every agricultural pass.
+        if not safe then
+            -- Unsafe brush movement is not recovery evidence and
+            -- cannot authorize further autonomous repair after reload.
             e.owned=false
-        end
-        if target>token.targetOriginalY+0.004 or target<token.targetBeforeY-0.002 then
-            -- Undershoot/overraise: no more automated writes against this old
-            -- reference until a new, trusted terrain ownership event exists.
-            e.owned=false
-        elseif afterDeficit<=0.004 then
-            self.observations[token.targetKey]=nil -- physically restored
+        elseif completed then
+            self.observations[token.targetKey]=nil
         end
     end
     return {success=true,gainM=math.max(0,gain),afterY=target,
         beforeY=token.targetBeforeY,collateral=collateral,
-        completed=afterDeficit<=0.004,
-        safe=collateral==0 and target<=token.targetOriginalY+0.004
-            and target>=token.targetBeforeY-0.002}
+        completed=completed,safe=safe}
 end
 
 -- Snapshot is a geometry provenance sidecar, not a replacement for
