@@ -121,6 +121,16 @@ for i=3,5 do
     C.update();w:flush()
     if i<5 then assert(j.observations["0:0"]~=nil) end
 end
-assert(j.observations["0:0"]==nil)
-assert(C.stats.completed==5)
+-- The 65%-convergence fake engine still leaves ~2.46mm
+-- after five callbacks. The previous 4mm cutoff falsely cleared
+-- the provenance as PHYSICALLY CLOSED. Keep the owned baseline and
+-- report incomplete instead; this source cannot reconstruct more
+-- height without another authorized native operation. A true q-step
+-- map must be checked at its actual representable lattice.
+assert(j.observations["0:0"]~=nil)
+assert(j.observations["0:0"].owned==true)
+assert(C.stats.completed==5 and C.stats.physicallyClosed==0)
+assert(get(0,0)<baseline(0,0)-0.0011)
+assert(C.observeWorkedArea(area,profile)==0)
+assert(#nativeCalls==5)
 print("terrain_causal_writer_integration_harness: OK")
