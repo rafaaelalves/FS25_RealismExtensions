@@ -81,6 +81,44 @@ assert(newSnapshot.version==2)
 local newReader=API.new(999,{unitM=1,sample=sample})
 assert(newReader:importSnapshot(newSnapshot)==true)
 assert(newReader.observations["80:80"].owned==true)
+assert(newReader.stats.reloadOwnershipDriftDowngraded==0)
+
+-- A FLOAT32 / numeric-readback difference inside 10um can preserve a
+-- v2 proven ownership record. But a real external 20um or full-q edit
+-- between save/reload must NEVER be attributed to RE or authorize an
+-- autonomous tillage/municipality repair against the stale baseline.
+set(80,80,99.992+0.000005)
+local tiny=API.new(999,{unitM=1,sample=sample})
+assert(tiny:importSnapshot(newSnapshot)==true)
+assert(tiny.observations["80:80"].owned==true)
+assert(tiny.stats.reloadOwnershipDriftDowngraded==0)
+set(80,80,99.992+0.00002)
+local externalFine=API.new(999,{unitM=1,sample=sample})
+local fineOk,fineRestored,fineRejected=
+    externalFine:importSnapshot(newSnapshot)
+assert(fineOk and fineRestored==1 and fineRejected==0)
+assert(externalFine.observations["80:80"].owned==false)
+assert(externalFine.stats.reloadOwnershipDriftDowngraded==1)
+assert(externalFine:getRecoverablePoint(80,80)==nil)
+local blocked,blockedWhy=externalFine:getLoweringBudget(
+    80,80,0.3,0.10,0.12)
+assert(blocked==0 and blockedWhy=="UNTRUSTED_EDIT")
+assert(math.abs(externalFine.observations["80:80"].preREHeightM-100)
+    <1e-9)
+assert(sample(80,80)==99.992+0.00002)
+
+-- The old 5mm "importable" tolerance spanned one 3.891mm MAIN step.
+-- Keep the observation for diagnostics but do NOT regain ownership.
+set(80,80,99.992-255/65535)
+local externalStep=API.new(999,{unitM=1,sample=sample})
+local stepOk,stepRestored,stepRejected=
+    externalStep:importSnapshot(newSnapshot)
+assert(stepOk and stepRestored==1 and stepRejected==0)
+assert(externalStep.observations["80:80"].owned==false)
+assert(externalStep.stats.reloadOwnershipDriftDowngraded==1)
+assert(externalStep:getRecoverablePoint(80,80)==nil)
+set(80,80,99.992)
+
 local oldSnapshot={
     version=1,unitM=newSnapshot.unitM,cells=newSnapshot.cells
 }
