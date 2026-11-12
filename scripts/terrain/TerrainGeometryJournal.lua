@@ -9,6 +9,10 @@ local Journal = RealismExtensionsTerrainGeometryJournal
 -- Version 2 revokes unverified ownership from old v1 sidecars. Legacy
 -- geometry remains unchanged; only automatic recovery authority changes.
 Journal.VERSION = 2
+-- Only this small unobserved drift may preserve RE physical ownership.
+-- The legacy 2mm runtime and 5mm reload tolerances are for recording
+-- contextual observations, not authorizing future soil RESTORATION.
+Journal.OWNED_HEIGHT_DRIFT_M = 0.00001
 
 local function finite(v)
     return type(v) == "number" and v == v
@@ -57,7 +61,9 @@ function Journal.new(terrain, options)
             anomalousCompletedFootprints = 0,
             anomalousOwnershipInvalidated = 0,
             legacyProvenanceDowngraded = 0,
-            reloadOwnershipDriftDowngraded = 0
+            reloadOwnershipDriftDowngraded = 0,
+            runtimeOwnershipDriftDowngraded = 0,
+            preSaveOwnershipDriftDowngraded = 0
         }
     }, {__index=Journal})
 end
@@ -112,9 +118,12 @@ function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
             if existing.owned~=true then return 0,"UNTRUSTED_EDIT" end
             local y=self:getHeight(existing.x,existing.z)
             if not finite(y) then return nil,"HEIGHT_UNAVAILABLE" end
-            if math.abs(y-existing.observedHeightM)>0.002 then
+            if math.abs(y-existing.observedHeightM)>
+                Journal.OWNED_HEIGHT_DRIFT_M then
                 existing.owned=false
                 existing.observedHeightM=y
+                self.stats.runtimeOwnershipDriftDowngraded=
+                    self.stats.runtimeOwnershipDriftDowngraded+1
                 return 0,"EXTERNAL_EDIT"
             end
             local depth=existing.preREHeightM-y
@@ -167,7 +176,12 @@ function Journal:begin(logicalKey,x,z,radiusM)
     -- writer; it protects deliberate TerraFarm/Construction edits.
     for _,p in ipairs(before) do
         local entry=self.observations[p.key]
-        if entry~=nil and math.abs(entry.observedHeightM-p.beforeY)>0.002 then
+        if entry~=nil and math.abs(entry.observedHeightM-p.beforeY)>
+                Journal.OWNED_HEIGHT_DRIFT_M then
+            if entry.owned==true then
+                self.stats.runtimeOwnershipDriftDowngraded=
+                    self.stats.runtimeOwnershipDriftDowngraded+1
+            end
             entry.owned=false
             entry.observedHeightM=p.beforeY
         end
@@ -375,11 +389,15 @@ function Journal:getRecoverablePoint(ix, iz, minDepthM)
     if e==nil or e.owned~=true then return nil end
     local current=self:getHeight(e.x,e.z)
     if not finite(current) then return nil end
-    if math.abs(current-e.observedHeightM)>0.002 then
-        -- Somebody else changed this ground; retaining an old "original" as
-        -- restore authority could undo deliberate TerraFarm work.
+    if math.abs(current-e.observedHeightM)>
+        Journal.OWNED_HEIGHT_DRIFT_M then
+        -- Even a non-RE millimeter correction from TerraFarm, another
+        -- mod, or player levelling cannot become "our" rut. Otherwise
+        -- autonomous tillage would raise geometry against a stale owner.
         e.owned=false
         e.observedHeightM=current
+        self.stats.runtimeOwnershipDriftDowngraded=
+            self.stats.runtimeOwnershipDriftDowngraded+1
         return nil
     end
     local deficit=e.preREHeightM-current
@@ -485,15 +503,26 @@ function Journal:exportSnapshot()
     local unknown=0
     for key,entry in pairs(self.observations) do
         local current=self:getHeight(entry.x,entry.z)
-        if finite(current) and math.abs(current-entry.observedHeightM)<=0.002 then
+        local drift=finite(current)
+            and math.abs(current-entry.observedHeightM) or math.huge
+        if drift>Journal.OWNED_HEIGHT_DRIFT_M
+            and entry.owned==true then
+            -- IMPORTANT: exporting a sidecar must never silently rebase
+            -- an owned reference onto 20um..2mm of unknown native change.
+            -- Revoke BEFORE creating the snapshot, not just on load.
+            entry.owned=false
+            self.stats.preSaveOwnershipDriftDowngraded=
+                self.stats.preSaveOwnershipDriftDowngraded+1
+        end
+        if drift<=0.002 then
             cells[#cells+1]={
                 key=key,x=entry.x,z=entry.z,
                 preREHeightM=entry.preREHeightM,
                 observedHeightM=current,owned=entry.owned==true
             }
         else
-            -- The ground moved without a verified RE callback. Do not save
-            -- stale recovery authority for that cell.
+            -- Large unknown terrain changes remain untrusted; refuse
+            -- to save stale baseline/ownership into the next session.
             unknown=unknown+1
         end
     end
@@ -523,7 +552,7 @@ function Journal:importSnapshot(snapshot)
     -- Independent 11/12-Nov actual save/reload was identical to the
     -- displayed float32 height. Keep 5mm for untrusted record continuity
     -- but require <=10um to preserve physical RECOVERY authority.
-    local ownerReloadDriftM=0.00001
+    local ownerReloadDriftM=Journal.OWNED_HEIGHT_DRIFT_M
     local loaded={}
     for _,cell in ipairs(snapshot.cells) do
         if type(cell)=="table" and finite(cell.x) and finite(cell.z)
