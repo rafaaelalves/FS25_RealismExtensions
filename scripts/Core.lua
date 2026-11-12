@@ -305,9 +305,10 @@ function RealismExtensionsCore:update(dt)
                 )
                 if ok then
                     RealismExtensionsDiagnostics.info(string.format(
-                        "native journal ready; restored=%d rejected=%d legacyOwnershipRevoked=%d",
+                        "native journal ready; restored=%d rejected=%d legacyOwnershipRevoked=%d loadDriftOwnershipRevoked=%d",
                         restored or 0,rejected or 0,
-                        RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0
+                        RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0,
+                        RealismExtensionsTerrainRuntime.geometryJournal.stats.reloadOwnershipDriftDowngraded or 0
                     ))
                 else
                     RealismExtensionsDiagnostics.info(
@@ -1219,8 +1220,10 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
             )
         if geoOk then
             RealismExtensionsDiagnostics.info(string.format(
-                "saved native geometry journal cells=%d unknown=%d",
-                geoCount or 0,unknown or 0
+                "saved native geometry journal cells=%d unknown=%d preSaveOwnershipRevoked=%d runtimeOwnershipRevoked=%d",
+                geoCount or 0,unknown or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.stats.preSaveOwnershipDriftDowngraded or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.stats.runtimeOwnershipDriftDowngraded or 0
             ))
         else
             RealismExtensionsDiagnostics.info(
