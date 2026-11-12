@@ -86,10 +86,38 @@ function Candidate:applyOne(x,z,damageM,contract)
         self.stats.refused=self.stats.refused+1
         return nil,reason or "NO_TRUSTED_NATIVE_HEIGHT_BUDGET"
     end
-    -- Future SHADOW integration passes an absolute cumulative vertex
-    -- target. It is NOT an incremental wheel event and must not add again
-    -- every frame. Legacy research harnesses can still pass a true new
-    -- incremental delta; mixed contracts on a vertex fail closed.
+    -- A saved MAIN height may already be RE-owned and physically lowered,
+    -- while this in-memory quantizer ledger was re-created at map load.
+    -- Reconcile from the journal's VERIFIED original-vs-current MAIN
+    -- geometry BEFORE interpreting any cumulative target as fresh work.
+    -- This also guards against an unobserved geometry epoch switch inside
+    -- a running session. Never seed from visual wheel depth or model debt.
+    if contract=="CUMULATIVE" then
+        local owner=journal.observations[key]
+        if owner~=nil then
+            if owner.owned~=true
+                or type(budget.seedOwnedTarget)~="function" then
+                self.stats.refused=self.stats.refused+1
+                return nil,"UNTRUSTED_OWNED_GEOMETRY_BOOTSTRAP"
+            end
+            local y=journal:getHeight(x,z)
+            if not finite(y) or not finite(owner.preREHeightM) then
+                self.stats.refused=self.stats.refused+1
+                return nil,"OWNED_MAIN_HEIGHT_UNAVAILABLE"
+            end
+            local observedDepthM=owner.preREHeightM-y
+            local seeded,seedWhy=budget:seedOwnedTarget(
+                key,observedDepthM)
+            if not seeded then
+                self.stats.refused=self.stats.refused+1
+                return nil,seedWhy
+            end
+        end
+    end
+    -- The cumulative contract is absolute depth measured from the
+    -- original RE-owned baseline, across process restarts. New model
+    -- wheel demand must therefore be translated into that SAME epoch
+    -- by its caller, never passed as an arbitrary session-local delta.
     local plan,why
     if contract=="CUMULATIVE" then
         if type(budget.requestTarget)~="function" then
