@@ -17,9 +17,15 @@ local function read(x,z)
     return v~=nil and v or base
 end
 local writerCalls=0
+-- Simulate the observed LIVE Nov-11 representation offset: a full q
+-- requested was reported ~59nm SHORT of nominal q. If an upstream
+-- platform instead measured a small POSITIVE overshoot, the strict
+-- ledger must NOT authorize the next full q until fully funded.
+local observedLatticeOffsetM=0.00000005937
 local function writeHeight(x,z,target)
     writerCalls=writerCalls+1
-    heights[key(x,z)]=math.floor(target/q+0.5)*q
+    heights[key(x,z)]=
+        math.floor(target/q+0.5)*q+observedLatticeOffsetM
     return true
 end
 local function makeCandidate(journal)
