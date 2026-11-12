@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 3
+Model.VERSION = 4
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -40,7 +40,9 @@ function Model.new(options)
         quarantined=false,
         stats={requestedM=0,accepted=0,pending=0,belowQuantum=0,
             noBudget=0,verified=0,zeroEffect=0,anomalies=0,
-            maxErrorM=0,unavailable=0}
+            maxErrorM=0,unavailable=0,
+            ownedTargetSeeds=0,ownedTargetSeededM=0,
+            ownerLedgerDrift=0}
     },{__index=Model})
 end
 
@@ -129,6 +131,55 @@ function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
     self.stats.pending=self.stats.pending+1
     self.stats.accepted=self.stats.accepted+1
     return plan,nil
+end
+
+-- RESTART/RELOAD ownership bootstrap. The geometry journal carries
+-- independently measured RE-owned MAIN height debt across a savegame;
+-- this short-lived quantizer ledger normally starts EMPTY each session.
+-- Without seeding, an already-persisted q-sized rut could be excavated
+-- AGAIN when its old cumulative target is first observed after load.
+--
+-- Only the guarded caller may supply a PHYSICALLY VERIFIED, RE-OWNED
+-- baseline measured from the journal's immutable pre-RE height to the
+-- CURRENT native MAIN height. A model wheel target/visual tire mark must
+-- NEVER be used as the source of committed material here.
+--
+-- This operation causes ZERO terrain writes. The cumulative contract is
+-- always relative to the ORIGINAL pre-RE height, not the session start.
+function Model:seedOwnedTarget(key,committedDepthM)
+    if self.quarantined then return false,"QUARANTINED" end
+    if type(key)~="string" or key==""
+        or not finite(committedDepthM) or committedDepthM<0
+        or committedDepthM>self.maxDebtM then
+        return false,"INVALID_OWNED_GEOMETRY_DEPTH"
+    end
+    local item=self.entries[key]
+    if item~=nil then
+        if item.mode~="TARGET" or item.pending~=nil then
+            return false,"TARGET_LEDGER_NOT_IDLE"
+        end
+        -- Every subsequent call checks physical ownership continuity,
+        -- rather than blindly trusting this process' older in-memory
+        -- committed total. If a foreign writer changed MAIN height,
+        -- stop all further writes; no automatic recovery or rebase.
+        local drift=math.abs((item.committedM or 0)-committedDepthM)
+        if drift>0.00001 then
+            self.quarantined=true
+            self.stats.ownerLedgerDrift=
+                (self.stats.ownerLedgerDrift or 0)+1
+            return false,"OWNED_GEOMETRY_LEDGER_DRIFT"
+        end
+        return true,"ALREADY_TRACKED"
+    end
+    self.entries[key]={
+        debtM=0,pending=nil,mode="TARGET",
+        demandTargetM=committedDepthM,
+        committedM=committedDepthM
+    }
+    self.stats.ownedTargetSeeds=(self.stats.ownedTargetSeeds or 0)+1
+    self.stats.ownedTargetSeededM=
+        (self.stats.ownedTargetSeededM or 0)+committedDepthM
+    return true,"OWNED_GEOMETRY_SEEDED"
 end
 
 -- Clearing a target is a caller-authorized event, allowed only after a
