@@ -151,9 +151,10 @@ function RealismExtensionsCore:loadMap()
         )
         if ok then
             RealismExtensionsDiagnostics.info(string.format(
-                "restored native geometry journal cells=%d rejected=%d legacyOwnershipRevoked=%d",
+                "restored native geometry journal cells=%d rejected=%d legacyOwnershipRevoked=%d loadDriftOwnershipRevoked=%d",
                 restored or 0,invalid or 0,
-                RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0
+                RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.stats.reloadOwnershipDriftDowngraded or 0
             ))
         elseif restored ~= "no persisted geometry journal" then
             RealismExtensionsDiagnostics.verbose(
