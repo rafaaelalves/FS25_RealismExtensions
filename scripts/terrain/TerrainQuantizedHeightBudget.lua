@@ -155,7 +155,10 @@ function Model:seedOwnedTarget(key,committedDepthM)
     end
     local item=self.entries[key]
     if item~=nil then
-        if item.mode~="TARGET" or item.pending~=nil then
+        if item.mode~="TARGET" then
+            return false,"MIXED_DEBT_CONTRACT"
+        end
+        if item.pending~=nil then
             return false,"TARGET_LEDGER_NOT_IDLE"
         end
         -- Every subsequent call checks physical ownership continuity,
