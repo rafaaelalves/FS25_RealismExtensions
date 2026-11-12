@@ -5,7 +5,10 @@ RealismExtensionsTerrainCausalRecovery =
     RealismExtensionsTerrainCausalRecovery or {}
 local C=RealismExtensionsTerrainCausalRecovery
 C.DEFAULTS={
-    minDeficitM=0.004,
+    -- 3mm admits an intact ~3.891mm MAIN quantum for a final
+    -- verified recovery pass. 4mm would strand one whole native step
+    -- after a partially successful cultivation/maintenance callback.
+    minDeficitM=0.003,
     maxAreaVertices=120,
     maxPending=512,
     retryMs=250,
