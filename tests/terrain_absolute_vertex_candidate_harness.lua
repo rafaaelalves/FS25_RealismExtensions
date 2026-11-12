@@ -110,6 +110,43 @@ for _=1,100 do
 end
 assert(exactCalls==1)
 
+-- LIVE FS25 evidence (11-Nov write, 12-Nov independent post-reload
+-- readback), now kept as a precise regression fixture. Requested a full
+-- 255/65535m quantum; GIANTS returned ~59 nanometers LESS lowering,
+-- not a second step. The unchanged cumulative target must NEVER
+-- duplicate this q-sized excavation after float32 height readback.
+-- This synthetic harness validates accounting only, not live persistence.
+local liveBefore=152.50973510742188
+local liveAfter=152.50584411621094
+local liveMeasured=liveBefore-liveAfter
+assert(math.abs(liveMeasured-0.0038909912109375)<1e-12)
+assert(liveMeasured<=q and math.abs(q-liveMeasured)<0.000001)
+set(348,387,liveBefore)
+local liveJ=J.new(999,{unitM=1,sample=read})
+local liveB=assert(B.new({quantumM=q,toleranceM=0.00005}))
+local liveCalls=0
+local liveC=assert(C.new({
+    budget=liveB,journal=liveJ,explicitWrite=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,target)
+        assert(x==348 and z==387)
+        assert(target<liveBefore and target>liveBefore-q)
+        liveCalls=liveCalls+1
+        set(x,z,liveAfter)
+    end
+}))
+local liveResult=assert(liveC:applyOne(348,387,q,"CUMULATIVE"))
+assert(liveResult.verified==true and liveCalls==1)
+assert(math.abs(liveResult.beforeY-liveBefore)<1e-10)
+assert(math.abs(liveResult.afterY-liveAfter)<1e-10)
+assert(liveJ.pendingCount==0 and liveB.quarantined==false)
+local noRepeat,noRepeatReason=liveC:applyOne(348,387,q,"CUMULATIVE")
+assert(noRepeat==nil and noRepeatReason=="SUB_QUANTUM_DEBT")
+assert(liveCalls==1)
+assert(math.abs(liveB:getDebt("348:387")-(q-liveMeasured))<1e-10)
+assert(liveB.entries["348:387"].committedM<=q)
+assert(liveB.entries["348:387"].committedM>0)
+
 -- Real 03-Nov readback examples are close to q*n, but world float
 -- roundoff can put them microscopically BELOW the native lattice.
 -- An absolute target of before-q is then hazardous for floor quantizers:
