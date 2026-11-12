@@ -119,6 +119,45 @@ assert(externalStep.stats.reloadOwnershipDriftDowngraded==1)
 assert(externalStep:getRecoverablePoint(80,80)==nil)
 set(80,80,99.992)
 
+-- In-session unknown changes must be rejected BEFORE any physical
+-- maintenance/tillage recovery, not just at the next game reload.
+local runtimeOwned=API.new(999,{unitM=1,sample=sample})
+assert(runtimeOwned:importSnapshot(newSnapshot)==true)
+set(80,80,99.992-0.00002)
+assert(runtimeOwned:getRecoverablePoint(80,80)==nil)
+assert(runtimeOwned.observations["80:80"].owned==false)
+assert(runtimeOwned.stats.runtimeOwnershipDriftDowngraded==1)
+set(80,80,99.992)
+assert(runtimeOwned:getRecoverablePoint(80,80)==nil)
+
+local writeOwned=API.new(999,{unitM=1,sample=sample})
+assert(writeOwned:importSnapshot(newSnapshot)==true)
+set(80,80,99.992-0.00002)
+local remaining,whyRemaining=writeOwned:getLoweringBudget(
+    80,80,0.3,0.10,0.12)
+assert(remaining==0 and whyRemaining=="EXTERNAL_EDIT")
+assert(writeOwned.stats.runtimeOwnershipDriftDowngraded==1)
+assert(writeOwned.observations["80:80"].owned==false)
+set(80,80,99.992)
+
+-- A regular save *before* reload previously laundered changes of
+-- 20um..2mm by refreshing observedHeightM while keeping owned=true.
+-- Revoking ownership on export is essential, not optional.
+local presave=API.new(999,{unitM=1,sample=sample})
+assert(presave:importSnapshot(newSnapshot)==true)
+set(80,80,99.992+0.00002)
+local exported=assert(presave:exportSnapshot())
+assert(exported.cells[1].owned==false)
+assert(presave.stats.preSaveOwnershipDriftDowngraded==1)
+assert(presave.observations["80:80"].owned==false)
+assert(math.abs(exported.cells[1].observedHeightM-(99.992+0.00002))
+    <1e-9)
+local reloadedAgain=API.new(999,{unitM=1,sample=sample})
+assert(reloadedAgain:importSnapshot(exported)==true)
+assert(reloadedAgain.observations["80:80"].owned==false)
+assert(reloadedAgain:getRecoverablePoint(80,80)==nil)
+set(80,80,99.992)
+
 local oldSnapshot={
     version=1,unitM=newSnapshot.unitM,cells=newSnapshot.cells
 }
