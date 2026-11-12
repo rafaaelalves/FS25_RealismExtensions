@@ -385,6 +385,73 @@ function Probe:consoleSnap(label)
     return "REGeoProbe snapshot " .. current.label .. " captured (READ ONLY)"
 end
 
+-- Direct, persistent-save MAIN height readback. Unlike absoluteCheck,
+-- this requires NO queue probes, no write authorization, no free wheel
+-- patch, no previously stored RE "ownership" and no historical snapshot.
+-- It does NOT read the separate 0.125m native wheel displacement surface.
+-- Explicit x/z must lie exactly on MAIN vertices to avoid interpolated
+-- readings that could conceal a previously edited vertex.
+function Probe:consoleVertex(xText, zText)
+    local rawX,rawZ=nil,nil
+    if xText==nil and zText==nil then
+        if self.position==nil then
+            return speak("MAIN_VERTEX REFUSED: no mark; use reGeoVertex <x> <z> or reGeoMark first")
+        end
+        rawX,rawZ=self.position.x,self.position.z
+    elseif xText~=nil and zText~=nil then
+        rawX,rawZ=tonumber(xText),tonumber(zText)
+    end
+    if not finite(rawX) or not finite(rawZ) then
+        return speak("MAIN_VERTEX REFUSED: both x and z must be finite coordinates")
+    end
+    local terrain=getTerrain()
+    if terrain==nil or terrain==0
+        or type(getTerrainHeightmapUnitSize)~="function" then
+        return speak("MAIN_VERTEX REFUSED: native MAIN terrain unit unavailable")
+    end
+    local ok,unit=pcall(getTerrainHeightmapUnitSize,terrain)
+    if not ok or not finite(unit) or unit<=0 or unit>32 then
+        return speak("MAIN_VERTEX REFUSED: invalid native MAIN unit")
+    end
+    local x=math.floor(rawX/unit+0.5)*unit
+    local z=math.floor(rawZ/unit+0.5)*unit
+    if xText~=nil and
+        (math.abs(rawX-x)>0.00001
+            or math.abs(rawZ-z)>0.00001) then
+        return speak(string.format(
+            "MAIN_VERTEX REFUSED: explicit coordinates not on %.4fm MAIN grid; nearest vertex x=%.3f z=%.3f",
+            unit,x,z))
+    end
+
+    local rows={}
+    local center=nil
+    for iz=-1,1 do
+        local row={}
+        for ix=-1,1 do
+            local y=getSample(terrain,x+ix*unit,z+iz*unit)
+            if not finite(y) then
+                return speak(string.format(
+                    "MAIN_VERTEX REFUSED: engine readback unavailable at x=%.3f z=%.3f",
+                    x+ix*unit,z+iz*unit))
+            end
+            row[#row+1]=y
+            if ix==0 and iz==0 then center=y end
+        end
+        rows[#rows+1]=row
+    end
+    speak(string.format(
+        "MAIN_VERTEX center x=%.3f z=%.3f y=%.9fm unitM=%.4f samples=9 source=GIANTS_MAIN_HEIGHT_API readOnly=true nativeFineRutsNotMeasured=true",
+        x,z,center,unit))
+    for iz=1,3 do
+        local row=rows[iz]
+        speak(string.format(
+            "MAIN_VERTEX_ROW z=%.3f xWest=%.3f westY=%.9fm centerX=%.3f centerY=%.9fm xEast=%.3f eastY=%.9fm",
+            z+(iz-2)*unit,x-unit,row[1],x,row[2],
+            x+unit,row[3]))
+    end
+    return "REGeoProbe MAIN vertex heights captured (READ ONLY; no engine writes)"
+end
+
 function Probe.installCommands()
     if Probe.commandsInstalled or type(addConsoleCommand) ~= "function" then
         return false
@@ -394,6 +461,7 @@ function Probe.installCommands()
     end
     addConsoleCommand("reGeoMark", "Mark diagnostic area at player or explicit x z", "consoleMark", Probe, "[x] [z]")
     addConsoleCommand("reGeoSnap", "Snapshot main terrain height API and compare with prior snapshot", "consoleSnap", Probe, "[label]")
+    addConsoleCommand("reGeoVertex", "READ ONLY: print exact 3x3 MAIN vertex height, no writer probes", "consoleVertex", Probe, "[x] [z]")
     Probe.commandsInstalled = true
     return true
 end
@@ -402,6 +470,7 @@ function Probe.uninstallCommands()
     if Probe.commandsInstalled and type(removeConsoleCommand) == "function" then
         removeConsoleCommand("reGeoMark")
         removeConsoleCommand("reGeoSnap")
+        removeConsoleCommand("reGeoVertex")
     end
     Probe.commandsInstalled = false
     Probe.reset()
