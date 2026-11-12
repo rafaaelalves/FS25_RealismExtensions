@@ -56,7 +56,8 @@ function Journal.new(terrain, options)
             submitHeightUnavailable = 0,submitMaxDriftM = 0,
             anomalousCompletedFootprints = 0,
             anomalousOwnershipInvalidated = 0,
-            legacyProvenanceDowngraded = 0
+            legacyProvenanceDowngraded = 0,
+            reloadOwnershipDriftDowngraded = 0
         }
     }, {__index=Journal})
 end
@@ -514,6 +515,15 @@ function Journal:importSnapshot(snapshot)
         return false,"GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH"
     end
     local restored,rejected,legacyDowngraded=0,0,0
+    local driftDowngraded=0
+    -- A 5mm import match was intended to RETAIN diagnostic samples,
+    -- not to certify persistent RE-owned geometry. One native MAIN step
+    -- on the tested map is only ~3.891mm; accepting a full step of
+    -- unobserved drift as RE-owned would permit unauthorized restitution.
+    -- Independent 11/12-Nov actual save/reload was identical to the
+    -- displayed float32 height. Keep 5mm for untrusted record continuity
+    -- but require <=10um to preserve physical RECOVERY authority.
+    local ownerReloadDriftM=0.00001
     local loaded={}
     for _,cell in ipairs(snapshot.cells) do
         if type(cell)=="table" and finite(cell.x) and finite(cell.z)
@@ -526,13 +536,18 @@ function Journal:importSnapshot(snapshot)
                 and math.abs(x-cell.x)<=0.00001
                 and math.abs(z-cell.z)<=0.00001 then
                 local formerlyOwned=cell.owned==true
+                local drift=math.abs(current-cell.observedHeightM)
+                local reloadTrusted=drift<=ownerReloadDriftM
                 loaded[tostring(ix)..":"..tostring(iz)]={
                     x=x,z=z,preREHeightM=cell.preREHeightM,
                     observedHeightM=current,
                     owned=formerlyOwned and not isLegacyV1
+                        and reloadTrusted
                 }
                 if isLegacyV1 and formerlyOwned then
                     legacyDowngraded=legacyDowngraded+1
+                elseif formerlyOwned and not reloadTrusted then
+                    driftDowngraded=driftDowngraded+1
                 end
                 restored=restored+1
             else
@@ -545,6 +560,8 @@ function Journal:importSnapshot(snapshot)
     self.observations=loaded
     self.stats.legacyProvenanceDowngraded=
         (self.stats.legacyProvenanceDowngraded or 0)+legacyDowngraded
+    self.stats.reloadOwnershipDriftDowngraded=
+        (self.stats.reloadOwnershipDriftDowngraded or 0)+driftDowngraded
     return true,restored,rejected
 end
 
