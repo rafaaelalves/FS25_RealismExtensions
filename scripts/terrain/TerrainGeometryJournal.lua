@@ -417,10 +417,13 @@ function Journal:beginRecovery(point, radiusM)
     if current==nil or current.key~=point.key then
         return nil,"REFERENCE_NOT_TRUSTED"
     end
-    local radius=math.min(
-        math.max(0.12,self.unitM*0.56),
-        math.max(0.12,tonumber(radiusM) or self.unitM*0.56)
-    )
+    -- This is the PROVENANCE/READBACK envelope, not the physical
+    -- writer's brush radius. enumerateVertices extends by 0.75 unit;
+    -- 0.56+0.75=1.31 misses all four DIAGONAL vertices at sqrt(2).
+    -- A recovery brush that moves one of those corners must fail CLOSED.
+    -- Cover the full 3x3 even when a caller requested a narrow 0.56u
+    -- recovery brush. Keep the actual native brush width unchanged.
+    local radius=self.unitM*0.70
     local token,reason=self:begin("RECOVER:"..point.key,
         current.x,current.z,radius)
     if token==nil then return nil,reason end
