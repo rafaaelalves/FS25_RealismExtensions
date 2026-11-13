@@ -327,7 +327,16 @@ function C.update()
                     -- The geometry journal locks native vertices, not the
                     -- whole farm. Other independent RE writes in distant
                     -- fields must not globally starve tillage recovery.
-                    local token=j:beginRecovery(point,radius)
+                    local quantizedBudget=runtime.absoluteHeightBudget
+                    -- Normally absent: automatic MAIN absolute writing is
+                    -- still DISABLED. If a future verified controller
+                    -- exposes its ledger, an actual native recovery must
+                    -- synchronize the PAID depth and retire the old model
+                    -- epoch before any new wheel demand may be accepted.
+                    local wantsProof=quantizedBudget~=nil
+                        and type(quantizedBudget.syncVerifiedRecovery)=="function"
+                    local token=j:beginRecovery(
+                        point,radius,wantsProof)
                     if token==nil then
                         push(item)
                     else
@@ -361,6 +370,21 @@ function C.update()
                                         or TerrainDeformation.STATE_SUCCESS==nil
                                         or state==TerrainDeformation.STATE_SUCCESS)
                                 local result=j:finishRecovery(token,ok)
+                                if result~=nil and result.recoveryProof~=nil then
+                                    local synced=quantizedBudget:syncVerifiedRecovery(
+                                        j,result.recoveryProof)
+                                    if not synced then
+                                        quantizedBudget.quarantined=true
+                                        -- A height may actually have moved,
+                                        -- but a mismatched paid ledger means
+                                        -- no more automatic RE recovery or
+                                        -- re-excavation can claim this vertex.
+                                        result.safe=false
+                                        result.completed=false
+                                        local owned=j.observations[item.key]
+                                        if owned~=nil then owned.owned=false end
+                                    end
+                                end
                                 if result==nil or not result.success then
                                     C.stats.failed=C.stats.failed+1
                                 else
