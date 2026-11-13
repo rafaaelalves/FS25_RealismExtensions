@@ -30,12 +30,18 @@ function Candidate.new(options)
         or type(journal.getHeight)~="function" then
         return nil,"RECOVERY_JOURNAL_UNAVAILABLE"
     end
+    if options.budget~=nil
+        and (type(options.budget)~="table"
+            or type(options.budget.syncVerifiedRecovery)~="function") then
+        return nil,"RECOVERY_BUDGET_SYNC_UNAVAILABLE"
+    end
     if options.explicitResearchPermission~=true
         or options.disposableSaveConfirmed~=true then
         return nil,"EXPLICIT_DISPOSABLE_RESEARCH_REQUIRED"
     end
     return setmetatable({
         journal=journal,quantumM=q,
+        budget=options.budget,
         toleranceM=math.min(q*0.02,0.00005,
             (finite(options.toleranceM) and
                 options.toleranceM>0) and options.toleranceM
@@ -107,7 +113,8 @@ function Candidate:applyOnce(x,z)
         self.stats.refused=self.stats.refused+1
         return nil,"RECOVERY_FULL_QUANTUM_NOT_AVAILABLE"
     end
-    local token,why=journal:beginRecovery(point,unit*0.70)
+    local token,why=journal:beginRecovery(
+        point,unit*0.70,self.budget~=nil)
     if token==nil then
         self.stats.refused=self.stats.refused+1
         return nil,why
@@ -169,6 +176,22 @@ function Candidate:applyOnce(x,z)
             actualRaiseM=raised,footprint=result},
             (not ok and "RECOVERY_NATIVE_SETTER_FAILED")
             or finishWhy or "UNTRUSTED_RECOVERY_QUANTUM_OR_COLLATERAL"
+    end
+    -- The recovered physical depth must also be reconciled with the
+    -- cumulative writer's PAID depth before another wheel target is
+    -- evaluated. A replay of the old pre-tillage target must not
+    -- re-excavate the recovered vertex on the next frame.
+    if self.budget~=nil then
+        local synced,syncWhy=self.budget:syncVerifiedRecovery(
+            journal,result.recoveryProof)
+        if not synced then
+            self.quarantined=true
+            self.stats.unsafe=self.stats.unsafe+1
+            untrust(journal,token,point)
+            return {verified=false,beforeY=before,afterY=after,
+                actualRaiseM=raised,footprint=result},
+                syncWhy or "RECOVERY_LEDGER_SYNCHRONIZATION_FAILED"
+        end
     end
     self.stats.verified=self.stats.verified+1
     return {verified=true,beforeY=before,afterY=after,
