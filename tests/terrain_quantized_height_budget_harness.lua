@@ -210,9 +210,13 @@ assert(decrease=="TARGET_DECREASE_REQUIRES_RECOVERY_EPOCH")
 local _,mixed=targets:request(targetKey,q,0.1)
 assert(mixed=="MIXED_DEBT_CONTRACT")
 assert(targets:retireTarget(targetKey)==false)
-assert(targets:retireTarget(targetKey,true)==true)
-assert(targets:getDebt(targetKey)==0)
-assert(targets:requestTarget(targetKey,0.004,0.1)~=nil)
+-- "Worked area" or plain Lua true cannot wipe measured paid depth;
+-- only an independently journal-verified physical recovery receipt can.
+assert(select(2,targets:retireTarget(targetKey,true))==
+    "RECOVERY_PROOF_REQUIRED")
+assert(math.abs(targets:getDebt(targetKey)-(0.010-2*q))<1e-6)
+assert(targets:requestTarget(targetKey,0.004,0.1)==nil)
+assert(targets.entries[targetKey].committedM>0)
 local otherMixed=assert(B.new({quantumM=q}))
 otherMixed:request("INC",q/2,0.1)
 local _,otherReason=otherMixed:requestTarget("INC",q,0.1)
