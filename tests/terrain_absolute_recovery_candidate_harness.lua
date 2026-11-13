@@ -1,6 +1,7 @@
 -- Isolated, explicit ONE-quantum MAIN height restitution.
 -- This synthetic harness cannot prove GIANTS physical wheel rut recovery.
 dofile("scripts/terrain/TerrainGeometryJournal.lua")
+dofile("scripts/terrain/TerrainQuantizedHeightBudget.lua")
 dofile("scripts/terrain/TerrainAbsoluteRecoveryCandidate.lua")
 local J=RealismExtensionsTerrainGeometryJournal
 local A=RealismExtensionsTerrainAbsoluteRecoveryCandidate
@@ -152,4 +153,32 @@ assert(refused==nil and refusal=="QUEUED_GEOMETRY_DRIFT")
 assert(count==beforeCalls and competing.quarantined)
 assert(j.pendingCount==0)
 j.validateBeforeSubmit=originalPreflight
+-- An opt-in budget and native recovery candidate must synchronize the
+-- physically measured remaining rut depth in the SAME transaction.
+-- Replaying the old pre-recovery wheel target must NOT immediately
+-- excavate the freshly restored q.
+local budgetClass=RealismExtensionsTerrainQuantizedHeightBudget
+own(800,800,2*q)
+local paid=assert(budgetClass.new({quantumM=q}))
+assert(paid:seedOwnedTarget("800:800",2*q))
+local linked=assert(A.new({
+    journal=j,quantumM=q,budget=paid,
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    verifyExclusive=function()return true end,
+    writeHeight=function(x,z,target)
+        count=count+1
+        set(x,z,base-q)
+        return true
+    end
+}))
+local linkedResult,linkedReason=linked:applyOnce(800,800)
+assert(linkedResult and linkedResult.verified and linkedReason==nil)
+assert(paid.stats.recoveryProofsApplied==1)
+assert(math.abs(paid.entries["800:800"].committedM-q)<1e-8)
+assert(paid.entries["800:800"].recoveryEpochPending)
+assert(select(2,paid:requestTarget("800:800",2*q,0.1))==
+    "NEW_DAMAGE_EPOCH_REQUIRED_AFTER_RECOVERY")
+assert(j.recoveryProofs["800:800"]==nil)
+assert(j.observations["800:800"].owned==true)
+
 print("terrain_absolute_recovery_candidate_harness: OK")
