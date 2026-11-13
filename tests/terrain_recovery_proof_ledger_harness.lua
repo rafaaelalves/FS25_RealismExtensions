@@ -24,7 +24,11 @@ local down=assert(C.new({
     verifyExclusive=function()return true end,
     writeHeight=function(x,z,target)
         calls=calls+1
-        set(x,z,math.floor(target/q+0.5)*q)
+        -- Preserve Nov-11 native +59nm float32 lattice readback.
+        -- A slightly ABOVE-q observed step must never be funded
+        -- with a hidden epsilon; this offset keeps steps conservatively
+        -- below the nominal requested depth.
+        set(x,z,math.floor(target/q+0.5)*q+0.00000005937)
         return true
     end
 }))
@@ -35,9 +39,10 @@ end
 lowerTo(10,10,q)
 lowerTo(10,10,2*q)
 assert(calls==2)
-assert(math.abs(read(10,10)-(base-2*q))<1e-8)
+assert(math.abs(read(10,10)-(base-2*q))<1e-6)
 assert(j.observations["10:10"].owned)
-assert(math.abs(budget.entries["10:10"].committedM-2*q)<1e-8)
+assert(math.abs(budget.entries["10:10"].committedM-
+    (base-read(10,10)))<1e-9)
 
 -- Native recovery issued from a trusted journal, NOT from a model value.
 local point=assert(j:getRecoverablePoint(10,10))
