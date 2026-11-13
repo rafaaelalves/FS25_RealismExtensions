@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 4
+Model.VERSION = 5
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -42,7 +42,9 @@ function Model.new(options)
             noBudget=0,verified=0,zeroEffect=0,anomalies=0,
             maxErrorM=0,unavailable=0,
             ownedTargetSeeds=0,ownedTargetSeededM=0,
-            ownerLedgerDrift=0}
+            ownerLedgerDrift=0,
+            recoveryProofsApplied=0,
+            recoveredDepthM=0}
     },{__index=Model})
 end
 
@@ -106,6 +108,13 @@ function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
     end
     if item.mode~="TARGET" then return nil,"MIXED_DEBT_CONTRACT" end
     if item.pending~=nil then return nil,"VERTEX_PENDING" end
+    if item.recoveryEpochPending then
+        -- The previous wheel/model source can still replay the OLD rut
+        -- demand after a tillage pass. Do NOT immediately re-dig that
+        -- just-recovered physical vertex until a NEW source epoch is
+        -- independently authorized and handed off by the planner.
+        return nil,"NEW_DAMAGE_EPOCH_REQUIRED_AFTER_RECOVERY"
+    end
     if cumulativeDepthM+0.000001<(item.demandTargetM or 0) then
         -- A decrease needs a separately VERIFIED recovery/epoch transition.
         -- Do not silently rebase onto transient virtual wheel input.
@@ -185,20 +194,57 @@ function Model:seedOwnedTarget(key,committedDepthM)
     return true,"OWNED_GEOMETRY_SEEDED"
 end
 
--- Clearing a target is a caller-authorized event, allowed only after a
--- separately proven restoration and with no in-flight vertex operation.
--- This method cannot infer that cultivation physically raised the height.
-function Model:retireTarget(key,verifiedRecovery)
-    local item=self.entries[key]
+-- Apply only a ONE-SHOT receipt issued by the geometry journal from
+-- an independently verified native recovery callback with no collateral.
+-- An ordinary 'worked area' event or Lua boolean is not physical proof.
+function Model:syncVerifiedRecovery(journal,proof)
+    if self.quarantined then return false,"QUARANTINED" end
+    if type(journal)~="table"
+        or type(journal.consumeRecoveryProof)~="function"
+        or type(proof)~="table"
+        or type(proof.key)~="string" then
+        return false,"RECOVERY_PROOF_REQUIRED"
+    end
+    local item=self.entries[proof.key]
     if item==nil or item.mode~="TARGET" then
         return false,"NO_CUMULATIVE_TARGET"
     end
     if item.pending~=nil then return false,"VERTEX_PENDING" end
-    if verifiedRecovery~=true then
+    local measured,why=journal:consumeRecoveryProof(proof)
+    if measured==nil then
+        self.quarantined=true
+        return false,why
+    end
+    if math.abs((item.committedM or 0)-measured.beforeDepthM)>0.00001
+        or measured.afterDepthM>=measured.beforeDepthM-0.00001 then
+        self.quarantined=true
+        return false,"RECOVERY_LEDGER_OR_DEPTH_MISMATCH"
+    end
+    -- Reset paid depth to actual remaining physical depression, never
+    -- to an unverified target. Crucially, freeze replay of the older
+    -- source epoch so 'still wants 2q' cannot re-excavate the recovered
+    -- 1q in the very next frame.
+    item.committedM=measured.afterDepthM
+    item.demandTargetM=measured.afterDepthM
+    item.debtM=0
+    item.recoveryEpochPending=true
+    self.stats.recoveryProofsApplied=
+        self.stats.recoveryProofsApplied+1
+    self.stats.recoveredDepthM=self.stats.recoveredDepthM
+        +(measured.beforeDepthM-measured.afterDepthM)
+    return true,measured.completed
+end
+
+-- The name is retained for old callers, but a boolean 'true' can NO
+-- LONGER erase a paid physical depth or reopen a stale wheel target.
+-- This records the verified completed recovery while retaining a
+-- blocked new-demand-epoch tombstone for this process.
+function Model:retireTarget(key,journal,proof)
+    if type(proof)~="table" or proof.key~=key
+        or proof.completed~=true then
         return false,"RECOVERY_PROOF_REQUIRED"
     end
-    self.entries[key]=nil
-    return true,nil
+    return self:syncVerifiedRecovery(journal,proof)
 end
 
 -- No-op plans retain their stored demand, so quantization never invents
