@@ -51,6 +51,10 @@ function Journal.new(terrain, options)
         pendingByLogicalKey = {},
         pendingCount = 0,
         nextId = 0,
+        -- Short-lived, one-shot recovery receipts, never serialized as
+        -- physical ownership and only emitted by opted-in callers.
+        recoveryProofs = {},
+        nextRecoveryProofId = 0,
         stats = {
             requested = 0,started = 0,overlapRejected = 0,
             unavailable = 0,aborted = 0,completed = 0,
@@ -189,7 +193,12 @@ function Journal:begin(logicalKey,x,z,radiusM)
     self.nextId=self.nextId+1
     local token={id=self.nextId,key=logicalKey,points=before,
         active=true,journal=self,completed=false}
-    for _,p in ipairs(before) do self.pendingByVertex[p.key]=token end
+    for _,p in ipairs(before) do
+        -- Any subsequent native write touching the 3x3 footprint
+        -- invalidates an unconsumed prior recovery receipt.
+        self.recoveryProofs[p.key]=nil
+        self.pendingByVertex[p.key]=token
+    end
     self.pendingByLogicalKey[logicalKey]=token
     self.pendingCount=self.pendingCount+1
     self.stats.started=self.stats.started+1
@@ -407,7 +416,7 @@ function Journal:getRecoverablePoint(ix, iz, minDepthM)
         originalY=e.preREHeightM,deficitM=deficit}
 end
 
-function Journal:beginRecovery(point, radiusM)
+function Journal:beginRecovery(point, radiusM, requestProof)
     if type(point)~="table" or not finite(self.unitM) then
         return nil,"NO_TRUSTED_VERTEX"
     end
@@ -430,6 +439,7 @@ function Journal:beginRecovery(point, radiusM)
     token.targetKey=point.key
     token.targetOriginalY=current.originalY
     token.targetBeforeY=current.beforeY
+    token.recoveryProofRequested=requestProof==true
     return token,nil
 end
 
@@ -496,9 +506,67 @@ function Journal:finishRecovery(token,success)
             self.observations[token.targetKey]=nil
         end
     end
-    return {success=true,gainM=math.max(0,gain),afterY=target,
+    local result={success=true,gainM=math.max(0,gain),afterY=target,
         beforeY=token.targetBeforeY,collateral=collateral,
         completed=completed,safe=safe}
+    if token.recoveryProofRequested and safe
+        and gain>Journal.OWNED_HEIGHT_DRIFT_M then
+        self.nextRecoveryProofId=self.nextRecoveryProofId+1
+        local proof={
+            id=self.nextRecoveryProofId,key=token.targetKey,
+            originalY=token.targetOriginalY,
+            beforeY=token.targetBeforeY,afterY=target,
+            completed=completed
+        }
+        -- Recover the target's exact MAIN vertex coordinates from the
+        -- transaction itself, not from any user-provided receipt fields.
+        for _,p in ipairs(token.points) do
+            if p.key==token.targetKey then
+                proof.x,proof.z=p.x,p.z
+                break
+            end
+        end
+        self.recoveryProofs[proof.key]=proof
+        result.recoveryProof=proof
+    end
+    return result
+end
+
+-- Consume only a receipt emitted by THIS journal, bound to exactly the
+-- same physical height and original RE-owned baseline. A boolean
+-- \"cultivator ran\" is NOT sufficient to reset a cumulative depth ledger.
+function Journal:consumeRecoveryProof(proof)
+    if type(proof)~="table" or type(proof.key)~="string"
+        or self.recoveryProofs[proof.key]~=proof then
+        return nil,"NO_JOURNAL_RECOVERY_PROOF"
+    end
+    if self.pendingByVertex[proof.key]~=nil then
+        return nil,"RECOVERY_PROOF_VERTEX_PENDING"
+    end
+    local actual=self:getHeight(proof.x,proof.z)
+    if not finite(actual)
+        or math.abs(actual-proof.afterY)>Journal.OWNED_HEIGHT_DRIFT_M then
+        return nil,"RECOVERY_PROOF_READBACK_CHANGED"
+    end
+    local entry=self.observations[proof.key]
+    if proof.completed then
+        if entry~=nil
+            or math.abs(actual-proof.originalY)>0.0011 then
+            return nil,"RECOVERY_PROOF_COMPLETION_INVALID"
+        end
+    elseif entry==nil or entry.owned~=true
+        or math.abs(entry.preREHeightM-proof.originalY)>
+            Journal.OWNED_HEIGHT_DRIFT_M
+        or math.abs(entry.observedHeightM-proof.afterY)>
+            Journal.OWNED_HEIGHT_DRIFT_M then
+        return nil,"RECOVERY_PROOF_OWNERSHIP_INVALID"
+    end
+    self.recoveryProofs[proof.key]=nil
+    return {
+        key=proof.key,completed=proof.completed,
+        beforeDepthM=math.max(0,proof.originalY-proof.beforeY),
+        afterDepthM=math.max(0,proof.originalY-proof.afterY)
+    },nil
 end
 
 -- Snapshot is a geometry provenance sidecar, not a replacement for
