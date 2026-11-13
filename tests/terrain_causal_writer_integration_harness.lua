@@ -73,6 +73,7 @@ RealismExtensionsConfig={modules={
     SoilMassTransport=false
 },diagnostics={verbose=false,expensiveGeometry=false}}
 dofile("scripts/terrain/TerrainGeometryJournal.lua")
+dofile("scripts/terrain/TerrainQuantizedHeightBudget.lua")
 dofile("scripts/terrain/TerrainCausalRecovery.lua")
 dofile("scripts/terrain/TerrainWriter.lua")
 local j=RealismExtensionsTerrainGeometryJournal.new(42)
@@ -88,6 +89,15 @@ local damage=assert(j:begin("wheel:0",0,0,0.30))
 set(0,0,baseline(0,0)-0.20)
 assert(j:complete(damage,true).loweredVertices==1)
 assert(j.observations["0:0"].owned==true)
+-- Optional future absolute MAIN controller passes its paid-depth ledger
+-- into causal recovery. Its native brush feedback must synchronize the
+-- physical residual and freeze the OLD wheel source target. In a normal
+-- SHADOW runtime this ledger is absent and the new path stays dormant.
+local activeBudget=assert(RealismExtensionsTerrainQuantizedHeightBudget.new({
+    quantumM=255/65535,maxDebtM=0.30
+}))
+assert(activeBudget:seedOwnedTarget("0:0",0.20))
+RealismExtensionsTerrainRuntime.absoluteHeightBudget=activeBudget
 local area={xs=-0.6,zs=-0.6,ux=1.2,uz=0,vx=0,vz=1.2}
 local profile={id="PLOW",surfaceRegrade01=0.9}
 assert(C.observeWorkedArea(area,profile)==1)
@@ -131,6 +141,13 @@ assert(j.observations["0:0"]~=nil)
 assert(j.observations["0:0"].owned==true)
 assert(C.stats.completed==5 and C.stats.physicallyClosed==0)
 assert(get(0,0)<baseline(0,0)-0.0011)
+assert(activeBudget.stats.recoveryProofsApplied==5)
+assert(activeBudget.quarantined==false)
+assert(math.abs(activeBudget.entries["0:0"].committedM-
+    (baseline(0,0)-get(0,0)))<0.00001)
+assert(activeBudget.entries["0:0"].recoveryEpochPending==true)
+assert(select(2,activeBudget:requestTarget("0:0",0.20,0.30))==
+    "NEW_DAMAGE_EPOCH_REQUIRED_AFTER_RECOVERY")
 assert(C.observeWorkedArea(area,profile)==0)
 assert(#nativeCalls==5)
 print("terrain_causal_writer_integration_harness: OK")
