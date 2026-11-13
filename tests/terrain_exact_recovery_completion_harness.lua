@@ -63,6 +63,22 @@ assert(j.observations["200:200"].owned==false)
 assert(j:getRecoverablePoint(200,200)==nil)
 assert(j.pendingCount==0)
 
+-- A diagonal +20um edit was previously INVISIBLE because the old
+-- radius=0.56u plus journal envelope=0.75u reached only 1.31u,
+-- less than sqrt(2)u. An asymmetric native brush can change a corner,
+-- even when its advertised radius is small. Never close such recovery.
+local diagonal=ownedRut(500,500,2*q)
+local cornerToken=assert(j:beginRecovery(diagonal,0.56))
+assert(#cornerToken.points==9)
+set(500,500,base)
+set(501,501,base+0.00002)
+local cornerResult=assert(j:finishRecovery(cornerToken,true))
+assert(cornerResult.success and cornerResult.safe==false
+    and cornerResult.completed==false and cornerResult.collateral==1)
+assert(j.observations["500:500"]~=nil)
+assert(j.observations["500:500"].owned==false)
+assert(j:getRecoverablePoint(500,500)==nil)
+
 -- Likewise raising a center one q ABOVE the trusted original must
 -- not be called "recovered": the setter already ran, so quarantine
 -- provenance, do NOT issue a speculative reverse height mutation.
