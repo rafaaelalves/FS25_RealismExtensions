@@ -81,6 +81,17 @@ function Source:observeServerWheel(vehicle,wheel,context,footprint,
     local iz=math.floor(z/unit+0.5)
     local key=tostring(ix)..":"..tostring(iz)
     local paid=budget.entries[key]
+    if paid==nil and type(budget.seedPersistedRecovery)=="function"
+        and type(j.getRecoveryFence)=="function"
+        and j:getRecoveryFence(key)~=nil then
+        -- A fresh process has no in-memory epoch. Rehydrate ONLY the
+        -- trusted journal's physical recovery fence; never turn the first
+        -- loaded wheel event into a historical excavation request.
+        local seeded,why=budget:seedPersistedRecovery(j,key)
+        if not seeded then return nil,why end
+        return nil,"PERSISTED_RECOVERY_FENCE_BOOTSTRAPPED"
+    end
+    paid=budget.entries[key]
     local anchor=paid~=nil and paid.recoveryAnchor or nil
     if paid==nil or anchor==nil
         or (paid.recoveryEpochPending~=true and paid.epochTicket==nil) then
