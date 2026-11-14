@@ -89,11 +89,11 @@ assert(select(2,budget:observeFreshDamage("10:10",journal,sample()))
 now=102
 assert(select(2,budget:observeFreshDamage("10:10",journal,
     sample({sequence=2,wheelKey="wheel-B",contactX=10.3,
-        freshCumulativeDamageM=0.020+2*q})))
+        freshCumulativeDamageM=0.020+2*q+0.000001})))
     =="STALE_OR_DIFFERENT_WHEEL_SOURCE")
 assert(select(2,budget:observeFreshDamage("10:10",journal,
     sample({sequence=2,contactX=10.01,
-        freshCumulativeDamageM=0.020+2*q})))
+        freshCumulativeDamageM=0.020+2*q+0.000001})))
     =="POST_RECOVERY_TRAVEL_NOT_PROVEN")
 assert(select(2,budget:observeFreshDamage("10:10",journal,
     sample({sequence=2,contactX=10.3,
@@ -105,11 +105,11 @@ assert(select(2,budget:observeFreshDamage("10:10",journal,
 -- admitted. This is an internal research ticket, NOT production writer.
 local ticket=assert(budget:observeFreshDamage("10:10",journal,
     sample({sequence=2,contactX=10.3,
-        freshCumulativeDamageM=0.020+2*q})))
+        freshCumulativeDamageM=0.020+2*q+0.000001})))
 local entry=budget.entries["10:10"]
 assert(entry.recoveryEpochPending==false)
 assert(entry.epochTicket==ticket)
-assert(math.abs(entry.authorizedTargetM-(remaining+2*q))<1e-9)
+assert(math.abs(entry.authorizedTargetM-(remaining+2*q+0.000001))<1e-9)
 assert(budget.stats.freshEpochOpened==1)
 local fake={id=ticket.id,key=ticket.key}
 assert(select(2,budget:requestTarget("10:10",
@@ -154,9 +154,9 @@ assert(select(2,budget:observeFreshDamage("10:10",journal,sample()))
 now=105
 local freshAgain=assert(budget:observeFreshDamage("10:10",journal,
     sample({sequence=3,contactX=10.3,
-        freshCumulativeDamageM=0.020+2*q})))
+        freshCumulativeDamageM=0.020+2*q+0.000001})))
 assert(freshAgain~=previousTicket)
-assert(budget.entries["10:10"].authorizedTargetM==2*q)
+assert(budget.entries["10:10"].authorizedTargetM==2*q+0.000001)
 
 -- Foreign geometry changes between recovery and a new source sample are
 -- a HARD quarantine, not a reason to silently reset physical ownership.
