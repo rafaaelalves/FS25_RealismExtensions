@@ -16,6 +16,11 @@ local function finite(v)
         and v~=math.huge and v~=-math.huge
 end
 
+local function currentGameTimeMs()
+    return g_currentMission~=nil
+        and tonumber(g_currentMission.time) or nil
+end
+
 function Model.new(options)
     options=options or {}
     local quantum=tonumber(options.quantumM)
@@ -36,7 +41,13 @@ function Model.new(options)
         toleranceM=tolerance,
         maxDebtM=math.max(quantum,tonumber(options.maxDebtM) or 0.10),
         entries={},
+        -- A monotonic server-side clock is mandatory for NEW source epochs.
+        -- Tests inject a fake clock; ordinary standalone research calls
+        -- without a loaded mission fail closed rather than guess recency.
+        clock=type(options.clock)=="function"
+            and options.clock or currentGameTimeMs,
         nextId=0,
+        nextDamageEpochId=0,
         quarantined=false,
         stats={requestedM=0,accepted=0,pending=0,belowQuantum=0,
             noBudget=0,verified=0,zeroEffect=0,anomalies=0,
@@ -44,7 +55,9 @@ function Model.new(options)
             ownedTargetSeeds=0,ownedTargetSeededM=0,
             ownerLedgerDrift=0,
             recoveryProofsApplied=0,
-            recoveredDepthM=0}
+            recoveredDepthM=0,
+            freshEpochBaselines=0,freshEpochOpened=0,
+            freshEpochRejected=0,freshEpochDrift=0}
     },{__index=Model})
 end
 
@@ -91,7 +104,7 @@ end
 -- repeated native digging. The target is a requested cumulative depth for a
 -- single verified geometry epoch; only measured successful writes advance
 -- committedM. This is STILL a pure planner and never writes GIANTS terrain.
-function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
+function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM,epochTicket)
     if self.quarantined then return nil,"QUARANTINED" end
     if type(key)~="string" or key==""
         or not finite(cumulativeDepthM) or cumulativeDepthM<0
@@ -109,11 +122,21 @@ function Model:requestTarget(key,cumulativeDepthM,remainingGeometryBudgetM)
     if item.mode~="TARGET" then return nil,"MIXED_DEBT_CONTRACT" end
     if item.pending~=nil then return nil,"VERTEX_PENDING" end
     if item.recoveryEpochPending then
-        -- The previous wheel/model source can still replay the OLD rut
-        -- demand after a tillage pass. Do NOT immediately re-dig that
-        -- just-recovered physical vertex until a NEW source epoch is
-        -- independently authorized and handed off by the planner.
+        -- Old wheel/model demand remains invalid, even if it asks for
+        -- precisely the same height as a legitimately fresh source.
         return nil,"NEW_DAMAGE_EPOCH_REQUIRED_AFTER_RECOVERY"
+    end
+    if item.epochTicket~=nil then
+        -- A ticket is an in-process capability generated ONLY after a
+        -- distinct post-recovery wheel observation. No old three-arg
+        -- caller may replay the previous cumulative target.
+        if epochTicket~=item.epochTicket then
+            return nil,"NEW_DAMAGE_EPOCH_TICKET_REQUIRED"
+        end
+        if math.abs(cumulativeDepthM-(item.authorizedTargetM or -1))
+            >0.000000001 then
+            return nil,"NEW_DAMAGE_TARGET_NOT_PROVEN"
+        end
     end
     if cumulativeDepthM+0.000001<(item.demandTargetM or 0) then
         -- A decrease needs a separately VERIFIED recovery/epoch transition.
@@ -228,11 +251,134 @@ function Model:syncVerifiedRecovery(journal,proof)
     item.demandTargetM=measured.afterDepthM
     item.debtM=0
     item.recoveryEpochPending=true
+    item.epochTicket=nil
+    item.authorizedTargetM=nil
+    -- Only this journal produced the consumed recovery proof. The native
+    -- height is an anchor, not an inference from SpatialHistory or graphics.
+    -- After a new process starts this RAM-only epoch authority is LOST;
+    -- a production actuator needs an independently persisted epoch fence.
+    local markedMs=self.clock()
+    item.recoveryAnchor={
+        journal=journal,key=measured.key,
+        x=measured.x,z=measured.z,
+        originalY=measured.originalY,afterY=measured.afterY,
+        recoveredDepthM=measured.afterDepthM,
+        completed=measured.completed,
+        markedMs=finite(markedMs) and markedMs or nil,
+        baseline=nil
+    }
     self.stats.recoveryProofsApplied=
         self.stats.recoveryProofsApplied+1
     self.stats.recoveredDepthM=self.stats.recoveredDepthM
         +(measured.beforeDepthM-measured.afterDepthM)
     return true,measured.completed
+end
+
+-- A second, independent post-repair wheel-source generation is needed
+-- before fresh damage can be paid for. Caller-provided model data NEVER
+-- counts as native terrain evidence, and this method performs NO write.
+-- The first NEW sample after recovery establishes a NEW wheel exposure
+-- baseline; it cannot itself authorize a q-step. A later continuous
+-- traveled contact from the same wheel may demonstrate additional plastic
+-- demand, still subject to all MAIN footprint and geometry writer gates.
+--
+-- The future wheel adapter MUST supply a dedicated post-repair cumulative
+-- plastic-damage counter. Replaying SpatialHistory.rutDepthM or an older
+-- SHADOW target is not this contract. This function is intentionally NOT
+-- wired to a gameplay setter or an arbitrary console command.
+function Model:observeFreshDamage(key,journal,sample)
+    if self.quarantined then return nil,"QUARANTINED" end
+    local item=self.entries[key]
+    local anchor=item~=nil and item.recoveryAnchor or nil
+    if item==nil or item.mode~="TARGET" or anchor==nil
+        or (not item.recoveryEpochPending and item.epochTicket==nil) then
+        return nil,"NO_VERIFIED_RECOVERY_EPOCH"
+    end
+    if item.pending~=nil then return nil,"VERTEX_PENDING" end
+    if journal~=anchor.journal or type(journal.getHeight)~="function"
+        or not finite(anchor.x) or not finite(anchor.z)
+        or not finite(anchor.afterY) then
+        return nil,"RECOVERY_JOURNAL_MISMATCH"
+    end
+    local nativeY=journal:getHeight(anchor.x,anchor.z)
+    if not finite(nativeY) or math.abs(nativeY-anchor.afterY)>0.00001 then
+        self.quarantined=true
+        self.stats.freshEpochDrift=self.stats.freshEpochDrift+1
+        local owned=journal.observations~=nil
+            and journal.observations[key] or nil
+        if owned~=nil then owned.owned=false end
+        return nil,"RECOVERY_EPOCH_HEIGHT_DRIFT"
+    end
+    local owned=journal.observations~=nil
+        and journal.observations[key] or nil
+    if (anchor.completed and owned~=nil)
+        or (not anchor.completed and
+            (owned==nil or owned.owned~=true
+                or math.abs((owned.preREHeightM or 0)-anchor.originalY)>0.00001
+                or math.abs((owned.observedHeightM or 0)-anchor.afterY)>0.00001)) then
+        self.quarantined=true
+        return nil,"RECOVERY_EPOCH_OWNERSHIP_CHANGED"
+    end
+    local timestamp=self.clock()
+    if type(sample)~="table" or not finite(timestamp)
+        or not finite(anchor.markedMs) or timestamp<=anchor.markedMs
+        or type(sample.wheelKey)~="string" or sample.wheelKey==""
+        or not finite(sample.sequence) or sample.sequence<1
+        or sample.sequence~=math.floor(sample.sequence)
+        or not finite(sample.contactX) or not finite(sample.contactZ)
+        or not finite(sample.freshCumulativeDamageM)
+        or sample.freshCumulativeDamageM<0
+        or sample.freshCumulativeDamageM>self.maxDebtM
+        or sample.grounded~=true or sample.pathContinuity~=true
+        or sample.mainGeometryState~="MAIN_RESEARCH_CANDIDATE" then
+        self.stats.freshEpochRejected=self.stats.freshEpochRejected+1
+        return nil,"FRESH_DAMAGE_SOURCE_NOT_VERIFIED"
+    end
+    -- One MAIN vertex is NOT every narrow wheel contact. Even an observed
+    -- continuous travel segment must remain locally within its cell.
+    local unit=tonumber(journal.unitM) or 0
+    local dx=sample.contactX-anchor.x
+    local dz=sample.contactZ-anchor.z
+    if unit<=0 or dx*dx+dz*dz>(0.70*unit)^2 then
+        return nil,"FRESH_DAMAGE_OUTSIDE_MAIN_VERTEX"
+    end
+    local first=anchor.baseline
+    if first==nil then
+        anchor.baseline={
+            wheelKey=sample.wheelKey,sequence=sample.sequence,
+            timeMs=timestamp,x=sample.contactX,z=sample.contactZ,
+            damageM=sample.freshCumulativeDamageM
+        }
+        self.stats.freshEpochBaselines=self.stats.freshEpochBaselines+1
+        return nil,"POST_RECOVERY_SOURCE_BASELINE"
+    end
+    if sample.wheelKey~=first.wheelKey
+        or sample.sequence<=first.sequence or timestamp<=first.timeMs then
+        return nil,"STALE_OR_DIFFERENT_WHEEL_SOURCE"
+    end
+    local movement=math.sqrt((sample.contactX-first.x)^2
+        +(sample.contactZ-first.z)^2)
+    if movement<math.max(0.20,unit*0.20) then
+        return nil,"POST_RECOVERY_TRAVEL_NOT_PROVEN"
+    end
+    local fresh=sample.freshCumulativeDamageM-first.damageM
+    if fresh<=0.00000001 or not finite(fresh) then
+        return nil,"NO_POST_RECOVERY_DAMAGE_GROWTH"
+    end
+    -- This authorization is bounded to the physical remaining depth plus
+    -- ONLY modeled incremental NEW damage; it is not an old model target.
+    local target=anchor.recoveredDepthM+fresh
+    if target>self.maxDebtM or target<item.committedM then
+        return nil,"FRESH_DAMAGE_OVER_BUDGET"
+    end
+    if item.epochTicket==nil then
+        self.nextDamageEpochId=self.nextDamageEpochId+1
+        item.epochTicket={key=key,id=self.nextDamageEpochId}
+        item.recoveryEpochPending=false
+        self.stats.freshEpochOpened=self.stats.freshEpochOpened+1
+    end
+    item.authorizedTargetM=target
+    return item.epochTicket,nil
 end
 
 -- The name is retained for old callers, but a boolean 'true' can NO
@@ -304,6 +450,11 @@ function Model:settle(plan,beforeY,afterY)
     if item.mode=="TARGET" then
         item.committedM=(item.committedM or 0)+lowered
         item.debtM=math.max(0,(item.demandTargetM or 0)-item.committedM)
+        if item.recoveryAnchor~=nil and item.epochTicket~=nil then
+            -- Each verified single-quantum write advances the physical
+            -- anchor. A foreign subsequent move still trips the drift guard.
+            item.recoveryAnchor.afterY=afterY
+        end
     end
     self.stats.verified=self.stats.verified+1
     return {verified=true,loweringM=lowered,debtM=item.debtM},nil
