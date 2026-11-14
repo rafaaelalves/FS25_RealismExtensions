@@ -564,6 +564,8 @@ function Journal:consumeRecoveryProof(proof)
     self.recoveryProofs[proof.key]=nil
     return {
         key=proof.key,completed=proof.completed,
+        x=proof.x,z=proof.z,
+        originalY=proof.originalY,afterY=proof.afterY,
         beforeDepthM=math.max(0,proof.originalY-proof.beforeY),
         afterDepthM=math.max(0,proof.originalY-proof.afterY)
     },nil
