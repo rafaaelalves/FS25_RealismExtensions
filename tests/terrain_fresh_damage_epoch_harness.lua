@@ -111,6 +111,18 @@ assert(entry.recoveryEpochPending==false)
 assert(entry.epochTicket==ticket)
 assert(math.abs(entry.authorizedTargetM-(remaining+2*q+0.000001))<1e-9)
 assert(budget.stats.freshEpochOpened==1)
+now=102.1
+assert(select(2,budget:observeFreshDamage("10:10",journal,
+    sample({sequence=2,contactX=10.3,
+        freshCumulativeDamageM=0.020+2*q+0.000002})))
+    =="FRESH_EPOCH_SEQUENCE_REPLAY")
+now=102.2
+assert(select(2,budget:observeFreshDamage("10:10",journal,
+    sample({sequence=3,contactX=10.3,
+        freshCumulativeDamageM=0.020+2*q+0.000001})))
+    =="FRESH_EPOCH_NO_ADDITIONAL_DAMAGE")
+assert(math.abs(entry.authorizedTargetM
+    -(remaining+2*q+0.000001))<1e-9)
 local fake={id=ticket.id,key=ticket.key}
 assert(select(2,budget:requestTarget("10:10",
     entry.authorizedTargetM,0.1,fake))
