@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 6
+Model.VERSION = 7
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -57,7 +57,8 @@ function Model.new(options)
             recoveryProofsApplied=0,
             recoveredDepthM=0,
             freshEpochBaselines=0,freshEpochOpened=0,
-            freshEpochRejected=0,freshEpochDrift=0}
+            freshEpochRejected=0,freshEpochDrift=0,
+            persistedRecoveryBootstraps=0,unsafeRecoveryBootstraps=0}
     },{__index=Model})
 end
 
@@ -272,6 +273,61 @@ function Model:syncVerifiedRecovery(journal,proof)
     self.stats.recoveredDepthM=self.stats.recoveredDepthM
         +(measured.beforeDepthM-measured.afterDepthM)
     return true,measured.completed
+end
+
+-- Restore the safety fence, NOT an old source's excavation demand.
+-- Journal v3 obtained this marker only after a successful physical native
+-- recovery and reverified the same saved MAIN height after reload. A fully
+-- restored vertex has no owned rut entry, so this tombstone is indispensable.
+-- It never writes geometry or invents a prior wheel event.
+function Model:seedPersistedRecovery(journal,key)
+    if self.quarantined then return false,"QUARANTINED" end
+    if type(key)~="string" or type(journal)~="table"
+        or type(journal.getRecoveryFence)~="function"
+        or type(journal.getHeight)~="function" then
+        return false,"RECOVERY_FENCE_UNAVAILABLE"
+    end
+    if self.entries[key]~=nil then
+        return false,"RECOVERY_TARGET_ALREADY_TRACKED"
+    end
+    local fence=journal:getRecoveryFence(key)
+    if fence==nil then return false,"NO_PERSISTED_RECOVERY_FENCE" end
+    if fence.trusted~=true then
+        self.quarantined=true
+        self.stats.unsafeRecoveryBootstraps=
+            self.stats.unsafeRecoveryBootstraps+1
+        return false,"PERSISTED_RECOVERY_FENCE_UNTRUSTED"
+    end
+    local current=journal:getHeight(fence.x,fence.z)
+    if not finite(current) or not finite(fence.originalY)
+        or math.abs(current-fence.observedHeightM)>0.00001 then
+        self.quarantined=true
+        return false,"PERSISTED_RECOVERY_HEIGHT_CHANGED"
+    end
+    local depth=math.max(0,fence.originalY-current)
+    if not finite(depth) or depth>self.maxDebtM
+        or not finite(fence.x) or not finite(fence.z) then
+        self.quarantined=true
+        return false,"PERSISTED_RECOVERY_DEPTH_UNSAFE"
+    end
+    local now=self.clock()
+    if not finite(now) then return false,"SERVER_EPOCH_CLOCK_UNAVAILABLE" end
+    self.entries[key]={
+        mode="TARGET",debtM=0,pending=nil,
+        demandTargetM=depth,committedM=depth,
+        recoveryEpochPending=true,epochTicket=nil,
+        authorizedTargetM=nil,
+        recoveryAnchor={
+            journal=journal,key=key,
+            x=fence.x,z=fence.z,
+            originalY=fence.originalY,afterY=current,
+            recoveredDepthM=depth,completed=fence.completed,
+            markedMs=now,baseline=nil
+        }
+    }
+    self.stats.persistedRecoveryBootstraps=
+        self.stats.persistedRecoveryBootstraps+1
+    return true,"PERSISTED_RECOVERY_FENCE_RESTORED"
 end
 
 -- A second, independent post-repair wheel-source generation is needed
