@@ -82,6 +82,7 @@
         <sourceFile filename="scripts/terrain/TerrainWheelPathContinuity.lua"/>
         <sourceFile filename="scripts/terrain/TerrainMainFootprintGate.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteHeightPlanner.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainFreshWheelSource.lua"/>
         <sourceFile filename="scripts/terrain/TerrainQuantizedHeightBudget.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteVertexCandidate.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteRecoveryCandidate.lua"/>
