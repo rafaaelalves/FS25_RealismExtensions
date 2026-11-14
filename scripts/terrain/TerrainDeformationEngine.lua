@@ -537,6 +537,20 @@ function Engine.processSample(
                     and wheelState.pathEvidence.completeCoverage==true
             })
     end
+    -- Separate from legacy SpatialHistory and SHADOW logical rut exposure:
+    -- a server-observed wheel can produce a NEW post-recovery plastic
+    -- counter only if an independently journal-funded recovery budget is
+    -- explicitly installed. Default SHADOW installs no such budget.
+    -- The observer NEVER submits native terrain writes.
+    local rt=RealismExtensionsTerrainRuntime
+    if shadowOnly and rt~=nil and rt.absoluteHeightBudget~=nil
+        and rt.freshWheelSource~=nil
+        and type(rt.freshWheelSource.observeServerWheel)=="function" then
+        rt.freshWheelSource:observeServerWheel(
+            vehicle,wheel,context,footprint,x,z,dtMs,modelOptions,
+            travelDirX,travelDirZ,
+            wheelState~=nil and wheelState.pathEvidence or nil)
+    end
     local trial=RealismExtensionsTerrainControlledWriteTrial
     trialStage("eligible",x,z)
     if RealismExtensionsConfig~=nil
@@ -1356,6 +1370,8 @@ RealismExtensionsTerrainRuntime = RealismExtensionsTerrainRuntime or {
     writer = nil,
     geometryJournal = nil,
     absoluteShadow = nil,
+    absoluteHeightBudget = nil,
+    freshWheelSource = nil,
     stats = {}
 }
 
@@ -1390,6 +1406,16 @@ function RealismExtensionsTerrainRuntime.tryInitializeGeometryJournal()
     local candidate = RealismExtensionsTerrainGeometryJournal.new(terrainNode)
     if candidate.unitM == nil then return false end
     RealismExtensionsTerrainRuntime.geometryJournal = candidate
+    if RealismExtensionsTerrainFreshWheelSource~=nil
+        and type(RealismExtensionsTerrainFreshWheelSource.new)=="function" then
+        RealismExtensionsTerrainRuntime.freshWheelSource =
+            RealismExtensionsTerrainFreshWheelSource.new({
+                journal=candidate,
+                getBudget=function()
+                    return RealismExtensionsTerrainRuntime.absoluteHeightBudget
+                end
+            })
+    end
     if RealismExtensionsConfig~=nil
         and RealismExtensionsConfig.modules~=nil
         and RealismExtensionsConfig.modules.TerrainAbsoluteHeightShadow==true
@@ -1452,6 +1478,8 @@ function RealismExtensionsTerrainRuntime.clear()
     RealismExtensionsTerrainRuntime.writer = nil
     RealismExtensionsTerrainRuntime.geometryJournal = nil
     RealismExtensionsTerrainRuntime.absoluteShadow = nil
+    RealismExtensionsTerrainRuntime.absoluteHeightBudget = nil
+    RealismExtensionsTerrainRuntime.freshWheelSource = nil
     RealismExtensionsTerrainRuntime.stats = {}
     RealismExtensionsTerrainRuntime.nativeDamageQuarantined=false
 end
