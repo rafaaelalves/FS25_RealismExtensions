@@ -70,14 +70,14 @@ assert(j.stats.anomalousOwnershipInvalidated>=1)
 
 -- Saved v1 observations were collected BEFORE anomalous native deltas
 -- were reliably invalidated. Import their heights, never their authority.
--- A v2 sidecar written by the corrected implementation retains ownership.
+-- V3 retains corrected ownership and adds recovered-epoch tombstones.
 local trusted=API.new(999,{unitM=1,sample=sample})
 local rt=assert(trusted:begin("versioned",80,80,0.3))
 set(80,80,99.992)
 assert(trusted:complete(rt,true).loweredVertices==1)
 assert(trusted.observations["80:80"].owned==true)
 local newSnapshot=assert(trusted:exportSnapshot())
-assert(newSnapshot.version==2)
+assert(newSnapshot.version==3)
 local newReader=API.new(999,{unitM=1,sample=sample})
 assert(newReader:importSnapshot(newSnapshot)==true)
 assert(newReader.observations["80:80"].owned==true)
@@ -199,7 +199,7 @@ assert(result==nil and why=="POST_HEIGHT_UNAVAILABLE")
 assert(j2.pendingCount==0)
 assert(j2:begin("x",5,5,0.3)==nil) -- sampling still unavailable
 local snap=assert(j:exportSnapshot())
-assert(snap.version==2 and snap.unitM==1)
+assert(snap.version==3 and snap.unitM==1)
 local restored=API.new(999,{unitM=1,sample=sample})
 local ok,number,bad=restored:importSnapshot(snap)
 assert(ok and number>=2 and bad==0)
