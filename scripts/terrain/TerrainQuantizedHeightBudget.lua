@@ -365,6 +365,17 @@ function Model:observeFreshDamage(key,journal,sample)
     if fresh<=0.00000001 or not finite(fresh) then
         return nil,"NO_POST_RECOVERY_DAMAGE_GROWTH"
     end
+    -- Once a ticket is open, every additional funding event must advance
+    -- BOTH the source sequence and genuinely NEW model demand. Repeating
+    -- a prior frame/sequence can never enlarge the authorization.
+    if item.epochTicket~=nil then
+        if sample.sequence<=(anchor.lastAcceptedSequence or first.sequence) then
+            return nil,"FRESH_EPOCH_SEQUENCE_REPLAY"
+        end
+        if fresh<=(anchor.lastAcceptedFreshM or 0)+0.00000001 then
+            return nil,"FRESH_EPOCH_NO_ADDITIONAL_DAMAGE"
+        end
+    end
     -- This authorization is bounded to the physical remaining depth plus
     -- ONLY modeled incremental NEW damage; it is not an old model target.
     local target=anchor.recoveredDepthM+fresh
@@ -378,6 +389,8 @@ function Model:observeFreshDamage(key,journal,sample)
         self.stats.freshEpochOpened=self.stats.freshEpochOpened+1
     end
     item.authorizedTargetM=target
+    anchor.lastAcceptedSequence=sample.sequence
+    anchor.lastAcceptedFreshM=fresh
     return item.epochTicket,nil
 end
 
