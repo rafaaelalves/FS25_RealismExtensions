@@ -8,7 +8,7 @@ local Journal = RealismExtensionsTerrainGeometryJournal
 
 -- Version 2 revokes unverified ownership from old v1 sidecars. Legacy
 -- geometry remains unchanged; only automatic recovery authority changes.
-Journal.VERSION = 2
+Journal.VERSION = 3
 -- Only this small unobserved drift may preserve RE physical ownership.
 -- The legacy 2mm runtime and 5mm reload tolerances are for recording
 -- contextual observations, not authorizing future soil RESTORATION.
@@ -55,6 +55,10 @@ function Journal.new(terrain, options)
         -- physical ownership and only emitted by opted-in callers.
         recoveryProofs = {},
         nextRecoveryProofId = 0,
+        -- Persisted safety tombstones: a physically verified recovery may
+        -- erase its original observation, but old wheel debt is STILL stale.
+        -- A foreign change downgrades its fence; never silently rebase it.
+        recoveryFences = {},
         stats = {
             requested = 0,started = 0,overlapRejected = 0,
             unavailable = 0,aborted = 0,completed = 0,
@@ -67,7 +71,9 @@ function Journal.new(terrain, options)
             legacyProvenanceDowngraded = 0,
             reloadOwnershipDriftDowngraded = 0,
             runtimeOwnershipDriftDowngraded = 0,
-            preSaveOwnershipDriftDowngraded = 0
+            preSaveOwnershipDriftDowngraded = 0,
+            recoveredFenceDowngraded = 0,
+            reloadedRecoveryFences = 0
         }
     }, {__index=Journal})
 end
@@ -102,6 +108,31 @@ function Journal:enumerateVertices(x,z,radius)
     return out
 end
 
+-- Read-only, native-height-validated persisted post-recovery fence.
+-- Trusted means ONLY that the same recovered MAIN geometry still exists;
+-- it is NOT an automatic wheel write or a substitute for fine displacement.
+function Journal:getRecoveryFence(key)
+    local f=self.recoveryFences[key]
+    if f==nil then return nil end
+    if f.trusted==true then
+        local y=self:getHeight(f.x,f.z)
+        local entry=self.observations[key]
+        if not finite(y)
+            or math.abs(y-f.observedHeightM)>Journal.OWNED_HEIGHT_DRIFT_M
+            or (f.completed and entry~=nil)
+            or (not f.completed and (entry==nil or entry.owned~=true
+                or math.abs(entry.preREHeightM-f.originalY)>
+                    Journal.OWNED_HEIGHT_DRIFT_M
+                or math.abs(entry.observedHeightM-f.observedHeightM)>
+                    Journal.OWNED_HEIGHT_DRIFT_M)) then
+            f.trusted=false
+            self.stats.recoveredFenceDowngraded=
+                self.stats.recoveredFenceDowngraded+1
+        end
+    end
+    return f
+end
+
 -- Keep RE from turning a real/native depression into an unbounded pit
 -- while restitution is still experimental. This is a write-time safety gate,
 -- NOT a recovery command or a replacement for Mud's traction/sink physics.
@@ -117,6 +148,10 @@ function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
     if verts==nil then return nil,"FOOTPRINT_UNAVAILABLE" end
     local largestDebt=0
     for _,p in ipairs(verts) do
+        local fence=self:getRecoveryFence(p.key)
+        if fence~=nil and fence.trusted~=true then
+            return 0,"UNTRUSTED_RECOVERY_EPOCH"
+        end
         local existing=self.observations[p.key]
         if existing~=nil then
             if existing.owned~=true then return 0,"UNTRUSTED_EDIT" end
@@ -180,6 +215,14 @@ function Journal:begin(logicalKey,x,z,radiusM)
     -- writer; it protects deliberate TerraFarm/Construction edits.
     for _,p in ipairs(before) do
         local entry=self.observations[p.key]
+        local fence=self.recoveryFences[p.key]
+        if fence~=nil and fence.trusted==true
+            and math.abs(fence.observedHeightM-p.beforeY)>
+                Journal.OWNED_HEIGHT_DRIFT_M then
+            fence.trusted=false
+            self.stats.recoveredFenceDowngraded=
+                self.stats.recoveredFenceDowngraded+1
+        end
         if entry~=nil and math.abs(entry.observedHeightM-p.beforeY)>
                 Journal.OWNED_HEIGHT_DRIFT_M then
             if entry.owned==true then
@@ -346,6 +389,22 @@ function Journal:complete(token,successful,maxChangeIgnoreM)
                 self.stats.untrustedRise=self.stats.untrustedRise+1
             end
             self.observations[p.key]=entry
+            local fence=self.recoveryFences[p.key]
+            if fence~=nil then
+                if delta<0 and entry.owned==true
+                    and fence.trusted==true
+                    and math.abs(fence.observedHeightM-p.beforeY)
+                        <=Journal.OWNED_HEIGHT_DRIFT_M
+                    and math.abs(entry.preREHeightM-fence.originalY)
+                        <=Journal.OWNED_HEIGHT_DRIFT_M then
+                    fence.observedHeightM=y
+                    fence.completed=false
+                else
+                    -- A foreign or upward generic brush is NOT a
+                    -- journal-confirmed recovery of a previous generation.
+                    fence.trusted=false
+                end
+            end
         end
     end
     token.completed=true
@@ -476,6 +535,8 @@ function Journal:finishRecovery(token,success)
             collateral=collateral+1
             local e=self.observations[p.key]
             if e~=nil then e.owned=false;e.observedHeightM=y end
+            local fence=self.recoveryFences[p.key]
+            if fence~=nil then fence.trusted=false end
         end
     end
     if not finite(target) then return nil,"TARGET_VERTEX_UNOBSERVED" end
@@ -509,6 +570,19 @@ function Journal:finishRecovery(token,success)
     local result={success=true,gainM=math.max(0,gain),afterY=target,
         beforeY=token.targetBeforeY,collateral=collateral,
         completed=completed,safe=safe}
+    if safe and gain>Journal.OWNED_HEIGHT_DRIFT_M then
+        for _,p in ipairs(token.points) do
+            if p.key==token.targetKey then
+                self.recoveryFences[p.key]={
+                    x=p.x,z=p.z,originalY=token.targetOriginalY,
+                    observedHeightM=target,completed=completed,trusted=true
+                }
+                break
+            end
+        end
+    elseif not safe and self.recoveryFences[token.targetKey]~=nil then
+        self.recoveryFences[token.targetKey].trusted=false
+    end
     if token.recoveryProofRequested and safe
         and gain>Journal.OWNED_HEIGHT_DRIFT_M then
         self.nextRecoveryProofId=self.nextRecoveryProofId+1
@@ -605,7 +679,21 @@ function Journal:exportSnapshot()
         end
     end
     table.sort(cells,function(a,b)return a.key<b.key end)
-    return {version=Journal.VERSION,unitM=self.unitM,cells=cells,unknown=unknown}
+    local fences={}
+    for key,f in pairs(self.recoveryFences) do
+        self:getRecoveryFence(key)
+        fences[#fences+1]={
+            x=f.x,z=f.z,originalY=f.originalY,
+            observedHeightM=f.observedHeightM,
+            completed=f.completed==true,trusted=f.trusted==true
+        }
+    end
+    table.sort(fences,function(a,b)
+        if a.x==b.x then return a.z<b.z end
+        return a.x<b.x
+    end)
+    return {version=Journal.VERSION,unitM=self.unitM,cells=cells,
+        fences=fences,unknown=unknown}
 end
 
 function Journal:importSnapshot(snapshot)
@@ -614,8 +702,10 @@ function Journal:importSnapshot(snapshot)
     -- before the observed-vs-requested mismatch was checked. Preserve its
     -- map samples as untrusted observations but never auto-restore them.
     local isLegacyV1=type(snapshot)=="table" and snapshot.version==1
+    local isLegacyV2=type(snapshot)=="table" and snapshot.version==2
     if type(snapshot)~="table"
-        or (snapshot.version~=Journal.VERSION and not isLegacyV1)
+        or (snapshot.version~=Journal.VERSION and not isLegacyV1
+            and not isLegacyV2)
         or not finite(snapshot.unitM) or not finite(self.unitM)
         or math.abs(snapshot.unitM-self.unitM)>0.00001
         or type(snapshot.cells)~="table" then
@@ -665,6 +755,50 @@ function Journal:importSnapshot(snapshot)
         end
     end
     self.observations=loaded
+    self.recoveryFences={}
+    if snapshot.version==Journal.VERSION then
+        for _,f in ipairs(snapshot.fences or {}) do
+            if type(f)=="table" and finite(f.x) and finite(f.z)
+                and finite(f.originalY) and finite(f.observedHeightM)
+                and type(f.completed)=="boolean"
+                and type(f.trusted)=="boolean" then
+                local ix=math.floor(f.x/self.unitM+0.5)
+                local iz=math.floor(f.z/self.unitM+0.5)
+                local x,z=ix*self.unitM,iz*self.unitM
+                local key=tostring(ix)..":"..tostring(iz)
+                if math.abs(x-f.x)<=0.00001
+                    and math.abs(z-f.z)<=0.00001
+                    and self.recoveryFences[key]==nil then
+                    local y=self:getHeight(x,z)
+                    local trusted=f.trusted==true and finite(y)
+                        and math.abs(y-f.observedHeightM)
+                            <=Journal.OWNED_HEIGHT_DRIFT_M
+                    local e=loaded[key]
+                    if trusted then
+                        trusted=f.completed and e==nil
+                            and math.abs(f.originalY-y)<=0.0011
+                            or not f.completed and e~=nil
+                            and e.owned==true
+                            and math.abs(e.preREHeightM-f.originalY)
+                                <=Journal.OWNED_HEIGHT_DRIFT_M
+                            and math.abs(e.observedHeightM-y)
+                                <=Journal.OWNED_HEIGHT_DRIFT_M
+                    end
+                    self.recoveryFences[key]={
+                        x=x,z=z,originalY=f.originalY,
+                        observedHeightM=f.observedHeightM,
+                        completed=f.completed,trusted=trusted==true
+                    }
+                    self.stats.reloadedRecoveryFences=
+                        self.stats.reloadedRecoveryFences+1
+                    if f.trusted and not trusted then
+                        self.stats.recoveredFenceDowngraded=
+                            self.stats.recoveredFenceDowngraded+1
+                    end
+                end
+            end
+        end
+    end
     self.stats.legacyProvenanceDowngraded=
         (self.stats.legacyProvenanceDowngraded or 0)+legacyDowngraded
     self.stats.reloadOwnershipDriftDowngraded=
@@ -673,6 +807,9 @@ function Journal:importSnapshot(snapshot)
 end
 
 function Journal:reset()
+    self.recoveryFences={}
+    self.recoveryProofs={}
+    self.nextRecoveryProofId=0
     self.observations={}
     self.pendingByVertex={}
     self.pendingByLogicalKey={}
