@@ -165,4 +165,39 @@ assert(nativeWrites==2)
 source:clear()
 assert(source.sourceCount==0 and next(source.sources)==nil)
 assert(nativeWrites==2)
+
+-- A new process gets only the persisted v3 geometry/recovery epoch, not
+-- this old in-memory quantizer or old per-wheel model history. The first
+-- actual server wheel sample bootstraps the blocked epoch WITHOUT
+-- automatically authorizing a write.
+local snapshot=assert(j:exportSnapshot())
+local reloaded=J.new(999,{unitM=1,sample=read})
+assert(reloaded:importSnapshot(snapshot))
+assert(reloaded:getRecoveryFence("10:10").trusted)
+local afterReloadBudget=assert(B.new({
+    quantumM=q,clock=function()return now end
+}))
+local afterReloadSource=assert(Source.new({
+    journal=reloaded,getBudget=function()return afterReloadBudget end,
+    model=fakeModel
+}))
+local function reloadedSample(x)
+    return afterReloadSource:observeServerWheel(
+        vehicle,wheel,context,wide,x,10,150,options,1,0,path)
+end
+now=1004
+assert(select(2,reloadedSample(10))
+    =="PERSISTED_RECOVERY_FENCE_BOOTSTRAPPED")
+assert(afterReloadBudget.entries["10:10"].recoveryEpochPending)
+assert(select(2,afterReloadBudget:requestTarget("10:10",2*q,0.10))
+    =="NEW_DAMAGE_EPOCH_REQUIRED_AFTER_RECOVERY")
+now=1005
+assert(select(2,reloadedSample(10))
+    =="POST_RECOVERY_SOURCE_BASELINE")
+now=1006
+local postReloadTicket=assert(reloadedSample(10.3))
+assert(postReloadTicket.doesNotWrite)
+assert(afterReloadBudget.entries["10:10"].recoveryEpochPending==false)
+assert(nativeWrites==2)
+
 print("terrain_fresh_wheel_source_harness: OK")
