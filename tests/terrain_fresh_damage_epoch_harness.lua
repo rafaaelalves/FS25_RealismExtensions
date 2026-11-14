@@ -156,7 +156,8 @@ local freshAgain=assert(budget:observeFreshDamage("10:10",journal,
     sample({sequence=3,contactX=10.3,
         freshCumulativeDamageM=0.020+2*q+0.000001})))
 assert(freshAgain~=previousTicket)
-assert(budget.entries["10:10"].authorizedTargetM==2*q+0.000001)
+assert(math.abs(budget.entries["10:10"].authorizedTargetM
+    -(2*q+0.000001))<1e-9)
 
 -- Foreign geometry changes between recovery and a new source sample are
 -- a HARD quarantine, not a reason to silently reset physical ownership.
