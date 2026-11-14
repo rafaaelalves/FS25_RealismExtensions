@@ -240,6 +240,19 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
         xml:setFloat(key.."#observedHeightM",c.observedHeightM)
         xml:setBool(key.."#owned",c.owned==true)
     end
+    -- V3: even a fully restored rut needs a durable "old wheel demand
+    -- invalid" tombstone after native geometry closes to baseline.
+    -- Downgraded/foreign-edited fences are persisted as UNTRUSTED rather
+    -- than omitted, so a load cannot silently reopen stale damage.
+    for i,f in ipairs(snapshot.fences or {}) do
+        local key=string.format("%s.recoveryFences.fence(%d)",root,i-1)
+        xml:setFloat(key.."#x",f.x)
+        xml:setFloat(key.."#z",f.z)
+        xml:setFloat(key.."#originalY",f.originalY)
+        xml:setFloat(key.."#observedHeightM",f.observedHeightM)
+        xml:setBool(key.."#completed",f.completed==true)
+        xml:setBool(key.."#trusted",f.trusted==true)
+    end
     xml:save()
     xml:delete()
     return true,#snapshot.cells,snapshot.unknown
@@ -263,7 +276,7 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
         xml:delete()
         return false,"geometry journal map identity mismatch"
     end
-    local snap={version=ver,unitM=unitM,cells={}}
+    local snap={version=ver,unitM=unitM,cells={},fences={}}
     xml:iterate(root..".cells.cell",function(_,key)
         snap.cells[#snap.cells+1]={
             x=xml:getFloat(key.."#x"),
@@ -273,6 +286,18 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
             owned=xml:getBool(key.."#owned",false)
         }
     end)
+    if ver>=3 then
+        xml:iterate(root..".recoveryFences.fence",function(_,key)
+            snap.fences[#snap.fences+1]={
+                x=xml:getFloat(key.."#x"),
+                z=xml:getFloat(key.."#z"),
+                originalY=xml:getFloat(key.."#originalY"),
+                observedHeightM=xml:getFloat(key.."#observedHeightM"),
+                completed=xml:getBool(key.."#completed",false),
+                trusted=xml:getBool(key.."#trusted",false)
+            }
+        end)
+    end
     xml:delete()
     return journal:importSnapshot(snap)
 end
