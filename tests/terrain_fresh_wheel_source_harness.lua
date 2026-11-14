@@ -76,7 +76,7 @@ assert(response2.available and response2.rutDepthM>=response1.rutDepthM)
 local inputs={}
 local fakeModel={
     compute=function(ctx,foot,history,dt,opts)
-        inputs[#inputs+1]=history
+        inputs[#inputs+1]=history==nil and "NONE" or history
         local previous=history~=nil and history.rutDepthM or 0
         local depth=previous+q+0.000005
         return {available=true,plasticYield01=1,
@@ -123,7 +123,7 @@ local baseline=select(2,sample(wheel,context,wide,10,10))
 assert(baseline=="POST_RECOVERY_SOURCE_BASELINE",tostring(baseline))
 assert(#inputs==1)
 -- No earlier legacy history was ever supplied to the fresh source.
-assert(inputs[1]==nil)
+assert(inputs[1]=="NONE")
 assert(nativeWrites==2)
 
 -- A later real wheel context for a different wheel cannot replay the
