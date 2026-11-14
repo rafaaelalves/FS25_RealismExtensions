@@ -139,7 +139,7 @@ end
 assert(geometryPath~=nil)
 local versionKey=RealismExtensionsTerrainPersistence.GEOMETRY_ROOT..
     "#formatVersion"
-assert(files[geometryPath][versionKey]==2)
+assert(files[geometryPath][versionKey]==3)
 files[geometryPath][versionKey]=1
 local legacyJournal=geoApi.new(42,{unitM=1})
 local legacyOk,legacyCount,legacyRejected=
@@ -150,7 +150,16 @@ assert(legacyJournal.observations["5:5"].owned==false)
 assert(legacyJournal:getRecoverablePoint(5,5)==nil)
 assert(legacyJournal.stats.legacyProvenanceDowngraded>=1)
 assert(terrainHeights["5:5"]==99.94)
+-- V2 journals remain readable and preserve previously verified owned
+-- geometry; only the new V3 recovered-epoch tombstones are absent.
 files[geometryPath][versionKey]=2
+local legacyV2=geoApi.new(42,{unitM=1})
+local v2ok,v2count,v2bad=
+    RealismExtensionsTerrainPersistence.loadGeometryJournal(
+        g_currentMission.missionInfo,legacyV2)
+assert(v2ok and v2count>=1 and v2bad==0)
+assert(legacyV2.observations["5:5"].owned==true)
+files[geometryPath][versionKey]=3
 
 -- Imported references must not authorize restore if saved geometry differs
 -- from the loaded GIANTS heightmap after a manual landscaping operation.
