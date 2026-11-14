@@ -1,5 +1,17 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 14-Nov-2026 implementation update — distinct post-recovery damage epoch (code + CI)
+
+**Actual code completed on experimental PR #64, still NOT released.** The previous 13-Nov recovery receipt now returns the journal-confirmed MAIN position/heights, and `TerrainQuantizedHeightBudget.VERSION=6` supports `observeFreshDamage`, a strict **RAM-only** post-recovery wheel epoch fence. The first fresh time-ordered sample establishes a baseline; a subsequent same-wheel, server-clock-monotonic, path-continuous MAIN-compatible sample with new post-baseline modeled plastic damage issues an identity-bound, bounded target ticket. Replayed old target/false token, duplicate source sequence, non-traveled/narrow contact, and unexplained 10µm native drift fail closed. The experimental `TerrainAbsoluteVertexCandidate:applyOne` accepts the optional token; normal 3-arg callers stay blocked after recovery.
+
+**GitHub Actions pass for code commit `d3d11a9608cf2f1df1666f20a6cb7ea688760066`:** [run 43575956289](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43575956289). New `tests/terrain_fresh_damage_epoch_harness.lua` uses mock MAIN geometry and a fake server clock; it does **not** validate any GIANTS in-game wheel sample or native upward recovery. Early CI found a strict under-q funding edge; fixture was corrected by providing explicit real additional budget, **never** by relaxing spend precision. Repeated same-sequence funding was separately blocked.
+
+**Next implementation prerequisite (NOT completed):** a server-owned, never-client-provided real wheel-source adapter producing a fresh cumulative plastic-demand counter after actual journal-confirmed recovery. Current runtime does NOT install `absoluteHeightBudget`, does NOT invoke `observeFreshDamage`, and retains `TerrainPermanentActuator="SHADOW"`. No new user game test or build is justified by these mock harnesses alone. Epoch fences/authorization remain in RAM, hence safe persistent recovery generations on reload and distinct 0.125m native fine-wheel geometry are still unresolved.
+
+Detailed source/limits: [14-Nov research note](../research/2026-11-14-fresh-post-recovery-wheel-damage-epoch.md).
+
+---
+
 > Active engineering reference for the experimental branch ONLY. The historical September 30 text below is preserved as archived context. Do not use its old checkout/build advice.
 
 ## Source of truth and release boundary
