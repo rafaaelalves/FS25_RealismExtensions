@@ -46,7 +46,7 @@ end
 -- A single grid-aligned native 1m vertex, not an arbitrarily centered
 -- 0.2m wheel history cell. No neighborhood blending or fine-geometry claims.
 -- The RE journal owns the just-in-time provenance and nearby side-effect scan.
-function Candidate:applyOne(x,z,damageM,contract)
+function Candidate:applyOne(x,z,damageM,contract,epochTicket)
     self.stats.attempts=self.stats.attempts+1
     if self.explicitWrite~=true or type(self.writeHeight)~="function" then
         self.stats.refused=self.stats.refused+1
@@ -123,7 +123,7 @@ function Candidate:applyOne(x,z,damageM,contract)
         if type(budget.requestTarget)~="function" then
             return nil,"CUMULATIVE_BUDGET_UNAVAILABLE"
         end
-        plan,why=budget:requestTarget(key,damageM,remaining)
+        plan,why=budget:requestTarget(key,damageM,remaining,epochTicket)
     elseif contract==nil or contract=="INCREMENTAL" then
         plan,why=budget:request(key,damageM,remaining)
     else
