@@ -1,4 +1,45 @@
-# Current development handoff
+# Current development handoff — experimental terrain, 2026-11-13
+
+> Active engineering reference for the experimental branch ONLY. The historical September 30 text below is preserved as archived context. Do not use its old checkout/build advice.
+
+## Source of truth and release boundary
+
+- RE feature head when recorded: `feat/terrain-native-transaction-v1-2026-10-23@02505258a234f9194c25612587b2bb51a6b702bc`, draft [PR #64](https://github.com/rafaaelalves/FS25_RealismExtensions/pull/64), [terrain release blocker #63](https://github.com/rafaaelalves/FS25_RealismExtensions/issues/63). The PR description's last narrative update was October 25; later source commits and November research notes supersede it. Re-read the actual branch head before subsequent modifications.
+- Production RE/RC mains are separate. RE terrain `TerrainPermanentActuator="SHADOW"` here, with **no automatic RE MAIN excavation**; independent isolated `COPY` trial is not a gameplay writer. Keep RC physics ownership and version compatibility outside this terrain branch; reconcile current main and feature separately **after real acceptance**.
+- Last source commit with code in this checkpoint: `a30ea8d2` (one-shot recovery receipt ↔ cumulative paid depth/old wheel-target freeze); latest `02505258` documents the integration. CI green for code: [Actions 43446353385](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43446353385). Mock tests do not prove live upward native movement.
+
+## What is actually proven in FS25 — do not rerun old trials
+
+1. Estância São Carlos 1.4 / FS25 1.25.1, **ONE MAIN vertex**, x=348,z=387: on November 11 a guarded request of nominal `q=255/65535m=3.8910505836576mm` lowered native MAIN height from `152.50973510742188m` to `152.50584411621094m`. Measured lowering `3.8909912109375mm`, about **59nm below nominal**. The 3×3 immediate writer check passed. No extrapolation to arbitrary adjacent cells or native 0.125m fine wheel surface.
+2. After genuine FS25 save/exit/restart, a **new independent** native `reGeoVertex 348 387` read on November 12 returned `152.505844116m`, equal at displayed precision. Thus a MAIN physical write persisted for this map/vertex; a witness-sidecar `WITNESS_SAVE_SESSION_CHANGED` error was separate and does **not** show terrain recovery. Old 1.5mm→3.891mm responses are consistent with sub-quantum requests, not proven arbitrary multiplier.
+3. Historical R1/R7 TARGET recovery **failed gameplay**: many passes still left severe holes. TerraFarm/manual Amenizar behaves differently. Do not ask the user to repeat the rejected harvest→plow→disc→seed loop merely for telemetry. Previously reported RE-OFF wheel clipping belongs to a separate session without supplied log and must not be falsely attributed to the RE-on run.
+
+## Source engineering implemented through November 13 (PR #64, NOT released)
+
+- `TerrainGeometryJournal` distinguishes actual GIANTS MAIN readback from calculated model debt, preserves immutable RE first-touch baseline, rejects unexplained physical owner drift beyond 10µm, persists server-only geometry sidecar, and uses bounded transaction/callback attribution.
+- `TerrainAbsoluteVertexCandidate` and `TerrainQuantizedHeightBudget` use a conservatively FUNDED q-step with distinct readback and spending tolerances. A cumulative target is relative to the actual immutable RE original height; journal-owned measured `committedM` seeds a new process across reload to avoid duplicate excavation. No automatic normal wheel source is authorized to call the setter.
+- `TerrainCausalRecovery` and separate `TerrainAbsoluteRecoveryCandidate` can model/attempt RE-owned restoration with 3×3 MAIN checks, including diagonal collateral; physical completion does not accept a full remaining ~3.891mm step or ~2.46mm residue as repaired. The isolated absolute **UPWARD** one-q candidate is Lua MOCK-validated for floor/nearest, **not exercised in FS25**.
+- New journal-issued, one-use readback proof links actual recovery to `TerrainQuantizedHeightBudget.VERSION=5`; `syncVerifiedRecovery` reduces cumulative paid depth to measured remaining owned depth and freezes the **old wheel-source target** (`recoveryEpochPending`). This avoids a proven repair being instantly re-dug by stale target replay. `TerrainCausalRecovery` optional budget handoff remains inactive because normal runtime does NOT install `absoluteHeightBudget`.
+- MAIN geometric representability is not equivalent to fine tire prints. The current per-contact SHADOW footprint screen requires physically continuous motion and high broad-cell coverage; an ordinary narrow tire has inadequate 1m MAIN support. The native 0.125m sparse wheel-displacement read/save/replay/repair API remains **unproven**. TireTrackSystem visuals and density-fill height smoothing do not certify wheel collision or deformation persistence.
+
+## Precisely where work must resume
+
+1. **Fresh damage-source epoch after physically verified recovery:** design a source-specific, monotonic handshake for actual NEW post-repair wheel exposure/contact; bind its cumulative target to the remaining independently owned native depth; reject old virtual source/history replay, forged/duplicate epochs, teleport/path discontinuity, partial/reloaded baseline mismatch, and foreign edits. This is NOT YET WIRED. Do not resolve `recoveryEpochPending` via a boolean, a timer, an arbitrary fresh frame, or by clearing the ledger.
+2. **Read-only / mocked end-to-end contracts first:** cover partial q→remaining q→zero, actual after-readback debt, legitimate fresh wheel damage vs old stale source, multiple nearby vertices, saved journal bootstrap, and 3×3 collateral. Keep normal actuator SHADOW and do not promote mock results as gameplay.
+3. **One small controlled real UPWARD/round-trip engine acceptance** on a verified *disposable cloned career* only after guards are ready. Prove exact physical MAIN height, no neighbor spill, collision and correct persistence with a trusted freshly RE-authored rut. No more sub-q repetition. Only then discuss broad worked-area recovery and one primary + at most one secondary appropriate pass.
+4. **Fine native wheel-height channel capability** must be proven independently or the product must explicitly scope its persistent feature to adequately broad MAIN earthworks and retain GIANTS-native fine wheel effects without claiming RE-owned fine-rut persistence.
+5. Keep ~10–12cm provisional excavation limits, no automatic external-height recovery, no foreign mod-physics takeover, and no merge/release until gameplay and save/MP (where applicable) acceptance. Do not generate a player build for documentation-only updates.
+
+Canonical recent notes:
+- [13 Nov — exact recovery / epoch gap](../research/2026-11-13-native-main-one-step-recovery-and-epoch-handoff.md)
+- [12 Nov — verified save/reload MAIN readback](../research/2026-11-12-main-one-quantum-save-reload-confirmed.md)
+- [12 Nov — cumulative reload + truthful closure](../research/2026-11-12-cumulative-reload-and-physical-recovery-closure.md)
+- [12 Nov — owner drift, quantization vs persistence](../research/2026-11-12-main-height-persistence-vs-quantization-and-ownership-safety.md)
+- [Terrain release reset](../research/2026-10-23-terrain-recovery-release-reset.md)
+
+---
+
+# Archived 2026-09-30 development handoff
 
 Updated: 2026-09-30
 
