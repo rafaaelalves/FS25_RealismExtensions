@@ -109,4 +109,29 @@ local known=assert(full:begin("full-c",50,50,0.30))
 assert(known.observationReservation==4)
 assert(full:complete(known,false).success==false)
 assert(full.observationCount==1 and full.reservedObservationSlots==0)
+-- If an unsafe research setter has ALREADY moved physical ground,
+-- inserting the required diagnostic deny marker must respect the hard
+-- cap too. Under exhaustion, quarantine rather than evict a prior
+-- owned vertex or invent ownership of the new one.
+local exhausted=journal(1)
+set(70,70,99.99)
+assert(exhausted:importSnapshot({
+    version=2,unitM=1,cells={{
+        x=70,z=70,preREHeightM=100,
+        observedHeightM=99.99,owned=true
+    }}
+}))
+assert(exhausted.observationCount==1)
+local fakeFinished={journal=exhausted,active=false,
+    points={{key="80:80",x=80,z=80}}}
+local unable,invalidWhy=exhausted:invalidateRecoveryCandidate(
+    fakeFinished,{key="80:80",x=80,z=80,originalY=100})
+assert(not unable
+    and invalidWhy=="RECOVERY_INVALIDATION_OBSERVATION_CAPACITY")
+assert(exhausted.quarantined)
+assert(exhausted.observationCount==1)
+assert(exhausted.observations["70:70"].owned==false)
+assert(exhausted.observations["80:80"]==nil)
+assert(select(2,exhausted:exportSnapshot())
+    =="GEOMETRY_JOURNAL_QUARANTINED")
 print("terrain_geometry_observation_quota_harness: OK")
