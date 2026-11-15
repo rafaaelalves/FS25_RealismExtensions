@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 8
+Model.VERSION = 9
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -306,6 +306,12 @@ function Model:seedPersistedRecovery(journal,key)
         self.stats.unsafeRecoveryBootstraps=
             self.stats.unsafeRecoveryBootstraps+1
         return false,"PERSISTED_RECOVERY_FENCE_UNTRUSTED"
+    end
+    if fence.accounted~=true then
+        self.quarantined=true
+        self.stats.unsafeRecoveryBootstraps=
+            self.stats.unsafeRecoveryBootstraps+1
+        return false,"PERSISTED_RECOVERY_NOT_ACCOUNTED"
     end
     local current=journal:getHeight(fence.x,fence.z)
     if not finite(current) or not finite(fence.originalY)
