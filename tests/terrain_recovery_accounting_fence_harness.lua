@@ -135,4 +135,19 @@ local tooManyOk,tooManyWhy=tooMany:importSnapshot(duplicate)
 assert(not tooManyOk and tooManyWhy=="RECOVERY_FENCE_IMPORT_CAPACITY")
 assert(tooMany.recoveryFenceCount==0)
 assert(next(tooMany.recoveryFences)==nil)
+
+-- An anomalous native write anywhere in the 3x3 monitored footprint
+-- revokes RECOVERY authority, not only old rut-observation ownership.
+-- A no-effect fake write is used here to avoid actual geometry mutation;
+-- caller explicitly flags its whole completed transaction as untrusted.
+local anomaly=assert(replay:begin("anomalous-native",5,5,0.70))
+assert(replay:complete(anomaly,true).success==true)
+assert(replay:invalidateCompletedFootprint(anomaly,
+    "EXTERNAL_QUEUE_SIDE_EFFECT"))
+local af=assert(replay:getRecoveryFence("5:5"))
+assert(af.trusted==false and af.accounted==false)
+local anomalyBudget=budget()
+assert(select(2,anomalyBudget:seedPersistedRecovery(replay,"5:5"))
+    =="PERSISTED_RECOVERY_FENCE_UNTRUSTED")
+assert(anomalyBudget.quarantined==true)
 print("terrain_recovery_accounting_fence_harness: OK")
