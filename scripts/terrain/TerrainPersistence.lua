@@ -232,6 +232,21 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
     xml:setInt(root.."#formatVersion",snapshot.version)
     xml:setString(root.."#mapId",getMapIdentity() or "")
     xml:setFloat(root.."#unitM",snapshot.unitM)
+    -- V5 structural manifest: a partially saved/truncated XML must not
+    -- silently shrink the recovered-epoch deny ledger on next reload.
+    -- The fingerprints cover sorted MAIN vertex identities, while real
+    -- numerical ownership remains independently validated by GIANTS.
+    local manifest=snapshot.manifest
+    if snapshot.version>=5 then
+        if type(manifest)~="table" then
+            xml:delete()
+            return false,"GEOMETRY_SNAPSHOT_MANIFEST_MISSING"
+        end
+        xml:setInt(root.."#cellCount",manifest.cellCount)
+        xml:setInt(root.."#fenceCount",manifest.fenceCount)
+        xml:setString(root.."#cellKeys",manifest.cellKeys)
+        xml:setString(root.."#fenceKeys",manifest.fenceKeys)
+    end
     for i,c in ipairs(snapshot.cells) do
         local key=string.format("%s.cells.cell(%d)",root,i-1)
         xml:setFloat(key.."#x",c.x)
@@ -254,8 +269,11 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
         xml:setBool(key.."#trusted",f.trusted==true)
         xml:setBool(key.."#accounted",f.accounted==true)
     end
-    xml:save()
+    local saved,saveResult=pcall(xml.save,xml)
     xml:delete()
+    if not saved or saveResult==false then
+        return false,"GEOMETRY_XML_SAVE_FAILED"
+    end
     return true,#snapshot.cells,snapshot.unknown
 end
 
@@ -268,16 +286,33 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
         return false,"no persisted geometry journal"
     end
     local xml=XMLFile.load("realismExtensionsGeometryJournal",path)
-    if xml==nil then return false,"unable to load geometry journal XML" end
+    if xml==nil then
+        if type(journal.quarantine)=="function" then
+            journal:quarantine("GEOMETRY_XML_LOAD_FAILED")
+        end
+        return false,"unable to load geometry journal XML"
+    end
     local root=Persistence.GEOMETRY_ROOT
     local ver=xml:getInt(root.."#formatVersion",0)
     local mapId=xml:getString(root.."#mapId","")
     local unitM=xml:getFloat(root.."#unitM",-1)
     if mapId~=(getMapIdentity() or "") then
         xml:delete()
+        if type(journal.quarantine)=="function" then
+            journal:quarantine("GEOMETRY_MAP_ID_MISMATCH")
+        end
         return false,"geometry journal map identity mismatch"
     end
     local snap={version=ver,unitM=unitM,cells={},fences={}}
+    if ver>=5 then
+        snap.manifest={
+            cellCount=xml:getInt(root.."#cellCount",-1),
+            fenceCount=xml:getInt(root.."#fenceCount",-1),
+            cellKeys=xml:getString(root.."#cellKeys",""),
+            fenceKeys=xml:getString(root.."#fenceKeys","")
+        }
+    end
+    local iterated,iterationError=pcall(function()
     xml:iterate(root..".cells.cell",function(_,key)
         snap.cells[#snap.cells+1]={
             x=xml:getFloat(key.."#x"),
@@ -303,6 +338,13 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
             }
         end)
     end
+    end)
     xml:delete()
+    if not iterated then
+        if type(journal.quarantine)=="function" then
+            journal:quarantine("GEOMETRY_XML_ITERATION_FAILED")
+        end
+        return false,"GEOMETRY_XML_ITERATION_FAILED"
+    end
     return journal:importSnapshot(snap)
 end
