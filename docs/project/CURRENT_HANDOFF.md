@@ -1,5 +1,19 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 15-Nov-2026 (morning): bounded MAIN observation ledger + cross-XML presence witness — CI GREEN
+
+**Latest code commit `2941e4d7cbdc84e6745f8f38645d4c021afbe61d`** — [full GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43715032823). PR #64 still DRAFT, only feature branch modified; docs-only commits follow. Detailed [quota and witness note](../research/2026-11-15-native-geometry-observation-quota-and-presence-witness.md).
+
+- V5 `TerrainGeometryJournal` already capped `recoveryFences` at 50k, but `observations` was **unbounded**. Added default 50k `maxObservations` hard cap, tracked `observationCount`, and **pre-native reservation** `reservedObservationSlots`. `Journal:begin` budgets the entire native footprint including potentially affected neighbors and all independent currently pending jobs. Overflow refuses `GEOMETRY_OBSERVATION_CAPACITY` before any native write; callbacks release reservations for both success and failure. Physically moved new vertices consume actual slots; a completely repaired center frees its observation slot while its separate historical recovery fence remains. **No LRU eviction.**
+- Dangerous external direct insertion from `TerrainAbsoluteRecoveryCandidate.untrust` now delegates to counted `Journal:invalidateRecoveryCandidate`. On post-native unsafe readback with full quota, **quarantine**, never fabricate paid geometry or erase other old deny records. Export also verifies `#actualObservations==observationCount`, quarantining out-of-band mutations before writing a v5 manifest.
+- Prior intact v5 XML manifest detects *partial* truncation but not loss of the **whole** geometry journal. The mechanical v2 `realismExtensionsTerrain.xml` now stores optional `#geometryJournalExpected`. Core writes a true expectation if the module/journal or a prior witness was present, and carries it through normal/deferred load. An expected but **missing** `realismExtensionsGeometryJournal.xml` globally quarantines research MAIN writes instead of silently proceeding as a new save. Old history XML without witness and genuinely new saves remain readable. **Still NOT an atomic native/GIANTS save.**
+- Lua harnesses extended: concurrent disjoint reservations, full quota and untouched old ownership, full-recovery observation deletion with retained recovery fence, quota import refusal, experimental untrusted callback after physical edit, direct side-map mutation count mismatch, lost expected sidecar with legacy/new-career distinction. All pass in CI `43715032823`.
+- Save log now reports observation and fence quota consumption. No physical FS25 upward q-step evidence added. Current source remains `TerrainPermanentActuator="SHADOW"`, no default `absoluteHeightBudget`; no RE/RC main merge, no live field test or production build.
+
+**Next:** verify a real one-q UPWARD physical recovery under an exclusive **disposable cloned-save** permission and 3x3 native/collision/save-roundtrip checks when justified. Avoid expanding journal complexity as a substitute for a real GIANTS physical actuator proof. Long-term 50k caps are conservative refusal stops, not production spatial-index scaling.
+
+---
+
 ## 15-Nov-2026: MAIN geometry journal V5, structural save manifest, quarantine — CI GREEN
 
 **Latest CODE commit `fd8acf990d3205a71b533813fd4212a891cec80a`: [full GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43671450310)**. Draft PR #64 stays isolated, main unchanged. New research note: [MAIN journal v5 integrity and quarantine](../research/2026-11-15-main-journal-v5-structural-manifest-quarantine.md).
