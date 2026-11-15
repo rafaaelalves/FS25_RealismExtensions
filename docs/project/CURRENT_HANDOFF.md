@@ -1,5 +1,20 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 14-Nov-2026 (evening): v4 recovery fences + budget verification BEFORE paid trust — CI GREEN
+
+**Latest checked code:** `2362c6e2bd7e8325bb866e702890873dfd474145`; [GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43668564061). PR #64 remains DRAFT, only experimental branch changed. No new physical FS25 validation.
+
+- **Concrete safety bug corrected:** v3 `finishRecovery` could persist a "trusted" recovered MAIN height before the quantized ledger proved previously paid native depth. The old absolute setter also checked only physical trust, not whether a post-recovery epoch had ever been *accounted*. It could create a bypass for stale wheel-demand replay on a fresh process.
+- `TerrainGeometryJournal.VERSION=4` separates `trusted` (real observed MAIN geometry) from `accounted` (journal-issued physical recovery receipt matched to previously paid budget); initial finished recovery is `accounted=false`. `TerrainQuantizedHeightBudget.VERSION=9` first calls pure `verifyRecoveryProof`, validates old committed physical depth, and only then consumes that proof to set `accounted=true` and issue a fresh-epoch fence. A mismatched ledger quarantines without consuming the receipt. **Native `getLoweringBudget` now independently denies `UNACCOUNTED_RECOVERY_EPOCH`** before an absolute setter can even request a plan.
+- Geometry sidecar gains `#accounted`. V1/V2 still import conservatively. **Legacy V3 recovered fences keep physical trust only, NEVER implicitly gain paid accounting**, because V3 did not persist this fact. This is fail-closed compatibility; no old save is retroactively certified. Anomaly invalidation now also revokes recovery fences throughout the monitored 3×3 native footprint.
+- Recovery tombstones have a **50,000 experimental count cap, no eviction**. An attempt to recover a new vertex when full is denied before native writes; oversized fence imports are rejected intact. This is an interim safety ceiling, not a sustainable production scaling design.
+- New `tests/terrain_recovery_accounting_fence_harness.lua` and updated persistence/journal harnesses pass: wrong committed depth, interrupted/unaccounted proof, correct reconciliation, post-reload stale replay, V3 migration without accounting, no-ledger recovery, resource exhaustion and anomalous queue output. See [v4 design / proof / limitations](../research/2026-11-14-recovery-atomic-accounting-v4-and-bounded-fences.md).
+- **Not solved:** GIANTS terrain save and XML sidecar are not a proven atomic transaction; actual 1-q UPWARD setter/collision/reload is still not validated; 0.125m fine wheel physical layer, multiplayer semantics, unbounded long-farm journal, and full real agricultural tillage restitution are not proven. Keep `TerrainPermanentActuator="SHADOW"`, runtime `absoluteHeightBudget=nil`, no production build, no main merge and no repetitive game tests yet.
+
+**Next focused engineering:** bounded recovery-fence lifecycle without stale demand reopening and crash/save-generation semantics; then decide whether a single isolated, explicitly guarded upward-q cloned-save test is justified, while separately researching the fine 0.125m wheel displacement API. Don't re-run large plow/seed/harvest loops as a substitute for physical proof.
+
+---
+
 ## 14-Nov-2026 (later): actual server-wheel source + persistent recovery fence v3 — CI GREEN
 
 **Latest runtime/harness code:** `b038b10224265fe2c54167cfe1f1e2f09321b6b5`; [GitHub Actions PASS 43639272963](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43639272963). PR #64 remains DRAFT. This is a code milestone, not validated field geometry.
