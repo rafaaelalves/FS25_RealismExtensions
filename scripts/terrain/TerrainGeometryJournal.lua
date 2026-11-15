@@ -8,7 +8,7 @@ local Journal = RealismExtensionsTerrainGeometryJournal
 
 -- Version 2 revokes unverified ownership from old v1 sidecars. Legacy
 -- geometry remains unchanged; only automatic recovery authority changes.
-Journal.VERSION = 3
+Journal.VERSION = 4
 -- Only this small unobserved drift may preserve RE physical ownership.
 -- The legacy 2mm runtime and 5mm reload tolerances are for recording
 -- contextual observations, not authorizing future soil RESTORATION.
@@ -598,7 +598,7 @@ function Journal:finishRecovery(token,success)
                 self.recoveryFences[p.key]={
                     x=p.x,z=p.z,originalY=token.targetOriginalY,
                     observedHeightM=target,completed=completed,
-                    trusted=not pending,pendingProof=pending
+                    trusted=true,accounted=false,pendingProof=pending
                 }
                 if pending then
                     self.stats.recoveryProofsUnaccounted=
@@ -681,7 +681,7 @@ function Journal:consumeRecoveryProof(proof)
     if measured==nil then return nil,reason end
     local fence=self.recoveryFences[measured.key]
     if fence==nil or fence.pendingProof~=true
-        or fence.trusted==true
+        or fence.trusted~=true or fence.accounted==true
         or not finite(fence.originalY)
         or math.abs(fence.originalY-measured.originalY)>
             Journal.OWNED_HEIGHT_DRIFT_M
@@ -692,6 +692,7 @@ function Journal:consumeRecoveryProof(proof)
     end
     self.recoveryProofs[measured.key]=nil
     fence.pendingProof=false
+    fence.accounted=true
     fence.trusted=true
     self.stats.recoveryProofsReconciled=
         self.stats.recoveryProofsReconciled+1
@@ -741,7 +742,8 @@ function Journal:exportSnapshot()
         fences[#fences+1]={
             x=f.x,z=f.z,originalY=f.originalY,
             observedHeightM=f.observedHeightM,
-            completed=f.completed==true,trusted=f.trusted==true
+            completed=f.completed==true,trusted=f.trusted==true,
+            accounted=f.accounted==true
         }
     end
     table.sort(fences,function(a,b)
@@ -759,9 +761,10 @@ function Journal:importSnapshot(snapshot)
     -- map samples as untrusted observations but never auto-restore them.
     local isLegacyV1=type(snapshot)=="table" and snapshot.version==1
     local isLegacyV2=type(snapshot)=="table" and snapshot.version==2
+    local isLegacyV3=type(snapshot)=="table" and snapshot.version==3
     if type(snapshot)~="table"
         or (snapshot.version~=Journal.VERSION and not isLegacyV1
-            and not isLegacyV2)
+            and not isLegacyV2 and not isLegacyV3)
         or not finite(snapshot.unitM) or not finite(self.unitM)
         or math.abs(snapshot.unitM-self.unitM)>0.00001
         or type(snapshot.cells)~="table" then
@@ -814,7 +817,7 @@ function Journal:importSnapshot(snapshot)
     self.recoveryFences={}
     self.recoveryProofs={}
     self.recoveryFenceCount=0
-    if snapshot.version==Journal.VERSION then
+    if snapshot.version==Journal.VERSION or isLegacyV3 then
         if type(snapshot.fences)~="table"
             or #snapshot.fences>self.maxRecoveryFences then
             -- Do not partially import an oversized tombstone list and
@@ -849,11 +852,17 @@ function Journal:importSnapshot(snapshot)
                             and math.abs(e.observedHeightM-y)
                                 <=Journal.OWNED_HEIGHT_DRIFT_M
                     end
+                    -- V3 never distinguished a physically genuine
+                    -- recovery from one reconciled to paid MAIN wheel
+                    -- depth. Import its geometry, but never invent paid
+                    -- authorization across the schema transition.
+                    local accounted=snapshot.version==Journal.VERSION
+                        and f.accounted==true and trusted==true
                     self.recoveryFences[key]={
                         x=x,z=z,originalY=f.originalY,
                         observedHeightM=f.observedHeightM,
                         completed=f.completed,trusted=trusted==true,
-                        pendingProof=false
+                        accounted=accounted,pendingProof=false
                     }
                     self.recoveryFenceCount=self.recoveryFenceCount+1
                     self.stats.reloadedRecoveryFences=
