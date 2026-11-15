@@ -1,5 +1,20 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 15-Nov-2026: MAIN geometry journal V5, structural save manifest, quarantine — CI GREEN
+
+**Latest CODE commit `fd8acf990d3205a71b533813fd4212a891cec80a`: [full GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43671450310)**. Draft PR #64 stays isolated, main unchanged. New research note: [MAIN journal v5 integrity and quarantine](../research/2026-11-15-main-journal-v5-structural-manifest-quarantine.md).
+
+- V4 importer silently omitted certain malformed or heavily foreign-edited saved vertices, potentially losing recovered-epoch denial entries on a truncated XML. V5 `TerrainGeometryJournal` and `TerrainPersistence` now record `cellCount`, `fenceCount`, and independently computed coordinate-key fingerprints (`cellKeys`, `fenceKeys`) for both classes of MAIN history. A missing recovery row, replaced coordinate or incomplete header is rejected.
+- Import stages both observation and recovery maps **atomically in Lua** and publishes them only when structural, map, unit, capacity, unique-key and native-readback checks succeed. Corrupt/incompatible **existing** geometry files quarantine the journal, invalidate physical ownership and paid-epoch proof, block further RE MAIN writer/recovery access and prohibit overwriting the old sidecar on the next save. Quarantine warning is visible at normal and deferred game load and on save.
+- On independently observed external height edits, V5 **retains** the vertex as `owned=false`, instead of dropping it. Future physical lowering on that known location is denied; no foreign edits are interpreted as new RE geometry. Export of existing records does not silently discard unexpected height changes; missing native readback refuses export.
+- V1–V4 legacy file compatibility remains, conservatively: V3/V4 may retain physically checked recovery samples but NEVER acquire new V5 `accounted` authority through migration without a V5 structural manifest. A truly **absent** sidecar does not establish whether a save is new or its historical journal was deleted — automatic MAIN writer remains disabled.
+- Added `tests/terrain_geometry_manifest_v5_harness.lua` (row truncation, equal-count key substitution, missing header, foreign 60mm edit retained through save/reload, existing corrupt/wrong-map file quarantine, new career without sidecar); adapted older geometry/persistence harnesses. Final CI succeeded on `fd8acf99`.
+- **Not solved:** GIANTS native heightmap and RE XML do not share an atomic transaction; V5 count/key fingerprints are noncryptographic and do not authenticate height values; observation coverage needs scalable partitioning for production; no real upward quantized physical restitution, collision, separate fine 0.125m wheel heightfield or MP proof. Never enable `absoluteHeightBudget`/lift `TerrainPermanentActuator="SHADOW"`, merge PR #64, distribute or ask for full plow/sow/harvest tests without actual physical actuator evidence.
+
+**Next research focus:** bound/partition the long-term set of observed MAIN vertices without dropping old-generation deny markers, and assess crash/save ordering. The next *physical* milestone is one controlled upward 1q cloned-save native test (3×3/readback/save-reload/collision), not a broad field retest.
+
+---
+
 ## 14-Nov-2026 (evening): v4 recovery fences + budget verification BEFORE paid trust — CI GREEN
 
 **Latest checked code:** `2362c6e2bd7e8325bb866e702890873dfd474145`; [GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43668564061). PR #64 remains DRAFT, only experimental branch changed. No new physical FS25 validation.
