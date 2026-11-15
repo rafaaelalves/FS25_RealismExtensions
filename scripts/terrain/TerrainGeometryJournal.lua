@@ -160,6 +160,14 @@ function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
         if fence~=nil and fence.trusted~=true then
             return 0,"UNTRUSTED_RECOVERY_EPOCH"
         end
+        -- The main native lowering gate must independently reject a
+        -- genuine but UNACCOUNTED recovery. Otherwise an isolated caller
+        -- can seed a new in-RAM budget from current owned MAIN height
+        -- after restart and replay pre-tillage damage without the fresh
+        -- post-recovery wheel-generation capability.
+        if fence~=nil and fence.accounted~=true then
+            return 0,"UNACCOUNTED_RECOVERY_EPOCH"
+        end
         local existing=self.observations[p.key]
         if existing~=nil then
             if existing.owned~=true then return 0,"UNTRUSTED_EDIT" end
