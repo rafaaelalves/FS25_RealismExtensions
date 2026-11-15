@@ -168,8 +168,12 @@ local j3=geoApi.new(42,{unitM=1})
 local acceptedJournal,loadedCount,excluded=RealismExtensionsTerrainPersistence.loadGeometryJournal(
     g_currentMission.missionInfo,j3
 )
-assert(acceptedJournal and excluded>=1)
-assert(j3.observations["5:5"]==nil)
+-- V5 preserves the changed vertex as untrusted rather than dropping
+-- the old coordinate and later permitting a new source to dig there.
+assert(acceptedJournal and excluded==0 and loadedCount>=1)
+assert(j3.observations["5:5"]~=nil)
+assert(j3.observations["5:5"].owned==false)
+assert(j3.stats.importForeignHeightDowngrades>=1)
 terrainHeights["5:5"]=99.94
 local wrongMap=g_currentMission.missionInfo.mapId
 g_currentMission.missionInfo.mapId="anotherMap"
