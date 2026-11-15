@@ -285,17 +285,27 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
     if path==nil or fileExists(path)~=true then
         return false,"no persisted geometry journal"
     end
-    local xml=XMLFile.load("realismExtensionsGeometryJournal",path)
-    if xml==nil then
+    local xmlLoaded,xml=pcall(XMLFile.load,
+        "realismExtensionsGeometryJournal",path)
+    if not xmlLoaded or xml==nil then
         if type(journal.quarantine)=="function" then
             journal:quarantine("GEOMETRY_XML_LOAD_FAILED")
         end
         return false,"unable to load geometry journal XML"
     end
     local root=Persistence.GEOMETRY_ROOT
-    local ver=xml:getInt(root.."#formatVersion",0)
-    local mapId=xml:getString(root.."#mapId","")
-    local unitM=xml:getFloat(root.."#unitM",-1)
+    local headerOk,ver,mapId,unitM=pcall(function()
+        return xml:getInt(root.."#formatVersion",0),
+            xml:getString(root.."#mapId",""),
+            xml:getFloat(root.."#unitM",-1)
+    end)
+    if not headerOk then
+        pcall(xml.delete,xml)
+        if type(journal.quarantine)=="function" then
+            journal:quarantine("GEOMETRY_XML_HEADER_INVALID")
+        end
+        return false,"GEOMETRY_XML_HEADER_INVALID"
+    end
     if mapId~=(getMapIdentity() or "") then
         xml:delete()
         if type(journal.quarantine)=="function" then
@@ -304,7 +314,8 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
         return false,"geometry journal map identity mismatch"
     end
     local snap={version=ver,unitM=unitM,cells={},fences={}}
-    if ver>=5 then
+    local iterated,iterationError=pcall(function()
+    if type(ver)=="number" and ver>=5 then
         snap.manifest={
             cellCount=xml:getInt(root.."#cellCount",-1),
             fenceCount=xml:getInt(root.."#fenceCount",-1),
@@ -312,7 +323,6 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
             fenceKeys=xml:getString(root.."#fenceKeys","")
         }
     end
-    local iterated,iterationError=pcall(function()
     xml:iterate(root..".cells.cell",function(_,key)
         snap.cells[#snap.cells+1]={
             x=xml:getFloat(key.."#x"),
@@ -322,7 +332,7 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
             owned=xml:getBool(key.."#owned",false)
         }
     end)
-    if ver>=3 then
+    if type(ver)=="number" and ver>=3 then
         xml:iterate(root..".recoveryFences.fence",function(_,key)
             snap.fences[#snap.fences+1]={
                 x=xml:getFloat(key.."#x"),
@@ -339,7 +349,7 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
         end)
     end
     end)
-    xml:delete()
+    pcall(xml.delete,xml)
     if not iterated then
         if type(journal.quarantine)=="function" then
             journal:quarantine("GEOMETRY_XML_ITERATION_FAILED")
