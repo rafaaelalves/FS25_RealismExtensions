@@ -786,6 +786,9 @@ function Journal:exportSnapshot()
         return nil,"GEOMETRY_JOURNAL_QUARANTINED"
     end
     if self.pendingCount>0 then return nil,"PENDING_NATIVE_WRITES" end
+    if not finite(self.unitM) or self.unitM<=0 then
+        return nil,"native heightmap unit unavailable"
+    end
     local cells={}
     local unknown=0
     for key,entry in pairs(self.observations) do
