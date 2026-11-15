@@ -74,8 +74,9 @@ local ok,count=RealismExtensionsTerrainPersistence.save(g_currentMission.mission
 assert(ok==true and count==2)
 
 local restored=RealismExtensionsSpatialHistory.new({cellSizeM=0.2,maxCells=100})
-local loaded,loadedCount=RealismExtensionsTerrainPersistence.load(g_currentMission.missionInfo,restored)
-assert(loaded==true and loadedCount==2)
+local loaded,loadedCount,noLegacyWitness=
+    RealismExtensionsTerrainPersistence.load(g_currentMission.missionInfo,restored)
+assert(loaded==true and loadedCount==2 and noLegacyWitness==false)
 assert(restored.count==2)
 assert(math.abs(restored:get(1.0,2.0).rutDepthM-0.03)<0.000001)
 assert(restored:get(1.0,2.0).passCount==7)
@@ -182,6 +183,39 @@ local mapOk,mapWhy=RealismExtensionsTerrainPersistence.loadGeometryJournal(
 )
 assert(mapOk==false and mapWhy=="geometry journal map identity mismatch")
 g_currentMission.missionInfo.mapId=wrongMap
+
+-- The independent mechanical-history XML records that a native
+-- geometry journal SHOULD also exist. A missing companion sidecar must
+-- NOT look like an untouched new career after a crash or file removal.
+local witnessSaved=RealismExtensionsTerrainPersistence.save(
+    g_currentMission.missionInfo,h,{expectGeometryJournal=true})
+assert(witnessSaved)
+local witnessHistory=RealismExtensionsSpatialHistory.new({
+    cellSizeM=0.2,maxCells=100
+})
+local witnessed,_,isExpected=RealismExtensionsTerrainPersistence.load(
+    g_currentMission.missionInfo,witnessHistory)
+assert(witnessed and isExpected==true)
+files[geometryPath]=nil
+local missingJournal=geoApi.new(42,{unitM=1})
+local missingOk,missingWhy=
+    RealismExtensionsTerrainPersistence.loadGeometryJournal(
+        g_currentMission.missionInfo,missingJournal,isExpected)
+assert(not missingOk
+    and missingWhy=="GEOMETRY_SIDECAR_MISSING_WITH_HISTORY_WITNESS")
+assert(missingJournal.quarantined)
+assert(select(2,missingJournal:getLoweringBudget(
+    5,5,0.3,0.10,0.12))=="GEOMETRY_JOURNAL_QUARANTINED")
+assert(RealismExtensionsTerrainPersistence.saveGeometryJournal(
+    g_currentMission.missionInfo,missingJournal)==false)
+-- Same absence without a previous witness remains allowed for new saves
+-- and backward-compatible history XML created before this version.
+local freshJournal=geoApi.new(42,{unitM=1})
+local newSaveOk,newSaveWhy=
+    RealismExtensionsTerrainPersistence.loadGeometryJournal(
+        g_currentMission.missionInfo,freshJournal,false)
+assert(not newSaveOk and newSaveWhy=="no persisted geometry journal")
+assert(freshJournal.quarantined==false)
 
 -- Clients never write authoritative history or geometry journal.
 g_server=nil
