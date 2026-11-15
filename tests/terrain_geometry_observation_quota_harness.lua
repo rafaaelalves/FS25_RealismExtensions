@@ -52,6 +52,8 @@ local revisit=assert(j:begin("repeat",0,0,0.30))
 assert(revisit.observationReservation==4)
 assert(j:complete(revisit,false).success==false)
 assert(j.observationCount==2)
+local preRecoverySnap=assert(j:exportSnapshot())
+assert(preRecoverySnap.manifest.cellCount==2)
 
 -- A recovery spans a full 3x3, and MUST reserve possible collateral
 -- observations, even when the eventual native setter only raises center.
@@ -78,7 +80,7 @@ assert(imported.observationCount==1
     and imported.recoveryFenceCount==1)
 assert(imported:getRecoveryFence("0:0")~=nil)
 local cap=journal(1)
-local ok,capWhy=cap:importSnapshot(snap)
+local ok,capWhy=cap:importSnapshot(preRecoverySnap)
 assert(ok==false and capWhy=="GEOMETRY_OBSERVATION_IMPORT_CAPACITY")
 assert(cap.quarantined and cap.observationCount==0)
 assert(select(2,cap:begin("blocked",40,40,0.30))
@@ -97,9 +99,14 @@ assert(t.observationReservation==5)
 set(50,50,99.96)
 assert(full:complete(t,true).loweredVertices==1)
 assert(full.observationCount==1)
-local u=assert(full:begin("full-b",60,60,0.30))
-assert(u.observationReservation==5)
-assert(full.observationCount==1 and full.reservedObservationSlots==5)
--- This last assertion demonstrates why a reservation cannot be admitted:
--- future state can NEVER exceed maxObservations.
-error("unreachable")
+local u,quotaWhy=full:begin("full-b",60,60,0.30)
+assert(u==nil and quotaWhy=="GEOMETRY_OBSERVATION_CAPACITY")
+assert(full.observationCount==1 and full.reservedObservationSlots==0)
+assert(full.observations["50:50"].owned==true)
+-- The known center only needs FOUR previously unseen cardinal slots,
+-- and can still run safely inside the hard upper bound.
+local known=assert(full:begin("full-c",50,50,0.30))
+assert(known.observationReservation==4)
+assert(full:complete(known,false).success==false)
+assert(full.observationCount==1 and full.reservedObservationSlots==0)
+print("terrain_geometry_observation_quota_harness: OK")
