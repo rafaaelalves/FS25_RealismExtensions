@@ -59,6 +59,11 @@ function Journal.new(terrain, options)
         -- erase its original observation, but old wheel debt is STILL stale.
         -- A foreign change downgrades its fence; never silently rebase it.
         recoveryFences = {},
+        -- No unsafe eviction: old recovery epochs must never silently
+        -- disappear just to make room for new automatic excavation.
+        maxRecoveryFences=math.max(1,
+            math.floor(tonumber(options.maxRecoveryFences) or 50000)),
+        recoveryFenceCount=0,
         stats = {
             requested = 0,started = 0,overlapRejected = 0,
             unavailable = 0,aborted = 0,completed = 0,
@@ -73,7 +78,10 @@ function Journal.new(terrain, options)
             runtimeOwnershipDriftDowngraded = 0,
             preSaveOwnershipDriftDowngraded = 0,
             recoveredFenceDowngraded = 0,
-            reloadedRecoveryFences = 0
+            reloadedRecoveryFences = 0,
+            recoveryFenceCapacityRefusals = 0,
+            recoveryProofsUnaccounted = 0,
+            recoveryProofsReconciled = 0
         }
     }, {__index=Journal})
 end
@@ -491,6 +499,12 @@ function Journal:beginRecovery(point, radiusM, requestProof)
     -- A recovery brush that moves one of those corners must fail CLOSED.
     -- Cover the full 3x3 even when a caller requested a narrow 0.56u
     -- recovery brush. Keep the actual native brush width unchanged.
+    if self.recoveryFences[point.key]==nil
+        and self.recoveryFenceCount>=self.maxRecoveryFences then
+        self.stats.recoveryFenceCapacityRefusals=
+            self.stats.recoveryFenceCapacityRefusals+1
+        return nil,"RECOVERY_FENCE_CAPACITY"
+    end
     local radius=self.unitM*0.70
     local token,reason=self:begin("RECOVER:"..point.key,
         current.x,current.z,radius)
@@ -573,10 +587,23 @@ function Journal:finishRecovery(token,success)
     if safe and gain>Journal.OWNED_HEIGHT_DRIFT_M then
         for _,p in ipairs(token.points) do
             if p.key==token.targetKey then
+                if self.recoveryFences[p.key]==nil then
+                    self.recoveryFenceCount=self.recoveryFenceCount+1
+                end
+                -- A native rising height alone cannot prove the PAID
+                -- cumulative wheel ledger was reconciled. While a proof
+                -- is outstanding this must be untrusted, including if
+                -- the prior partial-recovery fence had been trusted.
+                local pending=token.recoveryProofRequested==true
                 self.recoveryFences[p.key]={
                     x=p.x,z=p.z,originalY=token.targetOriginalY,
-                    observedHeightM=target,completed=completed,trusted=true
+                    observedHeightM=target,completed=completed,
+                    trusted=not pending,pendingProof=pending
                 }
+                if pending then
+                    self.stats.recoveryProofsUnaccounted=
+                        self.stats.recoveryProofsUnaccounted+1
+                end
                 break
             end
         end
@@ -606,10 +633,12 @@ function Journal:finishRecovery(token,success)
     return result
 end
 
--- Consume only a receipt emitted by THIS journal, bound to exactly the
--- same physical height and original RE-owned baseline. A boolean
--- \"cultivator ran\" is NOT sufficient to reset a cumulative depth ledger.
-function Journal:consumeRecoveryProof(proof)
+-- Read-only validation before the paid-depth ledger is changed. The
+-- journal does not turn the new fence trusted until *after* the budget
+-- verifies its old committed depth against measured physical beforeDepth.
+-- For proofRequested=false the already observed physical fence is retained,
+-- but there is NO automatic budget or replay-authorizing source.
+function Journal:verifyRecoveryProof(proof)
     if type(proof)~="table" or type(proof.key)~="string"
         or self.recoveryProofs[proof.key]~=proof then
         return nil,"NO_JOURNAL_RECOVERY_PROOF"
@@ -635,7 +664,6 @@ function Journal:consumeRecoveryProof(proof)
             Journal.OWNED_HEIGHT_DRIFT_M then
         return nil,"RECOVERY_PROOF_OWNERSHIP_INVALID"
     end
-    self.recoveryProofs[proof.key]=nil
     return {
         key=proof.key,completed=proof.completed,
         x=proof.x,z=proof.z,
@@ -643,6 +671,31 @@ function Journal:consumeRecoveryProof(proof)
         beforeDepthM=math.max(0,proof.originalY-proof.beforeY),
         afterDepthM=math.max(0,proof.originalY-proof.afterY)
     },nil
+end
+
+-- Commit only after the quantized budget has checked its *previously
+-- paid* depth. A failed or interrupted reconciliation leaves the saved
+-- fence untrusted; old wheel state cannot become fresh damage by reload.
+function Journal:consumeRecoveryProof(proof)
+    local measured,reason=self:verifyRecoveryProof(proof)
+    if measured==nil then return nil,reason end
+    local fence=self.recoveryFences[measured.key]
+    if fence==nil or fence.pendingProof~=true
+        or fence.trusted==true
+        or not finite(fence.originalY)
+        or math.abs(fence.originalY-measured.originalY)>
+            Journal.OWNED_HEIGHT_DRIFT_M
+        or math.abs(fence.observedHeightM-measured.afterY)>
+            Journal.OWNED_HEIGHT_DRIFT_M
+        or fence.completed~=measured.completed then
+        return nil,"RECOVERY_FENCE_NOT_PENDING_ACCOUNTING"
+    end
+    self.recoveryProofs[measured.key]=nil
+    fence.pendingProof=false
+    fence.trusted=true
+    self.stats.recoveryProofsReconciled=
+        self.stats.recoveryProofsReconciled+1
+    return measured,nil
 end
 
 -- Snapshot is a geometry provenance sidecar, not a replacement for
@@ -680,6 +733,9 @@ function Journal:exportSnapshot()
     end
     table.sort(cells,function(a,b)return a.key<b.key end)
     local fences={}
+    if self.recoveryFenceCount>self.maxRecoveryFences then
+        return nil,"RECOVERY_FENCE_CAPACITY_EXCEEDED"
+    end
     for key,f in pairs(self.recoveryFences) do
         self:getRecoveryFence(key)
         fences[#fences+1]={
@@ -756,7 +812,16 @@ function Journal:importSnapshot(snapshot)
     end
     self.observations=loaded
     self.recoveryFences={}
+    self.recoveryProofs={}
+    self.recoveryFenceCount=0
     if snapshot.version==Journal.VERSION then
+        if type(snapshot.fences)~="table"
+            or #snapshot.fences>self.maxRecoveryFences then
+            -- Do not partially import an oversized tombstone list and
+            -- silently lose the old-epoch deny markers beyond the cap.
+            self.observations={}
+            return false,"RECOVERY_FENCE_IMPORT_CAPACITY"
+        end
         for _,f in ipairs(snapshot.fences or {}) do
             if type(f)=="table" and finite(f.x) and finite(f.z)
                 and finite(f.originalY) and finite(f.observedHeightM)
@@ -787,8 +852,10 @@ function Journal:importSnapshot(snapshot)
                     self.recoveryFences[key]={
                         x=x,z=z,originalY=f.originalY,
                         observedHeightM=f.observedHeightM,
-                        completed=f.completed,trusted=trusted==true
+                        completed=f.completed,trusted=trusted==true,
+                        pendingProof=false
                     }
+                    self.recoveryFenceCount=self.recoveryFenceCount+1
                     self.stats.reloadedRecoveryFences=
                         self.stats.reloadedRecoveryFences+1
                     if f.trusted and not trusted then
@@ -807,6 +874,7 @@ function Journal:importSnapshot(snapshot)
 end
 
 function Journal:reset()
+    self.recoveryFenceCount=0
     self.recoveryFences={}
     self.recoveryProofs={}
     self.nextRecoveryProofId=0
