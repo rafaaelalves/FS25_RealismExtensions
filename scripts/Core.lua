@@ -156,6 +156,12 @@ function RealismExtensionsCore:loadMap()
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.reloadOwnershipDriftDowngraded or 0
             ))
+        elseif RealismExtensionsTerrainRuntime.geometryJournal.quarantined then
+            RealismExtensionsDiagnostics.warn(
+                "Terrain MAIN journal QUARANTINED on load: "
+                ..tostring(restored)
+                .."; native recovery and new RE MAIN writes denied"
+            )
         elseif restored ~= "no persisted geometry journal" then
             RealismExtensionsDiagnostics.verbose(
                 "geometry journal not restored: "..tostring(restored)
@@ -310,6 +316,12 @@ function RealismExtensionsCore:update(dt)
                         RealismExtensionsTerrainRuntime.geometryJournal.stats.legacyProvenanceDowngraded or 0,
                         RealismExtensionsTerrainRuntime.geometryJournal.stats.reloadOwnershipDriftDowngraded or 0
                     ))
+                elseif RealismExtensionsTerrainRuntime.geometryJournal.quarantined then
+                    RealismExtensionsDiagnostics.warn(
+                        "Terrain MAIN journal QUARANTINED after deferred load: "
+                        ..tostring(restored)
+                        .."; native recovery and new RE MAIN writes denied"
+                    )
                 else
                     RealismExtensionsDiagnostics.info(
                         "native journal ready; no trusted sidecar: "..tostring(restored)
@@ -1220,11 +1232,17 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
             )
         if geoOk then
             RealismExtensionsDiagnostics.info(string.format(
-                "saved native geometry journal cells=%d unknown=%d preSaveOwnershipRevoked=%d runtimeOwnershipRevoked=%d",
+                "saved native geometry journal cells=%d unknown=%d fences=%d preSaveOwnershipRevoked=%d runtimeOwnershipRevoked=%d",
                 geoCount or 0,unknown or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.recoveryFenceCount or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.preSaveOwnershipDriftDowngraded or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.runtimeOwnershipDriftDowngraded or 0
             ))
+        elseif RealismExtensionsTerrainRuntime.geometryJournal.quarantined then
+            RealismExtensionsDiagnostics.warn(
+                "Terrain MAIN journal QUARANTINED; refusing to overwrite "
+                .."persisted recovery provenance: "..tostring(geoCount)
+            )
         else
             RealismExtensionsDiagnostics.info(
                 "geometry journal not saved: "..tostring(geoCount)
