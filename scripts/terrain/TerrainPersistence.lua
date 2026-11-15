@@ -33,7 +33,7 @@ function Persistence.getPath(missionInfo)
     return missionInfo.savegameDirectory .. "/" .. Persistence.FILE_NAME
 end
 
-function Persistence.save(missionInfo, history)
+function Persistence.save(missionInfo, history, options)
     if g_server == nil or history == nil or missionInfo == nil
         or missionInfo.isValid ~= true then
         return false, "not authoritative save context"
@@ -55,6 +55,11 @@ function Persistence.save(missionInfo, history)
     xmlFile:setString(root .. "#mapId", getMapIdentity() or "")
     xmlFile:setFloat(root .. "#cellSizeM", snapshot.cellSizeM)
     xmlFile:setInt(root .. "#historyVersion", snapshot.version)
+    -- This non-atomic cross-sidecar presence witness prevents an expected
+    -- recovered MAIN journal from disappearing silently after a crash.
+    -- No mechanical XML format upgrade; absent field in old files is false.
+    xmlFile:setBool(root .. "#geometryJournalExpected",
+        type(options)=="table" and options.expectGeometryJournal==true)
 
     for i, cell in ipairs(snapshot.cells) do
         local key = string.format("%s.cells.cell(%d)", root, i - 1)
@@ -111,14 +116,16 @@ function Persistence.load(missionInfo, history)
     local mapId = xmlFile:getString(root .. "#mapId", "")
     local cellSizeM = xmlFile:getFloat(root .. "#cellSizeM", -1)
     local historyVersion = xmlFile:getInt(root .. "#historyVersion", 0)
+    local geometryExpected=xmlFile:getBool(
+        root .. "#geometryJournalExpected",false)==true
 
     if formatVersion ~= Persistence.FORMAT_VERSION then
         xmlFile:delete()
-        return false, "format version mismatch"
+        return false, "format version mismatch",geometryExpected
     end
     if mapId ~= (getMapIdentity() or "") then
         xmlFile:delete()
-        return false, "map identity mismatch"
+        return false, "map identity mismatch",geometryExpected
     end
 
     local snapshot = {
@@ -192,13 +199,13 @@ function Persistence.load(missionInfo, history)
                 mismatches,
                 ratio,
                 maxDelta
-            )
+            ),geometryExpected
         end
     end
 
     local ok, reason = history:importSnapshot(snapshot)
-    if not ok then return false, reason end
-    return true, #snapshot.cells
+    if not ok then return false, reason,geometryExpected end
+    return true, #snapshot.cells,geometryExpected
 end
 
 
