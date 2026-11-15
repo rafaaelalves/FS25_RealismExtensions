@@ -62,6 +62,7 @@ function RealismExtensionsCore:loadMap()
     self.terrainHealthElapsedMs = 0
     self.terrainDiagPrevious = nil
     self.nativeSpatialProbeElapsedMs = 1000
+    self.geometryJournalExpectedFromHistory=false
 
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
@@ -124,10 +125,11 @@ function RealismExtensionsCore:loadMap()
         and RealismExtensionsTerrainPersistence ~= nil
         and RealismExtensionsTerrainRuntime ~= nil
         and RealismExtensionsTerrainRuntime.history ~= nil then
-        local ok, detail = RealismExtensionsTerrainPersistence.load(
+        local ok,detail,geometryExpected=RealismExtensionsTerrainPersistence.load(
             g_currentMission ~= nil and g_currentMission.missionInfo or nil,
             RealismExtensionsTerrainRuntime.history
         )
+        self.geometryJournalExpectedFromHistory=geometryExpected==true
         if ok then
             RealismExtensionsDiagnostics.info(
                 "restored terrain history cells=" .. tostring(detail)
@@ -147,7 +149,8 @@ function RealismExtensionsCore:loadMap()
         self.geometryJournalLoadAttempted = true
         local ok, restored, invalid = RealismExtensionsTerrainPersistence.loadGeometryJournal(
             g_currentMission ~= nil and g_currentMission.missionInfo or nil,
-            RealismExtensionsTerrainRuntime.geometryJournal
+            RealismExtensionsTerrainRuntime.geometryJournal,
+            self.geometryJournalExpectedFromHistory
         )
         if ok then
             RealismExtensionsDiagnostics.info(string.format(
@@ -307,7 +310,8 @@ function RealismExtensionsCore:update(dt)
             if jp ~= nil then
                 local ok, restored, rejected = jp.loadGeometryJournal(
                     g_currentMission ~= nil and g_currentMission.missionInfo or nil,
-                    RealismExtensionsTerrainRuntime.geometryJournal
+                    RealismExtensionsTerrainRuntime.geometryJournal,
+                    self.geometryJournalExpectedFromHistory
                 )
                 if ok then
                     RealismExtensionsDiagnostics.info(string.format(
@@ -1173,6 +1177,7 @@ function RealismExtensionsCore:deleteMap()
     self.terrainDiagPrevious = nil
     self._terrainDiagNextSnapshot = nil
     self.geometryJournalLoadAttempted = false
+    self.geometryJournalExpectedFromHistory=false
 
     if RealismExtensionsTerrainRecovery ~= nil
         and type(RealismExtensionsTerrainRecovery.resetRuntimeState) == "function" then
@@ -1210,9 +1215,13 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
         return
     end
 
+    local requiresGeometry=getModules().TerrainGeometryJournal==true
+        or RealismExtensionsTerrainRuntime.geometryJournal~=nil
+        or RealismExtensionsCore.geometryJournalExpectedFromHistory==true
     local ok, detail = RealismExtensionsTerrainPersistence.save(
         missionInfo,
-        RealismExtensionsTerrainRuntime.history
+        RealismExtensionsTerrainRuntime.history,
+        {expectGeometryJournal=requiresGeometry}
     )
     if ok then
         RealismExtensionsDiagnostics.verbose(
