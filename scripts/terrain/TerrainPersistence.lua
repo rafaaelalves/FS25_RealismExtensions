@@ -252,6 +252,7 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
         xml:setFloat(key.."#observedHeightM",f.observedHeightM)
         xml:setBool(key.."#completed",f.completed==true)
         xml:setBool(key.."#trusted",f.trusted==true)
+        xml:setBool(key.."#accounted",f.accounted==true)
     end
     xml:save()
     xml:delete()
@@ -294,7 +295,11 @@ function Persistence.loadGeometryJournal(missionInfo,journal)
                 originalY=xml:getFloat(key.."#originalY"),
                 observedHeightM=xml:getFloat(key.."#observedHeightM"),
                 completed=xml:getBool(key.."#completed",false),
-                trusted=xml:getBool(key.."#trusted",false)
+                trusted=xml:getBool(key.."#trusted",false),
+                -- V3 has no such field, and an old physical witness can
+                -- never be promoted to a PAID depth reconciliation.
+                accounted=ver>=4
+                    and xml:getBool(key.."#accounted",false) or false
             }
         end)
     end
