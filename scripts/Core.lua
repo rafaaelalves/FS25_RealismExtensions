@@ -1241,9 +1241,13 @@ function RealismExtensionsCore.saveToXMLFile(missionInfo)
             )
         if geoOk then
             RealismExtensionsDiagnostics.info(string.format(
-                "saved native geometry journal cells=%d unknown=%d fences=%d preSaveOwnershipRevoked=%d runtimeOwnershipRevoked=%d",
+                "saved native geometry journal cells=%d unknown=%d observedQuota=%d/%d reserved=%d fences=%d/%d preSaveOwnershipRevoked=%d runtimeOwnershipRevoked=%d",
                 geoCount or 0,unknown or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.observationCount or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.maxObservations or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.reservedObservationSlots or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.recoveryFenceCount or 0,
+                RealismExtensionsTerrainRuntime.geometryJournal.maxRecoveryFences or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.preSaveOwnershipDriftDowngraded or 0,
                 RealismExtensionsTerrainRuntime.geometryJournal.stats.runtimeOwnershipDriftDowngraded or 0
             ))
