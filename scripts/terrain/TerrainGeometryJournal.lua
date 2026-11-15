@@ -916,6 +916,13 @@ function Journal:exportSnapshot()
             observedHeightM=current,owned=entry.owned==true
         }
     end
+    if #cells~=self.observationCount then
+        -- Even research helpers must not mutate observations behind the
+        -- quota ledger. Refuse a malformed sidecar, never fix the count
+        -- by forgetting provenance or allow more native jobs.
+        self:quarantine("GEOMETRY_OBSERVATION_COUNT_MISMATCH")
+        return nil,"GEOMETRY_OBSERVATION_COUNT_MISMATCH"
+    end
     table.sort(cells,function(a,b)return a.key<b.key end)
     local fences={}
     if self.recoveryFenceCount>self.maxRecoveryFences then
