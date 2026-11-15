@@ -566,6 +566,52 @@ function Journal:invalidateCompletedFootprint(token,reason)
     return true,invalidated
 end
 
+-- An isolated research setter can already have physically moved a
+-- vertex when its caller discovers unsafe readback/quantization. The
+-- caller MUST NOT write self.observations directly: losing an observation
+-- quota count would allow bounded imports to be silently exceeded.
+-- This path records diagnostic-only native height and permanently removes
+-- all physical recovery authority throughout its observed footprint.
+function Journal:invalidateRecoveryCandidate(token,point)
+    if type(token)~="table" or token.journal~=self
+        or token.active==true or type(token.points)~="table"
+        or type(point)~="table" or type(point.key)~="string" then
+        return self:quarantine("RECOVERY_INVALIDATION_CONTEXT_UNAVAILABLE")
+    end
+    for _,p in ipairs(token.points) do
+        local e=self.observations[p.key]
+        if e~=nil then
+            e.owned=false
+            local y=self:getHeight(p.x,p.z)
+            if finite(y) then e.observedHeightM=y end
+        end
+        local f=self.recoveryFences[p.key]
+        if f~=nil then
+            f.trusted=false
+            f.accounted=false
+        end
+    end
+    if self.observations[point.key]==nil then
+        local y=self:getHeight(point.x,point.z)
+        if not finite(y) then
+            return self:quarantine("RECOVERY_INVALIDATION_HEIGHT_UNAVAILABLE")
+        end
+        if self.observationCount>=self.maxObservations then
+            -- Native geometry may already have changed; there is no
+            -- safe eviction policy for another old owned observation.
+            return self:quarantine("RECOVERY_INVALIDATION_OBSERVATION_CAPACITY")
+        end
+        self.observations[point.key]={
+            x=point.x,z=point.z,preREHeightM=point.originalY,
+            observedHeightM=y,owned=false
+        }
+        self.observationCount=self.observationCount+1
+    else
+        self.observations[point.key].owned=false
+    end
+    return true,"RECOVERY_CANDIDATE_PROVENANCE_REVOKED"
+end
+
 -- Experimental causal restitution applies only to a geometry vertex with
 -- verified pre-RE reference and an unchanged, still-owned RE lowering.
 -- It never infers a height from legacy 0.20m mechanical rut debt.
