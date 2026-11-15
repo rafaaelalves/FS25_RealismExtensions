@@ -134,4 +134,20 @@ assert(exhausted.observations["70:70"].owned==false)
 assert(exhausted.observations["80:80"]==nil)
 assert(select(2,exhausted:exportSnapshot())
     =="GEOMETRY_JOURNAL_QUARANTINED")
+-- An accidental direct mutation (e.g. an experimental helper) cannot
+-- produce a saved v5 manifest while the reservation/count ledger is
+-- inconsistent. Export must quarantine rather than silently normalize.
+local rogue=journal(10)
+local r=assert(rogue:begin("known",90,90,0.30))
+set(90,90,99.98)
+assert(rogue:complete(r,true).loweredVertices==1)
+assert(rogue.observationCount==1)
+rogue.observations["91:91"]={
+    x=91,z=91,preREHeightM=100,observedHeightM=100,owned=false
+}
+local inconsistent,incWhy=rogue:exportSnapshot()
+assert(inconsistent==nil and incWhy=="GEOMETRY_OBSERVATION_COUNT_MISMATCH")
+assert(rogue.quarantined)
+assert(rogue.observations["90:90"].owned==false)
+
 print("terrain_geometry_observation_quota_harness: OK")
