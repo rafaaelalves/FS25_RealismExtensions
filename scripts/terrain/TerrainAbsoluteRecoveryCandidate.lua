@@ -61,27 +61,15 @@ local function isExclusive(candidate)
 end
 
 local function untrust(journal,token,point)
-    -- A failed native setter might have physically changed the center
-    -- despite reporting failure. Do not grant future recovery ownership.
-    for _,p in ipairs(token.points or {}) do
-        local e=journal.observations[p.key]
-        if e~=nil then
-            e.owned=false
-            local y=journal:getHeight(p.x,p.z)
-            if finite(y) then e.observedHeightM=y end
-        end
+    -- The native setter may already have moved physical terrain before
+    -- returning a failure or an anomalous q-step. Journal owns ALL
+    -- provenance bookkeeping, including the strict no-eviction quota.
+    -- Never assign journal.observations directly from a research candidate.
+    if journal==nil
+        or type(journal.invalidateRecoveryCandidate)~="function" then
+        return false,"RECOVERY_INVALIDATION_API_UNAVAILABLE"
     end
-    -- A fully restored entry may have been retired by finishRecovery()
-    -- before the caller noticed a quantum mismatch. Preserve the
-    -- ORIGINAL baseline as diagnostic-only data, never as RE ownership.
-    if journal.observations[point.key]==nil then
-        journal.observations[point.key]={
-            x=point.x,z=point.z,
-            preREHeightM=point.originalY,
-            observedHeightM=journal:getHeight(point.x,point.z),
-            owned=false
-        }
-    end
+    return journal:invalidateRecoveryCandidate(token,point)
 end
 
 -- One physical raising operation, at exactly one MAIN grid vertex.
