@@ -444,6 +444,17 @@ function Journal:invalidateCompletedFootprint(token,reason)
             if e.owned==true then invalidated=invalidated+1 end
             e.owned=false
         end
+        -- Native anomalies can touch an independently RE-owned recovery
+        -- vertex even if its OWN center height happens not to move.
+        -- The old 3x3 provenance is no longer exclusive, so do not keep
+        -- a paid fence trusted after quarantining this footprint.
+        local f=self.recoveryFences[point.key]
+        if f~=nil and f.trusted==true then
+            f.trusted=false
+            self.stats.recoveredFenceDowngraded=
+                self.stats.recoveredFenceDowngraded+1
+        end
+        if f~=nil then f.accounted=false end
     end
     token.ownershipInvalidated=true
     token.ownershipInvalidationReason=tostring(reason or "UNTRUSTED_NATIVE_OUTCOME")
