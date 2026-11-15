@@ -9,7 +9,7 @@
 RealismExtensionsTerrainQuantizedHeightBudget =
     RealismExtensionsTerrainQuantizedHeightBudget or {}
 local Model = RealismExtensionsTerrainQuantizedHeightBudget
-Model.VERSION = 7
+Model.VERSION = 8
 
 local function finite(v)
     return type(v)=="number" and v==v
@@ -224,6 +224,7 @@ end
 function Model:syncVerifiedRecovery(journal,proof)
     if self.quarantined then return false,"QUARANTINED" end
     if type(journal)~="table"
+        or type(journal.verifyRecoveryProof)~="function"
         or type(journal.consumeRecoveryProof)~="function"
         or type(proof)~="table"
         or type(proof.key)~="string" then
@@ -234,15 +235,23 @@ function Model:syncVerifiedRecovery(journal,proof)
         return false,"NO_CUMULATIVE_TARGET"
     end
     if item.pending~=nil then return false,"VERTEX_PENDING" end
-    local measured,why=journal:consumeRecoveryProof(proof)
-    if measured==nil then
+    -- Preview MUST be pure. Otherwise an excessive or mismatched budget
+    -- could spend a physical receipt and persist a trusted fence before
+    -- discovering that the old owned depth was never actually paid for.
+    local verified,why=journal:verifyRecoveryProof(proof)
+    if verified==nil then
         self.quarantined=true
         return false,why
     end
-    if math.abs((item.committedM or 0)-measured.beforeDepthM)>0.00001
-        or measured.afterDepthM>=measured.beforeDepthM-0.00001 then
+    if math.abs((item.committedM or 0)-verified.beforeDepthM)>0.00001
+        or verified.afterDepthM>=verified.beforeDepthM-0.00001 then
         self.quarantined=true
         return false,"RECOVERY_LEDGER_OR_DEPTH_MISMATCH"
+    end
+    local measured,commitWhy=journal:consumeRecoveryProof(proof)
+    if measured==nil then
+        self.quarantined=true
+        return false,commitWhy
     end
     -- Reset paid depth to actual remaining physical depression, never
     -- to an unverified target. Crucially, freeze replay of the older
