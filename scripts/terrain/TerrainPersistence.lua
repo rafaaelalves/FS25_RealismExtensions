@@ -284,12 +284,17 @@ function Persistence.saveGeometryJournal(missionInfo,journal)
     return true,#snapshot.cells,snapshot.unknown
 end
 
-function Persistence.loadGeometryJournal(missionInfo,journal)
+function Persistence.loadGeometryJournal(missionInfo,journal,geometryExpected)
     if g_server==nil or journal==nil or type(journal.importSnapshot)~="function" then
         return false,"not authoritative geometry load context"
     end
     local path=Persistence.getGeometryPath(missionInfo)
     if path==nil or fileExists(path)~=true then
+        if geometryExpected==true
+            and type(journal.quarantine)=="function" then
+            return journal:quarantine(
+                "GEOMETRY_SIDECAR_MISSING_WITH_HISTORY_WITNESS")
+        end
         return false,"no persisted geometry journal"
     end
     local xmlLoaded,xml=pcall(XMLFile.load,
