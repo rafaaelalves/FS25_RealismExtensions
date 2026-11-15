@@ -139,7 +139,7 @@ end
 assert(geometryPath~=nil)
 local versionKey=RealismExtensionsTerrainPersistence.GEOMETRY_ROOT..
     "#formatVersion"
-assert(files[geometryPath][versionKey]==4)
+assert(files[geometryPath][versionKey]==5)
 files[geometryPath][versionKey]=1
 local legacyJournal=geoApi.new(42,{unitM=1})
 local legacyOk,legacyCount,legacyRejected=
@@ -159,7 +159,7 @@ local v2ok,v2count,v2bad=
         g_currentMission.missionInfo,legacyV2)
 assert(v2ok and v2count>=1 and v2bad==0)
 assert(legacyV2.observations["5:5"].owned==true)
-files[geometryPath][versionKey]=4
+files[geometryPath][versionKey]=5
 
 -- Imported references must not authorize restore if saved geometry differs
 -- from the loaded GIANTS heightmap after a manual landscaping operation.
