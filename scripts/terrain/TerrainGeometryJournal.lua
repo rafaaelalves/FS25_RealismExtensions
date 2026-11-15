@@ -8,7 +8,7 @@ local Journal = RealismExtensionsTerrainGeometryJournal
 
 -- Version 2 revokes unverified ownership from old v1 sidecars. Legacy
 -- geometry remains unchanged; only automatic recovery authority changes.
-Journal.VERSION = 4
+Journal.VERSION = 5
 -- Only this small unobserved drift may preserve RE physical ownership.
 -- The legacy 2mm runtime and 5mm reload tolerances are for recording
 -- contextual observations, not authorizing future soil RESTORATION.
@@ -64,6 +64,10 @@ function Journal.new(terrain, options)
         maxRecoveryFences=math.max(1,
             math.floor(tonumber(options.maxRecoveryFences) or 50000)),
         recoveryFenceCount=0,
+        -- A missing/corrupt sidecar cannot make old paid recovery history
+        -- disappear and silently re-enable new MAIN writes.
+        quarantined=false,
+        quarantineReason=nil,
         stats = {
             requested = 0,started = 0,overlapRejected = 0,
             unavailable = 0,aborted = 0,completed = 0,
@@ -79,6 +83,8 @@ function Journal.new(terrain, options)
             preSaveOwnershipDriftDowngraded = 0,
             recoveredFenceDowngraded = 0,
             reloadedRecoveryFences = 0,
+            importQuarantines=0,
+            importForeignHeightDowngrades=0,
             recoveryFenceCapacityRefusals = 0,
             recoveryProofsUnaccounted = 0,
             recoveryProofsReconciled = 0
@@ -92,6 +98,56 @@ function Journal:getHeight(x,z)
         return finite(v) and v or nil
     end
     return nativeHeight(self.terrain,x,z)
+end
+
+-- A portable (Lua 5.4, no bit libraries) coordinate fingerprint.
+-- Counts detect truncated XML; sorted native vertex keys detect duplicate
+-- or substituted records even when the row count happens to match.
+-- Hash does NOT certify numeric heights or GIANTS save atomicity; those
+-- still require independent native height readback and ownership checks.
+local function vertexFingerprint(rows,unit)
+    if type(rows)~="table" or not finite(unit) or unit<=0 then
+        return nil
+    end
+    local keys={}
+    for _,v in ipairs(rows) do
+        if type(v)~="table" or not finite(v.x) or not finite(v.z) then
+            return nil
+        end
+        local ix=math.floor(v.x/unit+0.5)
+        local iz=math.floor(v.z/unit+0.5)
+        if math.abs(ix*unit-v.x)>0.00001
+            or math.abs(iz*unit-v.z)>0.00001 then
+            return nil
+        end
+        keys[#keys+1]=tostring(ix)..":"..tostring(iz)
+    end
+    table.sort(keys)
+    local hash=2166136261
+    for _,key in ipairs(keys) do
+        for i=1,#key do
+            -- Keep intermediate multiplication exact under 2^53.
+            hash=(hash*131+key:byte(i))%4294967296
+        end
+        hash=(hash*131+124)%4294967296
+    end
+    return string.format("%08x",hash)
+end
+
+-- A malformed, incompatible or incomplete EXISTING sidecar is a global
+-- loss-of-provenance event. Never salvage its partial entries into a
+-- new authorization epoch or overwrite the original on a later save.
+function Journal:quarantine(reason)
+    self.quarantined=true
+    self.quarantineReason=tostring(reason or "GEOMETRY_PROVENANCE_UNAVAILABLE")
+    self.stats.importQuarantines=self.stats.importQuarantines+1
+    for _,e in pairs(self.observations) do e.owned=false end
+    for _,f in pairs(self.recoveryFences) do
+        f.trusted=false
+        f.accounted=false
+    end
+    self.recoveryProofs={}
+    return false,self.quarantineReason
 end
 
 -- Coordinate/vertex ownership is deliberately explicit. 0.20m RE history
@@ -146,6 +202,7 @@ end
 -- NOT a recovery command or a replacement for Mud's traction/sink physics.
 -- Only samples the principal heightmap and is slope-invariant for a plane.
 function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
+    if self.quarantined then return 0,"GEOMETRY_JOURNAL_QUARANTINED" end
     if not finite(self.unitM) then return nil,"UNIT_UNAVAILABLE" end
     local cap=tonumber(maxVerifiedDepthM) or 0.10
     local reliefCap=tonumber(maxConcavityM) or 0.12
@@ -205,6 +262,7 @@ function Journal:getLoweringBudget(x,z,radiusM,maxVerifiedDepthM,maxConcavityM)
 end
 
 function Journal:begin(logicalKey,x,z,radiusM)
+    if self.quarantined then return nil,"GEOMETRY_JOURNAL_QUARANTINED" end
     self.stats.requested=self.stats.requested+1
     local verts = self:enumerateVertices(x,z,radiusM)
     if verts == nil or #verts == 0 or logicalKey == nil
@@ -477,7 +535,7 @@ end
 -- verified pre-RE reference and an unchanged, still-owned RE lowering.
 -- It never infers a height from legacy 0.20m mechanical rut debt.
 function Journal:getRecoverablePoint(ix, iz, minDepthM)
-    if not finite(self.unitM) then return nil end
+    if self.quarantined or not finite(self.unitM) then return nil end
     local key=tostring(ix)..":"..tostring(iz)
     if self.pendingByVertex[key]~=nil then return nil end
     local e=self.observations[key]
@@ -503,6 +561,7 @@ function Journal:getRecoverablePoint(ix, iz, minDepthM)
 end
 
 function Journal:beginRecovery(point, radiusM, requestProof)
+    if self.quarantined then return nil,"GEOMETRY_JOURNAL_QUARANTINED" end
     if type(point)~="table" or not finite(self.unitM) then
         return nil,"NO_TRUSTED_VERTEX"
     end
@@ -723,13 +782,21 @@ end
 -- the terrain result were confirmed, and never retroactively reconstruct an
 -- unknown original from the observed rut.
 function Journal:exportSnapshot()
+    if self.quarantined then
+        return nil,"GEOMETRY_JOURNAL_QUARANTINED"
+    end
     if self.pendingCount>0 then return nil,"PENDING_NATIVE_WRITES" end
     local cells={}
     local unknown=0
     for key,entry in pairs(self.observations) do
         local current=self:getHeight(entry.x,entry.z)
-        local drift=finite(current)
-            and math.abs(current-entry.observedHeightM) or math.huge
+        if not finite(current) then
+            -- Do not overwrite a previously good XML with a sidecar
+            -- silently missing an owned cell while GIANTS height isn't
+            -- readable during a native save phase.
+            return nil,"GEOMETRY_EXPORT_HEIGHT_UNAVAILABLE"
+        end
+        local drift=math.abs(current-entry.observedHeightM)
         if drift>Journal.OWNED_HEIGHT_DRIFT_M
             and entry.owned==true then
             -- IMPORTANT: exporting a sidecar must never silently rebase
@@ -739,17 +806,18 @@ function Journal:exportSnapshot()
             self.stats.preSaveOwnershipDriftDowngraded=
                 self.stats.preSaveOwnershipDriftDowngraded+1
         end
-        if drift<=0.002 then
-            cells[#cells+1]={
-                key=key,x=entry.x,z=entry.z,
-                preREHeightM=entry.preREHeightM,
-                observedHeightM=current,owned=entry.owned==true
-            }
-        else
-            -- Large unknown terrain changes remain untrusted; refuse
-            -- to save stale baseline/ownership into the next session.
+        if drift>0.002 then
+            -- Preserve a foreign-edited vertex as an UNTRUSTED deny
+            -- marker; dropping it would open the gate after reload.
             unknown=unknown+1
+            entry.owned=false
         end
+        entry.observedHeightM=current
+        cells[#cells+1]={
+            key=key,x=entry.x,z=entry.z,
+            preREHeightM=entry.preREHeightM,
+            observedHeightM=current,owned=entry.owned==true
+        }
     end
     table.sort(cells,function(a,b)return a.key<b.key end)
     local fences={}
@@ -769,139 +837,184 @@ function Journal:exportSnapshot()
         if a.x==b.x then return a.z<b.z end
         return a.x<b.x
     end)
+    local cellFingerprint=vertexFingerprint(cells,self.unitM)
+    local fenceFingerprint=vertexFingerprint(fences,self.unitM)
+    if cellFingerprint==nil or fenceFingerprint==nil then
+        return nil,"GEOMETRY_EXPORT_COORDINATES_INVALID"
+    end
     return {version=Journal.VERSION,unitM=self.unitM,cells=cells,
-        fences=fences,unknown=unknown}
+        fences=fences,unknown=unknown,
+        manifest={cellCount=#cells,fenceCount=#fences,
+            cellKeys=cellFingerprint,fenceKeys=fenceFingerprint}}
 end
 
 function Journal:importSnapshot(snapshot)
+    if self.quarantined then return false,"GEOMETRY_JOURNAL_QUARANTINED" end
     if self.pendingCount>0 then return false,"PENDING_NATIVE_WRITES" end
-    -- Version 1 could serialize anomalous callback outcomes as RE-owned
-    -- before the observed-vs-requested mismatch was checked. Preserve its
-    -- map samples as untrusted observations but never auto-restore them.
-    local isLegacyV1=type(snapshot)=="table" and snapshot.version==1
-    local isLegacyV2=type(snapshot)=="table" and snapshot.version==2
-    local isLegacyV3=type(snapshot)=="table" and snapshot.version==3
-    if type(snapshot)~="table"
-        or (snapshot.version~=Journal.VERSION and not isLegacyV1
-            and not isLegacyV2 and not isLegacyV3)
+    local v=type(snapshot)=="table" and snapshot.version or nil
+    local legacyV1=v==1
+    local legacyV3=v==3
+    local legacyV4=v==4
+    local strict=v==Journal.VERSION
+    if type(snapshot)~="table" or not (v==1 or v==2
+            or legacyV3 or legacyV4 or strict)
         or not finite(snapshot.unitM) or not finite(self.unitM)
         or math.abs(snapshot.unitM-self.unitM)>0.00001
         or type(snapshot.cells)~="table" then
-        return false,"GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH"
+        return self:quarantine("GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH")
     end
-    local restored,rejected,legacyDowngraded=0,0,0
-    local driftDowngraded=0
-    -- A 5mm import match was intended to RETAIN diagnostic samples,
-    -- not to certify persistent RE-owned geometry. One native MAIN step
-    -- on the tested map is only ~3.891mm; accepting a full step of
-    -- unobserved drift as RE-owned would permit unauthorized restitution.
-    -- Independent 11/12-Nov actual save/reload was identical to the
-    -- displayed float32 height. Keep 5mm for untrusted record continuity
-    -- but require <=10um to preserve physical RECOVERY authority.
-    local ownerReloadDriftM=Journal.OWNED_HEIGHT_DRIFT_M
-    local loaded={}
+    if strict then
+        local m=snapshot.manifest
+        if type(snapshot.fences)~="table" or type(m)~="table"
+            or not finite(m.cellCount) or not finite(m.fenceCount)
+            or m.cellCount~=#snapshot.cells
+            or m.fenceCount~=#snapshot.fences
+            or m.cellCount~=math.floor(m.cellCount)
+            or m.fenceCount~=math.floor(m.fenceCount)
+            or m.cellKeys~=vertexFingerprint(snapshot.cells,self.unitM)
+            or m.fenceKeys~=vertexFingerprint(snapshot.fences,self.unitM) then
+            return self:quarantine("GEOMETRY_JOURNAL_MANIFEST_MISMATCH")
+        end
+    end
+    if (strict or legacyV3 or legacyV4)
+        and (type(snapshot.fences)~="table"
+            or #snapshot.fences>self.maxRecoveryFences) then
+        return self:quarantine("RECOVERY_FENCE_IMPORT_CAPACITY")
+    end
+    local loaded,fences={}
+    local restored,rejected,legacyDowngraded,driftDowngraded=0,0,0,0
+    local foreignDowngraded=0
     for _,cell in ipairs(snapshot.cells) do
-        if type(cell)=="table" and finite(cell.x) and finite(cell.z)
-            and finite(cell.preREHeightM) and finite(cell.observedHeightM) then
+        local ok=type(cell)=="table" and finite(cell.x)
+            and finite(cell.z) and finite(cell.preREHeightM)
+            and finite(cell.observedHeightM)
+        if ok then
             local ix=math.floor(cell.x/self.unitM+0.5)
             local iz=math.floor(cell.z/self.unitM+0.5)
             local x,z=ix*self.unitM,iz*self.unitM
-            local current=self:getHeight(x,z)
-            if finite(current) and math.abs(current-cell.observedHeightM)<=0.005
-                and math.abs(x-cell.x)<=0.00001
-                and math.abs(z-cell.z)<=0.00001 then
+            local key=tostring(ix)..":"..tostring(iz)
+            local aligned=math.abs(x-cell.x)<=0.00001
+                and math.abs(z-cell.z)<=0.00001
+            local current=aligned and self:getHeight(x,z) or nil
+            if strict and (not aligned or loaded[key]~=nil
+                or not finite(current) or type(cell.owned)~="boolean") then
+                return self:quarantine("GEOMETRY_JOURNAL_CELL_INVALID")
+            end
+            local drift=finite(current)
+                and math.abs(current-cell.observedHeightM) or math.huge
+            if aligned and finite(current)
+                and (drift<=0.005 or strict) then
                 local formerlyOwned=cell.owned==true
-                local drift=math.abs(current-cell.observedHeightM)
-                local reloadTrusted=drift<=ownerReloadDriftM
-                loaded[tostring(ix)..":"..tostring(iz)]={
+                local physicallyTrusted=drift<=Journal.OWNED_HEIGHT_DRIFT_M
+                if strict and drift>0.005 then
+                    -- This is an independently observed FOREIGN edit,
+                    -- not malformed XML. Retain the native key but
+                    -- remove its RE-owned ability to raise/dig.
+                    foreignDowngraded=foreignDowngraded+1
+                end
+                loaded[key]={
                     x=x,z=z,preREHeightM=cell.preREHeightM,
                     observedHeightM=current,
-                    owned=formerlyOwned and not isLegacyV1
-                        and reloadTrusted
+                    owned=formerlyOwned and not legacyV1
+                        and physicallyTrusted
                 }
-                if isLegacyV1 and formerlyOwned then
+                if legacyV1 and formerlyOwned then
                     legacyDowngraded=legacyDowngraded+1
-                elseif formerlyOwned and not reloadTrusted then
+                elseif formerlyOwned and not physicallyTrusted then
                     driftDowngraded=driftDowngraded+1
                 end
                 restored=restored+1
             else
                 rejected=rejected+1
             end
+        elseif strict then
+            return self:quarantine("GEOMETRY_JOURNAL_CELL_MALFORMED")
         else
             rejected=rejected+1
         end
     end
-    self.observations=loaded
-    self.recoveryFences={}
-    self.recoveryProofs={}
-    self.recoveryFenceCount=0
-    if snapshot.version==Journal.VERSION or isLegacyV3 then
-        if type(snapshot.fences)~="table"
-            or #snapshot.fences>self.maxRecoveryFences then
-            -- Do not partially import an oversized tombstone list and
-            -- silently lose the old-epoch deny markers beyond the cap.
-            self.observations={}
-            return false,"RECOVERY_FENCE_IMPORT_CAPACITY"
-        end
-        for _,f in ipairs(snapshot.fences or {}) do
-            if type(f)=="table" and finite(f.x) and finite(f.z)
-                and finite(f.originalY) and finite(f.observedHeightM)
+    local fenceCount=0
+    if strict or legacyV3 or legacyV4 then
+        for _,f in ipairs(snapshot.fences) do
+            local ok=type(f)=="table" and finite(f.x)
+                and finite(f.z) and finite(f.originalY)
+                and finite(f.observedHeightM)
                 and type(f.completed)=="boolean"
-                and type(f.trusted)=="boolean" then
+                and type(f.trusted)=="boolean"
+            if strict then
+                ok=ok and type(f.accounted)=="boolean"
+            end
+            if ok then
                 local ix=math.floor(f.x/self.unitM+0.5)
                 local iz=math.floor(f.z/self.unitM+0.5)
                 local x,z=ix*self.unitM,iz*self.unitM
                 local key=tostring(ix)..":"..tostring(iz)
-                if math.abs(x-f.x)<=0.00001
+                local aligned=math.abs(x-f.x)<=0.00001
                     and math.abs(z-f.z)<=0.00001
-                    and self.recoveryFences[key]==nil then
+                if strict and (not aligned or fences[key]~=nil) then
+                    return self:quarantine("RECOVERY_FENCE_KEY_INVALID")
+                end
+                if aligned and fences[key]==nil then
                     local y=self:getHeight(x,z)
+                    if strict and not finite(y) then
+                        return self:quarantine("RECOVERY_FENCE_NATIVE_HEIGHT_UNAVAILABLE")
+                    end
                     local trusted=f.trusted==true and finite(y)
                         and math.abs(y-f.observedHeightM)
                             <=Journal.OWNED_HEIGHT_DRIFT_M
                     local e=loaded[key]
                     if trusted then
-                        trusted=f.completed and e==nil
-                            and math.abs(f.originalY-y)<=0.0011
-                            or not f.completed and e~=nil
+                        trusted=(f.completed and e==nil
+                            and math.abs(f.originalY-y)<=0.0011)
+                            or (not f.completed and e~=nil
                             and e.owned==true
                             and math.abs(e.preREHeightM-f.originalY)
                                 <=Journal.OWNED_HEIGHT_DRIFT_M
                             and math.abs(e.observedHeightM-y)
-                                <=Journal.OWNED_HEIGHT_DRIFT_M
+                                <=Journal.OWNED_HEIGHT_DRIFT_M)
                     end
-                    -- V3 never distinguished a physically genuine
-                    -- recovery from one reconciled to paid MAIN wheel
-                    -- depth. Import its geometry, but never invent paid
-                    -- authorization across the schema transition.
-                    local accounted=snapshot.version==Journal.VERSION
-                        and f.accounted==true and trusted==true
-                    self.recoveryFences[key]={
+                    -- Old V3/V4 never carried structural v5 manifest;
+                    -- physical readback may be trustworthy, but no
+                    -- automatically PAID epoch is silently migrated.
+                    local accounted=strict and f.accounted==true
+                        and trusted==true
+                    fences[key]={
                         x=x,z=z,originalY=f.originalY,
                         observedHeightM=f.observedHeightM,
                         completed=f.completed,trusted=trusted==true,
-                        accounted=accounted,pendingProof=false
+                        accounted=accounted==true,pendingProof=false
                     }
-                    self.recoveryFenceCount=self.recoveryFenceCount+1
-                    self.stats.reloadedRecoveryFences=
-                        self.stats.reloadedRecoveryFences+1
+                    fenceCount=fenceCount+1
                     if f.trusted and not trusted then
                         self.stats.recoveredFenceDowngraded=
                             self.stats.recoveredFenceDowngraded+1
                     end
                 end
+            elseif strict then
+                return self:quarantine("RECOVERY_FENCE_MALFORMED")
             end
         end
     end
+    -- Atomic RAM publication: failed manifest/cap/duplicate/native probes
+    -- never leave a half-loaded subset that subsequent wheel samples trust.
+    self.observations=loaded
+    self.recoveryFences=fences
+    self.recoveryFenceCount=fenceCount
+    self.recoveryProofs={}
+    self.stats.reloadedRecoveryFences=
+        self.stats.reloadedRecoveryFences+fenceCount
     self.stats.legacyProvenanceDowngraded=
-        (self.stats.legacyProvenanceDowngraded or 0)+legacyDowngraded
+        self.stats.legacyProvenanceDowngraded+legacyDowngraded
     self.stats.reloadOwnershipDriftDowngraded=
-        (self.stats.reloadOwnershipDriftDowngraded or 0)+driftDowngraded
+        self.stats.reloadOwnershipDriftDowngraded+driftDowngraded
+    self.stats.importForeignHeightDowngrades=
+        self.stats.importForeignHeightDowngrades+foreignDowngraded
     return true,restored,rejected
 end
 
 function Journal:reset()
+    self.quarantined=false
+    self.quarantineReason=nil
     self.recoveryFenceCount=0
     self.recoveryFences={}
     self.recoveryProofs={}
