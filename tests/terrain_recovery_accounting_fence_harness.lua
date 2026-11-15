@@ -53,7 +53,7 @@ assert(wrong.recoveryProofs["5:5"]==proof.recoveryProof)
 assert(not wrong:getRecoveryFence("5:5").accounted)
 assert(wrong.stats.recoveryProofsReconciled==0)
 local snap=assert(wrong:exportSnapshot())
-assert(snap.version==4 and snap.fences[1].accounted==false)
+assert(snap.version==5 and snap.fences[1].accounted==false)
 local reload=makeJournal()
 assert(reload:importSnapshot(snap))
 local refused=budget()
@@ -140,8 +140,13 @@ local duplicate={version=4,unitM=1,cells={},
     }}
 local tooManyOk,tooManyWhy=tooMany:importSnapshot(duplicate)
 assert(not tooManyOk and tooManyWhy=="RECOVERY_FENCE_IMPORT_CAPACITY")
-assert(tooMany.recoveryFenceCount==0)
-assert(next(tooMany.recoveryFences)==nil)
+-- Keep existing RAM records, but revoke ALL trust on a malformed
+-- sidecar; never partially import a smaller subset as a fresh ledger.
+assert(tooMany.quarantined)
+assert(tooMany.recoveryFenceCount==1)
+assert(tooMany.recoveryFences["5:5"].trusted==false)
+assert(select(2,tooMany:getLoweringBudget(5,5,0.70,0.10,0.12))
+    =="GEOMETRY_JOURNAL_QUARANTINED")
 
 -- An anomalous native write anywhere in the 3x3 monitored footprint
 -- revokes RECOVERY authority, not only old rut-observation ownership.
