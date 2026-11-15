@@ -62,3 +62,7 @@ This is **future scope**; not a reason to revive EnhancedVehicle driveline autho
 **Safety and reuse:** The exact ZIP contains no bundled license file; public KingMods page advertises CC BY-NC-SA 4.0 for its older release. Do not import code, UI assets or rack models into RE without confirming applicable reuse terms/attribution and resolving any derivative licensing; prefer clean-room original implementations from source-observed concepts.
 
 **No code or configuration changes** in RE by this research.
+
+## 2026-11-15 — Wheel Pallet follow-up
+
+A later source audit of Guner348 Wheel Pallet 1.0.0.1 confirmed an alternative wheel-pallet workflow with **no hard UYT runtime dependency**, although the mod's native persistent tyre-wear path only understands UYT distance. As with AutoSwitch, the actual wheel change still **serializes and replaces the whole original vehicle**. Reifen 1.2.2.70 wear and Mud pressure are not explicitly stored in its pallet metadata; our previous deleted-vehicle lifecycle concerns therefore remain relevant. Prefer an independently designed, durable RE wheel-set inventory and controlled reconfiguration transaction; do not import another wear owner or duplicate physics. See [full exact-source comparison](2026-11-15-wheel-pallet-1001-reifen-transaction-audit.md). No runtime RE change.
