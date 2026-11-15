@@ -209,8 +209,12 @@ assert(badUnit:importSnapshot(snap)==false)
 set(0,0,98.90)
 local changed=API.new(999,{unitM=1,sample=sample})
 local loaded,restoredCount,rejected=changed:importSnapshot(snap)
-assert(loaded and rejected>=1 and restoredCount<number)
-assert(changed.observations["0:0"]==nil)
+-- V5 retains a large externally edited height as a permanent
+-- UNTRUSTED deny marker instead of losing the native vertex on reload.
+assert(loaded and rejected==0 and restoredCount==number)
+assert(changed.observations["0:0"]~=nil)
+assert(changed.observations["0:0"].owned==false)
+assert(changed.stats.importForeignHeightDowngrades>=1)
 -- Reject further RE rut digging in inherited/unknown deep hollows while
 -- preserving a clean naturally sloping plane (opposite samples cancel).
 local slope=API.new(999,{unitM=1,sample=function(x,z)
