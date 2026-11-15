@@ -181,4 +181,10 @@ assert(select(2,paid:requestTarget("800:800",2*q,0.1))==
 assert(j.recoveryProofs["800:800"]==nil)
 assert(j.observations["800:800"].owned==true)
 
+-- The isolated candidate can no longer write journal.observations
+-- behind the bounded journal's observationCount accounting.
+local counted=0
+for _ in pairs(j.observations) do counted=counted+1 end
+assert(j.observationCount==counted)
+assert(j.reservedObservationSlots==0)
 print("terrain_absolute_recovery_candidate_harness: OK")
