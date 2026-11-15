@@ -881,7 +881,7 @@ function Journal:importSnapshot(snapshot)
             or #snapshot.fences>self.maxRecoveryFences) then
         return self:quarantine("RECOVERY_FENCE_IMPORT_CAPACITY")
     end
-    local loaded,fences={}
+    local loaded,fences={},{}
     local restored,rejected,legacyDowngraded,driftDowngraded=0,0,0,0
     local foreignDowngraded=0
     for _,cell in ipairs(snapshot.cells) do
