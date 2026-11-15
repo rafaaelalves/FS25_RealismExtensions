@@ -47,6 +47,13 @@ function Journal.new(terrain, options)
         unitM = unitForTerrain(terrain, options.unitM),
         sample = options.sample,
         observations = {},
+        observationCount=0,
+        -- Every new native vertex that MIGHT be altered by an enqueued
+        -- operation must be reserved BEFORE the native setter runs.
+        -- There is deliberately no eviction of historical deny markers.
+        maxObservations=math.max(1,
+            math.floor(tonumber(options.maxObservations) or 50000)),
+        reservedObservationSlots=0,
         pendingByVertex = {},
         pendingByLogicalKey = {},
         pendingCount = 0,
@@ -86,6 +93,8 @@ function Journal.new(terrain, options)
             importQuarantines=0,
             importForeignHeightDowngrades=0,
             recoveryFenceCapacityRefusals = 0,
+            observationCapacityRefusals=0,
+            observationReservationReleased=0,
             recoveryProofsUnaccounted = 0,
             recoveryProofsReconciled = 0
         }
@@ -270,11 +279,15 @@ function Journal:begin(logicalKey,x,z,radiusM)
         self.stats.unavailable=self.stats.unavailable+1
         return nil,"NO_VERTICES_OR_PENDING_LOGICAL"
     end
+    local newObservationSlots=0
     local before={}
     for _,v in ipairs(verts) do
         if self.pendingByVertex[v.key] ~= nil then
             self.stats.overlapRejected=self.stats.overlapRejected+1
             return nil,"OVERLAPPING_RE_WRITE"
+        end
+        if self.observations[v.key]==nil then
+            newObservationSlots=newObservationSlots+1
         end
         local y=self:getHeight(v.x,v.z)
         if not finite(y) then
@@ -282,6 +295,15 @@ function Journal:begin(logicalKey,x,z,radiusM)
             return nil,"HEIGHT_UNAVAILABLE"
         end
         before[#before+1]={key=v.key,x=v.x,z=v.z,beforeY=y}
+    end
+    -- All reservations are charged BEFORE applying any native mutation.
+    -- Disjoint, simultaneously queued jobs must not each assume the
+    -- other's free observation quota is still available.
+    if self.observationCount+self.reservedObservationSlots
+            +newObservationSlots>self.maxObservations then
+        self.stats.observationCapacityRefusals=
+            self.stats.observationCapacityRefusals+1
+        return nil,"GEOMETRY_OBSERVATION_CAPACITY"
     end
     -- Any unexpected geometry edit between two RE writes ends ownership
     -- of the old baseline at that native vertex. Do not overwrite baseline.
@@ -309,7 +331,10 @@ function Journal:begin(logicalKey,x,z,radiusM)
     end
     self.nextId=self.nextId+1
     local token={id=self.nextId,key=logicalKey,points=before,
+        observationReservation=newObservationSlots,
         active=true,journal=self,completed=false}
+    self.reservedObservationSlots=
+        self.reservedObservationSlots+newObservationSlots
     for _,p in ipairs(before) do
         -- Any subsequent native write touching the 3x3 footprint
         -- invalidates an unconsumed prior recovery receipt.
@@ -406,6 +431,13 @@ function Journal:complete(token,successful,maxChangeIgnoreM)
     end
     self.pendingByLogicalKey[token.key]=nil
     self.pendingCount=math.max(0,self.pendingCount-1)
+    self.reservedObservationSlots=math.max(0,
+        self.reservedObservationSlots-(token.observationReservation or 0))
+    self.stats.observationReservationReleased=
+        self.stats.observationReservationReleased+1
+    if self.quarantined then
+        return nil,"GEOMETRY_JOURNAL_QUARANTINED"
+    end
 
     if not successful then
         self.stats.aborted=self.stats.aborted+1
@@ -461,6 +493,9 @@ function Journal:complete(token,successful,maxChangeIgnoreM)
                     entry.owned=false
                 end
                 self.stats.untrustedRise=self.stats.untrustedRise+1
+            end
+            if self.observations[p.key]==nil then
+                self.observationCount=self.observationCount+1
             end
             self.observations[p.key]=entry
             local fence=self.recoveryFences[p.key]
@@ -609,6 +644,13 @@ function Journal:finishRecovery(token,success)
     end
     self.pendingByLogicalKey[token.key]=nil
     self.pendingCount=math.max(0,self.pendingCount-1)
+    self.reservedObservationSlots=math.max(0,
+        self.reservedObservationSlots-(token.observationReservation or 0))
+    self.stats.observationReservationReleased=
+        self.stats.observationReservationReleased+1
+    if self.quarantined then
+        return nil,"GEOMETRY_JOURNAL_QUARANTINED"
+    end
     if not success then return {success=false,gainM=0,collateral=0} end
     local post={}
     for i,p in ipairs(token.points) do
@@ -657,6 +699,7 @@ function Journal:finishRecovery(token,success)
             e.owned=false
         elseif completed then
             self.observations[token.targetKey]=nil
+            self.observationCount=math.max(0,self.observationCount-1)
         end
     end
     local result={success=true,gainM=math.max(0,gain),afterY=target,
@@ -785,7 +828,12 @@ function Journal:exportSnapshot()
     if self.quarantined then
         return nil,"GEOMETRY_JOURNAL_QUARANTINED"
     end
-    if self.pendingCount>0 then return nil,"PENDING_NATIVE_WRITES" end
+    if self.pendingCount>0 or self.reservedObservationSlots~=0 then
+        return nil,"PENDING_NATIVE_WRITES"
+    end
+    if self.observationCount>self.maxObservations then
+        return nil,"GEOMETRY_OBSERVATION_CAPACITY_EXCEEDED"
+    end
     if not finite(self.unitM) or self.unitM<=0 then
         return nil,"native heightmap unit unavailable"
     end
@@ -865,6 +913,9 @@ function Journal:importSnapshot(snapshot)
         or math.abs(snapshot.unitM-self.unitM)>0.00001
         or type(snapshot.cells)~="table" then
         return self:quarantine("GEOMETRY_JOURNAL_FORMAT_OR_UNIT_MISMATCH")
+    end
+    if #snapshot.cells>self.maxObservations then
+        return self:quarantine("GEOMETRY_OBSERVATION_IMPORT_CAPACITY")
     end
     if strict then
         local m=snapshot.manifest
@@ -1000,7 +1051,12 @@ function Journal:importSnapshot(snapshot)
     end
     -- Atomic RAM publication: failed manifest/cap/duplicate/native probes
     -- never leave a half-loaded subset that subsequent wheel samples trust.
+    local importedObservationCount=0
+    for _ in pairs(loaded) do
+        importedObservationCount=importedObservationCount+1
+    end
     self.observations=loaded
+    self.observationCount=importedObservationCount
     self.recoveryFences=fences
     self.recoveryFenceCount=fenceCount
     self.recoveryProofs={}
@@ -1023,6 +1079,8 @@ function Journal:reset()
     self.recoveryProofs={}
     self.nextRecoveryProofId=0
     self.observations={}
+    self.observationCount=0
+    self.reservedObservationSlots=0
     self.pendingByVertex={}
     self.pendingByLogicalKey={}
     self.pendingCount=0
