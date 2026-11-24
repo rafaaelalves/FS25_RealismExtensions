@@ -181,6 +181,14 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
         local ok,reason=c.run()
         return ok and speak("Calibration queued with isolated native writer")
             or speak("Calibration refused; check native journal and RE Terrain Calibration output")
+    elseif action=="absoluteroundtrip" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil or type(c.runRoundTrip)~="function" then
+            return speak("ROUNDTRIP_UNAVAILABLE")
+        end
+        local matched,why=c.runRoundTrip(confirmation,extraConfirmation)
+        return speak("ROUNDTRIP "..tostring(matched).." "..tostring(why)
+            .."; QUIT DISPOSABLE COPY WITHOUT SAVING")
     elseif action=="absolutestep" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil or type(c.runOneStep)~="function" then
@@ -280,7 +288,7 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
 end
 
 function Trial.installCommands()
@@ -290,7 +298,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
     Trial.commandsInstalled=true
     return true
 end

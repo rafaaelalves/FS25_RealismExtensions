@@ -156,4 +156,53 @@ assert(C.pendingWitness==nil and C.persistRequested==false)
 assert(select(1,C.armPersistence("COPY"))==false)
 assert(journal.pendingCount==0)
 assert(select(1,C.run())==false and calls==2)
+-- Reversible test uses the actual lower and upper candidates, a single
+-- local budget and a private journal. No live ownership is acquired.
+dofile("scripts/terrain/TerrainQuantizedHeightBudget.lua")
+dofile("scripts/terrain/TerrainAbsoluteVertexCandidate.lua")
+dofile("scripts/terrain/TerrainAbsoluteRecoveryCandidate.lua")
+local q=255/65535
+local base=q*36000
+local mode="FLOOR"
+local function resetRoundtrip()
+    C.used=false
+    C.pendingWitness=nil
+    rt.nativeDamageQuarantined=false
+    rt.geometryJournal=J.new(999,{unitM=1,sample=function(x,z)
+        return h[key(x,z)] or base end})
+    h={}
+    calls=0
+    blocked=false
+    setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+        calls=calls+1
+        h[key(x,z)]=math.floor(target/q+(mode=="NEAREST" and 0.5 or 0))*q
+    end
+end
+for _,quantizer in ipairs({"FLOOR","NEAREST"}) do
+    mode=quantizer
+    resetRoundtrip()
+    assert(not C.runRoundTrip(q,"NO") and calls==0)
+    assert(C.runRoundTrip(q,"COPY") and calls==2)
+    assert(math.abs(h["10:20"]-base)<1e-8)
+    assert(rt.geometryJournal.observationCount==0)
+    assert(rt.geometryJournal.recoveryFenceCount==0)
+    assert(rt.nativeDamageQuarantined and C.pendingWitness==nil)
+    assert(not C.runRoundTrip(q,"COPY") and calls==2)
+end
+resetRoundtrip()
+setTerrainHeightAtWorldPos=function() calls=calls+1 end
+assert(not C.runRoundTrip(q,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined and C.pendingWitness==nil)
+resetRoundtrip()
+setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+    calls=calls+1
+    h[key(x,z)]=math.floor(target/q+0.5)*q
+    blocked=true -- new loaded contact before the UP phase
+end
+assert(not C.runRoundTrip(q,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined)
+resetRoundtrip()
+rt.geometryJournal.observations["10:20"]={owned=true,x=10,z=20,
+    observedHeightM=base,preREHeightM=base+q}
+assert(not C.runRoundTrip(q,"COPY") and calls==0)
 print("terrain_absolute_setter_calibration_harness: OK")

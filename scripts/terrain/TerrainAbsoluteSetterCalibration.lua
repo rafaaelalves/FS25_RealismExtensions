@@ -358,6 +358,148 @@ function Cal.runOneStep(quantumInput,confirmation)
         or (whyStep or witnessWhy)
 end
 
+-- Reversible MAIN research: exactly one verified down step, then at
+-- most one verified up step. A private, non-persisted journal owns the
+-- temporary reference; no live career recovery permission is issued.
+-- COPY is an operator declaration, NOT proof of a disposable save.
+function Cal.runRoundTrip(quantumInput,confirmation)
+    if confirmation~="COPY" then return false,report("ROUNDTRIP COPY_REQUIRED") end
+    local q=tonumber(quantumInput)
+    if not finite(q) or q<0.003 or q>0.012 then
+        return false,report("ROUNDTRIP INVALID_CANDIDATE_QUANTUM")
+    end
+    local ctx,why=absoluteContext(q)
+    if ctx==nil then return false,report("ROUNDTRIP REFUSED "..tostring(why)) end
+    local J=RealismExtensionsTerrainGeometryJournal
+    local B=RealismExtensionsTerrainQuantizedHeightBudget
+    local D=RealismExtensionsTerrainAbsoluteVertexCandidate
+    local U=RealismExtensionsTerrainAbsoluteRecoveryCandidate
+    if J==nil or B==nil or D==nil or U==nil
+        or ctx.journal.quarantined or ctx.journal.pendingCount~=0
+        or ctx.rt.absoluteHeightBudget~=nil then
+        return false,report("ROUNDTRIP IDLE_RESEARCH_MODULES_REQUIRED")
+    end
+    local mission=g_currentMission
+    local info=mission and mission.missionInfo
+    local directory=info and info.savegameDirectory
+    local map=info and (info.mapId or info.mapTitle)
+    if not info or info.isValid~=true or type(directory)~="string"
+        or directory=="" or map==nil then
+        return false,report("ROUNDTRIP SAVE_IDENTITY_REQUIRED")
+    end
+    local original={}
+    local key
+    for _,v in ipairs(ctx.points) do
+        if ctx.journal.observations[v.key]~=nil
+            or ctx.journal.recoveryFences[v.key]~=nil then
+            return false,report("ROUNDTRIP FRESH_UNOWNED_PATCH_REQUIRED")
+        end
+        local y=ctx.journal:getHeight(v.x,v.z)
+        if not finite(y) then return false,report("ROUNDTRIP HEIGHT_UNAVAILABLE") end
+        original[#original+1]={x=v.x,z=v.z,key=v.key,y=y}
+        if v.x==ctx.x and v.z==ctx.z then key=v.key end
+    end
+    if key==nil then return false,report("ROUNDTRIP CENTER_UNAVAILABLE") end
+    local journal=J.new(ctx.journal.terrain,{unitM=ctx.unitM,
+        maxObservations=9,maxRecoveryFences=1,
+        sample=function(x,z) return ctx.journal:getHeight(x,z) end})
+    local budget,err=B.new({quantumM=q,toleranceM=0.00005})
+    if budget==nil then return false,report("ROUNDTRIP "..tostring(err)) end
+    local phase="DOWN"
+    local calls=0
+    local lower,upper
+    local function matches(centerY)
+        for _,v in ipairs(original) do
+            local y=ctx.journal:getHeight(v.x,v.z)
+            local expected=v.key==key and centerY or v.y
+            if not finite(y) or math.abs(y-expected)>0.000001 then return false end
+        end
+        return true
+    end
+    local function exclusive()
+        local tr=RealismExtensionsTerrainControlledWriteTrial
+        local cfg=RealismExtensionsConfig and RealismExtensionsConfig.modules
+        local qp=RealismExtensionsTerrainNativeQueueProbe
+        local sp=RealismExtensionsTerrainNativeSpatialProbe
+        local contacts=RealismExtensionsLoadedContactRegistry
+        if g_currentMission~=mission or mission.missionInfo~=info
+            or info.isValid~=true or info.savegameDirectory~=directory
+            or (info.mapId or info.mapTitle)~=map
+            or RealismExtensionsTerrainRuntime~=ctx.rt
+            or ctx.rt.geometryJournal~=ctx.journal or ctx.rt.writer~=ctx.writer
+            or ctx.rt.nativeDamageQuarantined==true or ctx.journal.quarantined
+            or ctx.rt.absoluteHeightBudget~=nil or ctx.journal.pendingCount~=0
+            or not cfg or cfg.TerrainPermanentActuator~="SHADOW"
+            or cfg.TerrainControlledWriteTrial~=true
+            or not tr or not tr.isSinglePlayer() or tr.armed or tr.pending
+            or tr.reserved~=nil or ctx.writer.nativeCausalPending
+            or ctx.writer:getQueueSize()~=0
+            or not qp or not qp.owner or not qp.pollIntegrity()
+            or not sp or not sp.owner or not sp.checkIntegrity()
+            or not contacts or type(contacts.overlapsCircle)~="function"
+            or contacts.overlapsCircle(ctx.x,ctx.z,ctx.unitM*1.60,
+                tonumber(mission.time) or 0)~=false then return false end
+        for _,v in ipairs(original) do
+            if ctx.journal.observations[v.key]~=nil
+                or ctx.journal.recoveryFences[v.key]~=nil then return false end
+        end
+        if phase=="DOWN" then return calls==0 and matches(nil) end
+        return calls==1 and lower~=nil and matches(lower.afterY)
+    end
+    local function setter(x,z,target)
+        if not exclusive() then return false end
+        calls=calls+1
+        return setTerrainHeightAtWorldPos(ctx.journal.terrain,x,0,z,target)
+    end
+    local down,downWhy=D.new({journal=journal,budget=budget,
+        explicitWrite=true,verifyExclusive=exclusive,writeHeight=setter})
+    local up,upWhy=U.new({journal=journal,budget=budget,quantumM=q,
+        explicitResearchPermission=true,disposableSaveConfirmed=true,
+        verifyExclusive=exclusive,writeHeight=setter})
+    if down==nil or up==nil then
+        return false,report("ROUNDTRIP CANDIDATE_REFUSED "..tostring(downWhy or upWhy))
+    end
+    Cal.used=true
+    Cal.pendingWitness=nil
+    Cal.persistRequested=false
+    Cal.witnessSaveAttempted=false
+    -- Catch even unexpected Lua failures; never retry a native setter.
+    local ok,matched,reason=pcall(function()
+        local errDown
+        lower,errDown=down:applyOne(ctx.x,ctx.z,q,"CUMULATIVE")
+        if lower==nil or not lower.verified or calls~=1
+            or not matches(lower.afterY) then
+            return false,errDown or "DOWN_READBACK_NOT_VERIFIED"
+        end
+        phase="UP"
+        local errUp
+        upper,errUp=up:applyOnce(ctx.x,ctx.z)
+        if upper==nil or not upper.verified or not upper.completed
+            or calls~=2 or not matches(nil) then
+            return false,errUp or "UP_OR_ORIGINAL_3X3_NOT_VERIFIED"
+        end
+        local item=budget.entries[key]
+        if item==nil or item.recoveryEpochPending~=true
+            or math.abs(item.committedM)>0.000001
+            or journal.pendingCount~=0 then
+            return false,"ROUNDTRIP_ACCOUNTING_NOT_CLOSED"
+        end
+        return true,"MAIN_ROUNDTRIP_IMMEDIATE_ONLY"
+    end)
+    ctx.rt.nativeDamageQuarantined=true
+    local safe=ok and matched==true
+    if not safe and calls>0 then
+        -- An unknown physical change must not become a new career baseline.
+        ctx.journal:quarantine("DISPOSABLE_ROUNDTRIP_UNVERIFIED")
+    end
+    report(string.format("ROUNDTRIP RESULT matched=%s calls=%d phase=%s q=%.9f x=%.3f z=%.3f down=%s up=%s reason=%s. PRIVATE JOURNAL ONLY; NO WITNESS; QUIT COPY WITHOUT SAVING. NOT COLLISION OR FINE MESH PROOF.",
+        tostring(safe),calls,phase,q,ctx.x,ctx.z,
+        tostring(lower and lower.beforeY and lower.afterY
+            and lower.beforeY-lower.afterY),
+        tostring(upper and upper.actualRaiseM),tostring(ok and reason or matched)))
+    return safe,ok and reason or tostring(matched)
+end
+
 -- Explicit second confirmation AFTER the destructive calibration. Merely
 -- running the old 'absolute' command can never create/save a witness file.
 function Cal.armPersistence(confirmation)
