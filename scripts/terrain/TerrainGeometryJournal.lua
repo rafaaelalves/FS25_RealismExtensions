@@ -589,7 +589,9 @@ function Journal:invalidateRecoveryCandidate(token,point)
         if f~=nil then
             f.trusted=false
             f.accounted=false
+            f.pendingProof=false
         end
+        self.recoveryProofs[p.key]=nil
     end
     if self.observations[point.key]==nil then
         local y=self:getHeight(point.x,point.z)
@@ -678,10 +680,17 @@ end
 -- This differs from the LOWER callback path: a known RE depression may
 -- legitimately be raised toward its immutable first-touch height. Every
 -- altered *other* native vertex is flagged as collateral, not re-attributed.
-function Journal:finishRecovery(token,success)
+function Journal:finishRecovery(token,success,maxChangeIgnoreM)
     if type(token)~="table" or token.active~=true
         or self.pendingByLogicalKey[token.key]~=token
         or token.targetKey==nil then return nil,"STALE_RECOVERY_TOKEN" end
+    local collateralThreshold=Journal.OWNED_HEIGHT_DRIFT_M
+    if maxChangeIgnoreM~=nil then
+        if not finite(maxChangeIgnoreM) or maxChangeIgnoreM<=0 then
+            return nil,"INVALID_RECOVERY_MOVEMENT_LIMIT"
+        end
+        collateralThreshold=math.min(collateralThreshold,maxChangeIgnoreM)
+    end
     token.active=false
     for _,p in ipairs(token.points) do
         if self.pendingByVertex[p.key]==token then
@@ -711,7 +720,7 @@ function Journal:finishRecovery(token,success)
         local delta=y-p.beforeY
         if p.key==token.targetKey then
             target=y
-        elseif math.abs(delta)>Journal.OWNED_HEIGHT_DRIFT_M then
+        elseif math.abs(delta)>collateralThreshold then
             collateral=collateral+1
             local e=self.observations[p.key]
             if e~=nil then e.owned=false;e.observedHeightM=y end

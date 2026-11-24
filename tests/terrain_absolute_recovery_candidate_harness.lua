@@ -181,6 +181,34 @@ assert(select(2,paid:requestTarget("800:800",2*q,0.1))==
 assert(j.recoveryProofs["800:800"]==nil)
 assert(j.observations["800:800"].owned==true)
 
+-- Refuse mismatched or absent paid depth BEFORE writing physical terrain.
+own(900,900,2*q)
+local unpaid=assert(budgetClass.new({quantumM=q}))
+local function paidCandidate(budget)
+    return assert(A.new({journal=j,quantumM=q,budget=budget,
+        explicitResearchPermission=true,disposableSaveConfirmed=true,
+        verifyExclusive=function()return true end,writeHeight=writer}))
+end
+local preCalls=count
+local absent=paidCandidate(unpaid)
+assert(select(2,absent:applyOnce(900,900))=="NO_CUMULATIVE_TARGET")
+assert(unpaid:seedOwnedTarget("900:900",q))
+local mismatch=paidCandidate(unpaid)
+assert(select(2,mismatch:applyOnce(900,900))=="RECOVERY_LEDGER_OR_DEPTH_MISMATCH")
+assert(count==preCalls and not mismatch.consumed and j.pendingCount==0)
+assert(math.abs(read(900,900)-(base-2*q))<1e-8)
+assert(j.observations["900:900"].owned)
+-- Five micrometers of collateral must fail the isolated absolute
+-- recovery even though the generic queue journal allows 10um.
+own(950,950,2*q)
+local tiny=assert(candidate(q,function(x,z,target)
+    set(x,z,base-q)
+    set(x+1,z+1,base+0.000005)
+    return true
+end))
+local tinyResult=assert(tiny:applyOnce(950,950))
+assert(not tinyResult.verified and tinyResult.footprint.collateral==1)
+assert(tiny.quarantined and j.pendingCount==0)
 -- The isolated candidate can no longer write journal.observations
 -- behind the bounded journal's observationCount accounting.
 local counted=0

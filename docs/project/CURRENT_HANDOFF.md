@@ -1,5 +1,9 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 24-Nov-2026 — isolated UPWARD candidate preflight hardening
+
+Source review identified that paid-depth mismatch was detected only after the physical setter. The isolated absolute recovery candidate now checks the paid cumulative depth, pending state and quantum before reservation and immediately before the setter. Settlement still independently verifies the physical receipt. Its 3x3 neighbor tolerance is now 1um (generic queued recovery unchanged); invalidated candidate receipts cannot remain pending. Added regressions for absent/mismatched paid depth and 5um diagonal collateral. CI status not yet established at commit creation. No game proof, no automatic runtime writer, no main merge. Next: prepare the guarded reversible MAIN experiment, then physical UPWARD readback and persistence on a disposable clone. Do not repeat full agricultural cycles.
+
 ## 15-Nov-2026 (morning): bounded MAIN observation ledger + cross-XML presence witness — CI GREEN
 
 **Latest code commit `2941e4d7cbdc84e6745f8f38645d4c021afbe61d`** — [full GitHub Actions PASS](https://github.com/rafaaelalves/FS25_RealismExtensions/actions/runs/43715032823). PR #64 still DRAFT, only feature branch modified; docs-only commits follow. Detailed [quota and witness note](../research/2026-11-15-native-geometry-observation-quota-and-presence-witness.md).
