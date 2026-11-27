@@ -1,5 +1,9 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 27-Nov-2026 — CI regression: retain both geometry and exclusivity checks
+
+PR #86 run 46046658157 failed in terrain_absolute_height_experimental_backend_harness.lua:88. Cause: the prior reordering let a session/MP transition inside validateBeforeSubmit bypass the final exclusivity check. Restore preflight -> exclusivity recheck -> direct full-footprint comparison (no rebase) in both absolute candidates. Preserve the existing late-neighbor regression and add symmetric recovery exclusivity regression. Existing backend assertion unchanged. No SHADOW or gameplay policy change. CI must pass before issuing a new test ZIP.
+
 ## 27-Nov-2026 — symmetric absolute preflight and finishing scope
 
 Before the first live roundtrip, require all nine reserved MAIN vertices in the downward candidate, matching the upward candidate. Both now run the injected exclusivity callback before the final native footprint readback, so a late foreign neighbor edit during that check refuses the setter. Added synthetic truncated-footprint and late-neighbor regressions. No change to SHADOW, quantum, native API or gameplay writer. CI still not returned by the available GitHub status endpoints; no new test results claimed.

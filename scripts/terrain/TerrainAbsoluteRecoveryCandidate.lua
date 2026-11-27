@@ -127,17 +127,24 @@ function Candidate:applyOnce(x,z)
     if #token.points~=9 then
         return abort("RECOVERY_3X3_NOT_VERIFIED")
     end
-    -- Check the adapter first; a foreign change during that callback
-    -- must still be visible to the final complete-footprint preflight.
-    if not isExclusive(self) then
-        return abort("RECOVERY_EXCLUSIVITY_CHANGED")
-    end
     local valid,preWhy=journal:validateBeforeSubmit(token,0.00001)
     if not valid then
         if preWhy=="QUEUED_GEOMETRY_DRIFT" then
             self.quarantined=true
         end
         return abort(preWhy)
+    end
+    if not isExclusive(self) then
+        return abort("RECOVERY_EXCLUSIVITY_CHANGED")
+    end
+    -- The exclusivity callback must not silently rebase the footprint.
+    for _,p in ipairs(token.points) do
+        local y=journal:getHeight(p.x,p.z)
+        if not finite(y) or math.abs(y-p.beforeY)>0.00001 then
+            self.quarantined=true
+            journal:validateBeforeSubmit(token,0.00001)
+            return abort("QUEUED_GEOMETRY_DRIFT")
+        end
     end
     local before=journal:getHeight(x,z)
     if not finite(before)

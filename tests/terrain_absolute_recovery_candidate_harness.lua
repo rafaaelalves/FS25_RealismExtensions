@@ -223,6 +223,23 @@ local late=assert(A.new({journal=j,quantumM=q,
 local lateCalls=count
 assert(select(2,late:applyOnce(980,980))=="QUEUED_GEOMETRY_DRIFT")
 assert(count==lateCalls and j.pendingCount==0 and late.quarantined)
+-- Symmetric coverage: loss of exclusivity during the first geometry
+-- preflight must refuse the upward setter too.
+own(990,990,2*q)
+local oldValidate=j.validateBeforeSubmit
+local exclusive=true
+function j:validateBeforeSubmit(token,limit)
+    local ok,why=oldValidate(self,token,limit)
+    exclusive=false
+    return ok,why
+end
+local lost=assert(A.new({journal=j,quantumM=q,
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    verifyExclusive=function()return exclusive end,writeHeight=writer}))
+local beforeLost=count
+assert(select(2,lost:applyOnce(990,990))=="RECOVERY_EXCLUSIVITY_CHANGED")
+assert(count==beforeLost and j.pendingCount==0)
+j.validateBeforeSubmit=oldValidate
 -- The isolated candidate can no longer write journal.observations
 -- behind the bounded journal's observationCount accounting.
 local counted=0

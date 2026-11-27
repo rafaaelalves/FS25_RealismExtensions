@@ -149,12 +149,6 @@ function Candidate:applyOne(x,z,damageM,contract,epochTicket)
     if #token.points~=9 then
         return abort("ABSOLUTE_3X3_NOT_VERIFIED")
     end
-    -- Check the injected ownership/exclusivity adapter BEFORE the final
-    -- native height snapshot; it may itself invoke other Lua callbacks.
-    local stillOk,stillExclusive=pcall(self.verifyExclusive)
-    if not stillOk or stillExclusive~=true then
-        return abort("EXCLUSIVITY_CHANGED")
-    end
     -- Read/validate the entire 3x3 neighborhood again just before the
     -- physical setter. A broad 2mm queue-drift allowance is too large
     -- when we are proving a single ~3.9mm quantized vertex step.
@@ -174,6 +168,22 @@ function Candidate:applyOne(x,z,damageM,contract,epochTicket)
             budget.quarantined=true
         end
         return abort(preReason)
+    end
+    -- Bracket the second exclusivity check with geometry validation.
+    -- Native sampling can reveal a changed session; the exclusivity
+    -- adapter can in turn change geometry. Neither check replaces the other.
+    local stillOk,stillExclusive=pcall(self.verifyExclusive)
+    if not stillOk or stillExclusive~=true then
+        return abort("EXCLUSIVITY_CHANGED")
+    end
+    -- Compare with the already validated footprint without rebasing it.
+    for _,p in ipairs(token.points) do
+        local y=journal:getHeight(p.x,p.z)
+        if not finite(y) or math.abs(y-p.beforeY)>strictDriftM then
+            budget.quarantined=true
+            journal:validateBeforeSubmit(token,strictDriftM)
+            return abort("QUEUED_GEOMETRY_DRIFT")
+        end
     end
     local before=journal:getHeight(x,z)
     if not finite(before) then return abort("PRE_HEIGHT_UNAVAILABLE") end
