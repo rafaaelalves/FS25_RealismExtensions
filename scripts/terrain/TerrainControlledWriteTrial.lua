@@ -181,6 +181,113 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
         local ok,reason=c.run()
         return ok and speak("Calibration queued with isolated native writer")
             or speak("Calibration refused; check native journal and RE Terrain Calibration output")
+    elseif action=="projection" then
+        local rt=RealismExtensionsTerrainRuntime
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local planner=rt and rt.absoluteShadow
+        if not planner or type(planner.projectMain)~="function"
+            or not gp or not gp.position then
+            return speak("PROJECTION_REQUIRES_SHADOW_AND_REGEOMARK")
+        end
+        local u=planner.unitM
+        local x,z=gp.position.x,gp.position.z
+        if type(x)~="number" or type(z)~="number" or x~=x or z~=z then
+            return speak("PROJECTION_INVALID_MARK")
+        end
+        local result,why=planner:projectMain(math.floor(x/u+0.5),
+            math.floor(z/u+0.5))
+        if not result then return speak("PROJECTION_REFUSED "..tostring(why)) end
+        return speak(string.format("PROJECTION x=%.3f z=%.3f cells=%d inspected=%d coverage=%.4f broadCoverage=%.4f areaDepthM=%.8f peakDepthM=%.8f broadDepthM=%.8f researchTargetM=%s state=%s NO_WRITE NOT_NATIVE_SURFACE",
+            result.x,result.z,result.cellCount,result.inspectedMembers,
+            result.modeledCoverage01,result.broadModeledCoverage01,
+            result.projectedNewDepthM,result.maxSourceDepthM,
+            result.broadProjectedDepthM,tostring(result.researchTargetM),result.state))
+    elseif action=="patchreconcile" then
+        local rt=RealismExtensionsTerrainRuntime
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local R=RealismExtensionsTerrainMainPatchReconciliation
+        local planner=rt and rt.absoluteShadow
+        local j=rt and rt.geometryJournal
+        local q,gradient=tonumber(confirmation),tonumber(extraConfirmation)
+        if not R or not planner or not j or not gp or not gp.position
+            or not q or q~=q or not gradient or gradient~=gradient then
+            return speak("PATCHRECONCILE_REQUIRES_SHADOW_MARK_Q_GRADIENT")
+        end
+        local u=planner.unitM
+        local x,z=gp.position.x,gp.position.z
+        if type(x)~="number" or type(z)~="number" or x~=x or z~=z
+            or math.abs(x)==math.huge or math.abs(z)==math.huge then
+            return speak("PATCHRECONCILE_INVALID_MARK")
+        end
+        local a,why=R.capture(planner,j,math.floor(x/u+0.5),
+            math.floor(z/u+0.5),2,q,gradient,rt.absoluteHeightBudget)
+        if not a then return speak("PATCHRECONCILE_REFUSED "..tostring(why)) end
+        for _,b in ipairs(a.blockers) do
+            speak("PATCHRECONCILE blocker="..b.key.." reason="..b.reason)
+        end
+        speak(string.format("PATCHRECONCILE state=%s vertices=%d owned=%d existingDepthSumM=%.8f blockers=%d NO_WRITE",
+            a.state,#a.points,a.ownedCount,a.existingDepthSumM,#a.blockers))
+        if a.state~="FRESH_RESEARCH_ANCHOR" then return end
+        local next,reason=R.previewNext(a,j,rt.absoluteHeightBudget)
+        if not next then return speak("PATCHRECONCILE_REFUSED "..tostring(reason)) end
+        return speak(string.format("PATCHRECONCILE preview=%s paidSteps=%d remainingSteps=%d nextVertex=%s NO_WRITE ANCHOR_DISCARDED",
+            next.state,next.paidSteps,next.remainingSteps,
+            next.nextStep and next.nextStep.key or "-"))
+    elseif action=="patchplan" then
+        local rt=RealismExtensionsTerrainRuntime
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local planner=rt and rt.absoluteShadow
+        if not planner or type(planner.planMainPatch)~="function"
+            or not gp or not gp.position then
+            return speak("PATCHPLAN_REQUIRES_SHADOW_AND_REGEOMARK")
+        end
+        local u=planner.unitM
+        local x,z=gp.position.x,gp.position.z
+        if type(x)~="number" or type(z)~="number" or x~=x or z~=z
+            or math.abs(x)==math.huge or math.abs(z)==math.huge then
+            return speak("PATCHPLAN_INVALID_MARK")
+        end
+        local result,why=planner:planMainPatch(math.floor(x/u+0.5),
+            math.floor(z/u+0.5),2,tonumber(confirmation),
+            tonumber(extraConfirmation))
+        if not result then return speak("PATCHPLAN_REFUSED "..tostring(why)) end
+        for _,p in ipairs(result.points) do
+            if p.rawTargetM>0 then
+                speak(string.format("PATCHPLAN vertex=%s rawM=%.8f rawSteps=%d plannedSteps=%d plannedM=%.8f withheldM=%.8f broadCoverage=%.4f",
+                    p.key,p.rawTargetM,p.rawSteps,p.steps,p.targetDepthM,
+                    p.withheldM,p.broadCoverage01 or 0))
+            end
+        end
+        return speak(string.format("PATCHPLAN RESULT state=%s q=%.9f gradientLimit=%.5f maxAddedGradient=%.5f vertices=%d steps=%d rawDepthSumM=%.8f plannedDepthSumM=%.8f quantizationWithheldM=%.8f slopeWithheldM=%.8f sweeps=%d NO_WRITE NEW_DEPTH_ONLY NOT_EXECUTION_PLAN",
+            result.state,result.quantumM,result.gradientLimit,
+            result.maxAddedGradient,result.candidateVertices,result.wholeSteps,
+            result.rawDepthSumM,result.plannedDepthSumM,
+            result.quantizationWithheldM,result.slopeWithheldM,result.sweeps))
+    elseif action=="patchroundtrip" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if not c or type(c.runPatchRoundTrip)~="function" then
+            return speak("PATCH_ROUNDTRIP_UNAVAILABLE")
+        end
+        local matched,why=c.runPatchRoundTrip(confirmation,extraConfirmation)
+        return speak("PATCH ROUNDTRIP "..tostring(matched).." "..tostring(why)
+            .."; QUIT DISPOSABLE COPY WITHOUT SAVING")
+    elseif action=="absoluteroundtrip" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil or type(c.runRoundTrip)~="function" then
+            return speak("ROUNDTRIP_UNAVAILABLE")
+        end
+        local matched,why=c.runRoundTrip(confirmation,extraConfirmation)
+        return speak("ROUNDTRIP "..tostring(matched).." "..tostring(why)
+            .."; QUIT DISPOSABLE COPY WITHOUT SAVING")
+    elseif action=="absolutestagedown" or action=="absolutestageup" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil or type(c.runRoundTrip)~="function" then
+            return speak("STAGED_RECOVERY_UNAVAILABLE")
+        end
+        local stage=action=="absolutestagedown" and "RECOVERY_DOWN" or "RECOVERY_UP"
+        local matched,why=c.runRoundTrip(confirmation,extraConfirmation,stage)
+        return speak(stage.." "..tostring(matched).." "..tostring(why)
+            ..(matched and "; see explicit persistence option" or "; QUIT COPY WITHOUT SAVING"))
     elseif action=="absolutestep" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil or type(c.runOneStep)~="function" then
@@ -280,7 +387,7 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absoluteStageDown <quantum_m> COPY|absoluteStageUp <quantum_m> COPY|projection|patchPlan <candidate_q_m> <max_added_gradient>|patchReconcile <candidate_q_m> <max_added_gradient>|patchRoundTrip <candidate_q_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
 end
 
 function Trial.installCommands()
@@ -290,7 +397,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absoluteStageDown <quantum_m> COPY|absoluteStageUp <quantum_m> COPY|projection|patchPlan <candidate_q_m> <max_added_gradient>|patchReconcile <candidate_q_m> <max_added_gradient>|patchRoundTrip <candidate_q_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
     Trial.commandsInstalled=true
     return true
 end

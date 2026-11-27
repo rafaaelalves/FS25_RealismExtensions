@@ -437,4 +437,32 @@ assert(resultFailure~=nil and resultFailure.verified==false)
 assert(reasonFailure=="false")
 assert(b4.quarantined==true and j4.pendingCount==0)
 assert(adapterFailure.stats.writeErrors==1 and adapterFailure.stats.verified==0)
+-- A truncated enumeration must never be accepted as a full footprint.
+local shortJ=J.new(999,{unitM=1,sample=read})
+local shortB=assert(B.new({quantumM=q}))
+local fullEnumerate=shortJ.enumerateVertices
+function shortJ:enumerateVertices(x,z,radius)
+    local p=fullEnumerate(self,x,z,radius)
+    table.remove(p)
+    return p
+end
+local short=assert(C.new({journal=shortJ,budget=shortB,explicitWrite=true,
+    verifyExclusive=function()return true end,writeHeight=setter}))
+local beforeShort=writes
+assert(select(2,short:applyOne(910,910,q,"CUMULATIVE"))=="ABSOLUTE_3X3_NOT_VERIFIED")
+assert(writes==beforeShort and shortJ.pendingCount==0 and shortB.stats.pending==0)
+
+-- The second exclusivity callback can itself observe/trigger a foreign
+-- geometry update. The last footprint check must occur AFTER it.
+local lateJ=J.new(999,{unitM=1,sample=read})
+local lateB=assert(B.new({quantumM=q}))
+local checks=0
+local late=assert(C.new({journal=lateJ,budget=lateB,explicitWrite=true,
+    verifyExclusive=function()
+        checks=checks+1
+        if checks==2 then set(921,921,base-0.0001) end
+        return true
+    end,writeHeight=setter}))
+assert(select(2,late:applyOne(920,920,q,"CUMULATIVE"))=="QUEUED_GEOMETRY_DRIFT")
+assert(writes==beforeShort and lateJ.pendingCount==0 and lateB.quarantined)
 print("terrain_absolute_vertex_candidate_harness: OK")

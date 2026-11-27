@@ -156,4 +156,121 @@ assert(C.pendingWitness==nil and C.persistRequested==false)
 assert(select(1,C.armPersistence("COPY"))==false)
 assert(journal.pendingCount==0)
 assert(select(1,C.run())==false and calls==2)
+-- Reversible test uses the actual lower and upper candidates, a single
+-- local budget and a private journal. No live ownership is acquired.
+dofile("scripts/terrain/TerrainQuantizedHeightBudget.lua")
+dofile("scripts/terrain/TerrainAbsoluteVertexCandidate.lua")
+dofile("scripts/terrain/TerrainAbsoluteRecoveryCandidate.lua")
+local q=255/65535
+local base=q*36000
+local mode="FLOOR"
+local function resetRoundtrip()
+    C.used=false
+    C.pendingWitness=nil
+    rt.nativeDamageQuarantined=false
+    rt.geometryJournal=J.new(999,{unitM=1,sample=function(x,z)
+        return h[key(x,z)] or base end})
+    h={}
+    calls=0
+    blocked=false
+    setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+        calls=calls+1
+        h[key(x,z)]=math.floor(target/q+(mode=="NEAREST" and 0.5 or 0))*q
+    end
+end
+for _,quantizer in ipairs({"FLOOR","NEAREST"}) do
+    mode=quantizer
+    resetRoundtrip()
+    assert(not C.runRoundTrip(q,"NO") and calls==0)
+    assert(C.runRoundTrip(q,"COPY") and calls==2)
+    assert(math.abs(h["10:20"]-base)<1e-8)
+    assert(rt.geometryJournal.observationCount==0)
+    assert(rt.geometryJournal.recoveryFenceCount==0)
+    assert(rt.nativeDamageQuarantined and C.pendingWitness==nil)
+    assert(not C.runRoundTrip(q,"COPY") and calls==2)
+end
+resetRoundtrip()
+setTerrainHeightAtWorldPos=function() calls=calls+1 end
+assert(not C.runRoundTrip(q,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined and C.pendingWitness==nil)
+resetRoundtrip()
+setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+    calls=calls+1
+    h[key(x,z)]=math.floor(target/q+0.5)*q
+    blocked=true -- new loaded contact before the UP phase
+end
+assert(not C.runRoundTrip(q,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined)
+resetRoundtrip()
+rt.geometryJournal.observations["10:20"]={owned=true,x=10,z=20,
+    observedHeightM=base,preREHeightM=base+q}
+assert(not C.runRoundTrip(q,"COPY") and calls==0)
+-- Separate saved DOWN and UP states: the final restored height must
+-- be distinguished from the previously observed saved depression.
+resetRoundtrip()
+witnessFiles[witnessPath]=nil
+assert(C.runRoundTrip(q,"COPY","RECOVERY_DOWN") and calls==1)
+assert(C.pendingWitness.stage=="RECOVERY_DOWN")
+assert(C.armPersistence("COPY"))
+assert(C.saveWitness(g_currentMission.missionInfo))
+assert(not C.verifyReload())
+assert(not C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==1)
+-- Fresh session, same persisted native height and strict saved receipt.
+local savedHeight=h["10:20"]
+g_currentMission={time=10000,missionInfo={isMultiplayer=false,
+    isValid=true,mapId="SaoCarlos",savegameDirectory="/copy"}}
+resetRoundtrip()
+h["10:20"]=savedHeight
+assert(C.verifyReload())
+assert(C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==1)
+assert(C.pendingWitness.stage=="RECOVERY_UP")
+assert(math.abs(h["10:20"]-base)<1e-8)
+assert(rt.geometryJournal.observationCount==0)
+assert(C.armPersistence("COPY"))
+assert(C.saveWitness(g_currentMission.missionInfo))
+assert(not C.verifyReload())
+g_currentMission={time=10000,missionInfo={isMultiplayer=false,
+    isValid=true,mapId="SaoCarlos",savegameDirectory="/copy"}}
+resetRoundtrip()
+assert(C.verifyReload())
+h["10:20"]=savedHeight -- stale DOWN disk height MUST fail UP verification
+assert(not C.verifyReload())
+assert(not C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==0)
+-- Full adapter guard + same executor, binary lattice isolates ordering.
+dofile("scripts/terrain/TerrainAbsoluteHeightPlanner.lua")
+dofile("scripts/terrain/TerrainMainPatchReconciliation.lua")
+dofile("scripts/terrain/TerrainMainPatchExecutor.lua")
+local pq=1/256
+local function resetPatch()
+    resetRoundtrip()
+    rt.geometryJournal=J.new(999,{unitM=1,sample=function(x,z)
+        return h[key(x,z)] or 140 end})
+    setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+        calls=calls+1
+        h[key(x,z)]=math.floor(target/pq+0.5)*pq
+    end
+end
+resetPatch()
+assert(not C.runPatchRoundTrip(pq,"NO") and calls==0)
+assert(C.runPatchRoundTrip(pq,"COPY") and calls==4)
+assert(h["10:20"]==140 and h["11:20"]==140)
+assert(C.used and rt.nativeDamageQuarantined and C.pendingWitness==nil)
+assert(rt.geometryJournal.observationCount==0)
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==4)
+assert(not C.armPersistence("COPY"))
+resetPatch()
+local oldContact=RealismExtensionsLoadedContactRegistry.overlapsCircle
+RealismExtensionsLoadedContactRegistry.overlapsCircle=function(x,z,radius,clock)
+    return radius>3
+end
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==0)
+RealismExtensionsLoadedContactRegistry.overlapsCircle=oldContact
+resetPatch()
+setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+    calls=calls+1
+    h[key(x,z)]=math.floor(target/pq+0.5)*pq
+    h["8:18"]=140-pq
+end
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined and rt.nativeDamageQuarantined)
 print("terrain_absolute_setter_calibration_harness: OK")

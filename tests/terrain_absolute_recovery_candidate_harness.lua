@@ -181,6 +181,65 @@ assert(select(2,paid:requestTarget("800:800",2*q,0.1))==
 assert(j.recoveryProofs["800:800"]==nil)
 assert(j.observations["800:800"].owned==true)
 
+-- Refuse mismatched or absent paid depth BEFORE writing physical terrain.
+own(900,900,2*q)
+local unpaid=assert(budgetClass.new({quantumM=q}))
+local function paidCandidate(budget)
+    return assert(A.new({journal=j,quantumM=q,budget=budget,
+        explicitResearchPermission=true,disposableSaveConfirmed=true,
+        verifyExclusive=function()return true end,writeHeight=writer}))
+end
+local preCalls=count
+local absent=paidCandidate(unpaid)
+assert(select(2,absent:applyOnce(900,900))=="NO_CUMULATIVE_TARGET")
+assert(unpaid:seedOwnedTarget("900:900",q))
+local mismatch=paidCandidate(unpaid)
+assert(select(2,mismatch:applyOnce(900,900))=="RECOVERY_LEDGER_OR_DEPTH_MISMATCH")
+assert(count==preCalls and not mismatch.consumed and j.pendingCount==0)
+assert(math.abs(read(900,900)-(base-2*q))<1e-8)
+assert(j.observations["900:900"].owned)
+-- Five micrometers of collateral must fail the isolated absolute
+-- recovery even though the generic queue journal allows 10um.
+own(950,950,2*q)
+local tiny=assert(candidate(q,function(x,z,target)
+    set(x,z,base-q)
+    set(x+1,z+1,base+0.000005)
+    return true
+end))
+local tinyResult=assert(tiny:applyOnce(950,950))
+assert(not tinyResult.verified and tinyResult.footprint.collateral==1)
+assert(tiny.quarantined and j.pendingCount==0)
+-- A late neighbor edit during the exclusivity adapter is still detected
+-- before the recovery setter, rather than attributed to RE restitution.
+own(980,980,2*q)
+local lateChecks=0
+local late=assert(A.new({journal=j,quantumM=q,
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    verifyExclusive=function()
+        lateChecks=lateChecks+1
+        if lateChecks==2 then set(981,981,base+0.0001) end
+        return true
+    end,writeHeight=writer}))
+local lateCalls=count
+assert(select(2,late:applyOnce(980,980))=="QUEUED_GEOMETRY_DRIFT")
+assert(count==lateCalls and j.pendingCount==0 and late.quarantined)
+-- Symmetric coverage: loss of exclusivity during the first geometry
+-- preflight must refuse the upward setter too.
+own(990,990,2*q)
+local oldValidate=j.validateBeforeSubmit
+local exclusive=true
+function j:validateBeforeSubmit(token,limit)
+    local ok,why=oldValidate(self,token,limit)
+    exclusive=false
+    return ok,why
+end
+local lost=assert(A.new({journal=j,quantumM=q,
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    verifyExclusive=function()return exclusive end,writeHeight=writer}))
+local beforeLost=count
+assert(select(2,lost:applyOnce(990,990))=="RECOVERY_EXCLUSIVITY_CHANGED")
+assert(count==beforeLost and j.pendingCount==0)
+j.validateBeforeSubmit=oldValidate
 -- The isolated candidate can no longer write journal.observations
 -- behind the bounded journal's observationCount accounting.
 local counted=0

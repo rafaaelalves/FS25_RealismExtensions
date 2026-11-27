@@ -70,8 +70,8 @@ assert(journal2.observations["50:50"]==nil
 -- before the native setter, must also be rejected with zero writes.
 local journal3=J.new(999,{unitM=1,sample=read})
 local baseCheck=journal3.validateBeforeSubmit
-journal3.validateBeforeSubmit=function(self,token)
-    local yes,why=baseCheck(self,token)
+journal3.validateBeforeSubmit=function(self,token,limit)
+    local yes,why=baseCheck(self,token,limit)
     g_currentMission.missionDynamicInfo.isMultiplayer=true
     return yes,why
 end

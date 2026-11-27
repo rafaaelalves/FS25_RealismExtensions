@@ -221,6 +221,28 @@ end
 -- Apply only a ONE-SHOT receipt issued by the geometry journal from
 -- an independently verified native recovery callback with no collateral.
 -- An ordinary 'worked area' event or Lua boolean is not physical proof.
+-- Pure admission check for an isolated physical recovery. Settlement
+-- still independently checks the actual journal-issued receipt.
+function Model:preflightRecovery(key,depthM,quantumM)
+    if self.quarantined then return false,"QUARANTINED" end
+    if not finite(depthM) or not finite(quantumM)
+        or not finite(self.quantumM)
+        or math.abs(self.quantumM-quantumM)>0.000000001
+        or depthM<quantumM-0.00001 then
+        return false,"RECOVERY_QUANTUM_OR_DEPTH_MISMATCH"
+    end
+    local item=self.entries[key]
+    if item==nil or item.mode~="TARGET" then
+        return false,"NO_CUMULATIVE_TARGET"
+    end
+    if item.pending~=nil then return false,"VERTEX_PENDING" end
+    if not finite(item.committedM)
+        or math.abs(item.committedM-depthM)>0.00001 then
+        return false,"RECOVERY_LEDGER_OR_DEPTH_MISMATCH"
+    end
+    return true,nil
+end
+
 function Model:syncVerifiedRecovery(journal,proof)
     if self.quarantined then return false,"QUARANTINED" end
     if type(journal)~="table"

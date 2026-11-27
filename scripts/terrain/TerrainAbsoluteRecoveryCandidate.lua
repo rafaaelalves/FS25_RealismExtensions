@@ -32,7 +32,8 @@ function Candidate.new(options)
     end
     if options.budget~=nil
         and (type(options.budget)~="table"
-            or type(options.budget.syncVerifiedRecovery)~="function") then
+            or type(options.budget.syncVerifiedRecovery)~="function"
+            or type(options.budget.preflightRecovery)~="function") then
         return nil,"RECOVERY_BUDGET_SYNC_UNAVAILABLE"
     end
     if options.explicitResearchPermission~=true
@@ -101,6 +102,15 @@ function Candidate:applyOnce(x,z)
         self.stats.refused=self.stats.refused+1
         return nil,"RECOVERY_FULL_QUANTUM_NOT_AVAILABLE"
     end
+    -- Validate paid depth BEFORE any native mutation, not only when
+    -- settling the receipt after a possibly irreversible setter.
+    if self.budget~=nil then
+        local paid,paidWhy=self.budget:preflightRecovery(point.key,point.deficitM,q)
+        if not paid then
+            self.stats.refused=self.stats.refused+1
+            return nil,paidWhy
+        end
+    end
     local token,why=journal:beginRecovery(
         point,unit*0.70,self.budget~=nil)
     if token==nil then
@@ -127,6 +137,15 @@ function Candidate:applyOnce(x,z)
     if not isExclusive(self) then
         return abort("RECOVERY_EXCLUSIVITY_CHANGED")
     end
+    -- The exclusivity callback must not silently rebase the footprint.
+    for _,p in ipairs(token.points) do
+        local y=journal:getHeight(p.x,p.z)
+        if not finite(y) or math.abs(y-p.beforeY)>0.00001 then
+            self.quarantined=true
+            journal:validateBeforeSubmit(token,0.00001)
+            return abort("QUEUED_GEOMETRY_DRIFT")
+        end
+    end
     local before=journal:getHeight(x,z)
     if not finite(before)
         or math.abs(before-point.beforeY)>0.00001 then
@@ -137,6 +156,11 @@ function Candidate:applyOnce(x,z)
     -- +1.25q lies INSIDE the next higher cell for FLOOR and NEAREST
     -- when native before is on a trusted q-lattice. The strict readback
     -- must still confirm precisely ONE q and no neighboring movement.
+    if self.budget~=nil then
+        local paid,paidWhy=self.budget:preflightRecovery(
+            point.key,point.originalY-before,q)
+        if not paid then return abort(paidWhy) end
+    end
     local target=before+q*1.25
     self.consumed=true -- never repeat a possibly destructive setter
     self.stats.nativeCalls=self.stats.nativeCalls+1
@@ -144,7 +168,7 @@ function Candidate:applyOnce(x,z)
     if ok and writeResult==false then ok=false end
     -- Always read the actual post-state even after an adapter exception;
     -- a native call might have changed geometry before returning false.
-    local result,finishWhy=journal:finishRecovery(token,true)
+    local result,finishWhy=journal:finishRecovery(token,true,0.000001)
     local after=journal:getHeight(x,z)
     local raised=finite(after) and after-before or nil
     local tinyRoundoff=0.000000001
@@ -175,6 +199,7 @@ function Candidate:applyOnce(x,z)
         if not synced then
             self.quarantined=true
             self.stats.unsafe=self.stats.unsafe+1
+            self.budget.quarantined=true
             untrust(journal,token,point)
             return {verified=false,beforeY=before,afterY=after,
                 actualRaiseM=raised,footprint=result},

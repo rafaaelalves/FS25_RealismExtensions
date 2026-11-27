@@ -169,4 +169,50 @@ assert(math.abs(v.demandM-0.006708)<1e-9)
 assert(math.abs(fiat.stats.accumulatedM-0.019836)<1e-9)
 assert(v.lastMainGeometryScreen.authorizesMainWrite==false)
 
+-- Area projection: 25 unique 20cm cells at 20mm must remain 20mm
+-- across a full 1m support, not 500mm. No gate from narrow tracks.
+local spatial=assert(P.new({unitM=1,logicalCellSizeM=0.2}))
+local broad={available=true,supportWidthM=2,footprintLengthM=2,
+    dirX=1,dirZ=0,pathContinuity=true}
+local thin={available=true,supportWidthM=0.35,footprintLengthM=1.2,
+    dirX=1,dirZ=0,pathContinuity=true}
+for i=-2,2 do
+    for k=-2,2 do
+        assert(spatial:observe(i..":"..k,i*0.2,k*0.2,0.02,0,nil,broad))
+    end
+end
+local p=assert(spatial:projectMain(0,0))
+assert(p.cellCount==25 and math.abs(p.modeledCoverage01-1)<1e-8)
+assert(math.abs(p.projectedNewDepthM-0.02)<1e-8)
+assert(math.abs(p.researchTargetM-0.02)<1e-8 and not p.authorizesMainWrite)
+-- Aliases of a logical cell must not add area or amplify depth.
+assert(spatial:observe("alias",0.02,0.02,0.01,0,nil,broad))
+p=assert(spatial:projectMain(0,0))
+assert(p.cellCount==25 and math.abs(p.projectedNewDepthM-0.02)<1e-8)
+-- A single thin track is not a broad MAIN candidate regardless of depth.
+local strip=assert(P.new({unitM=1,logicalCellSizeM=0.2}))
+for i=-2,2 do assert(strip:observe("strip"..i,i*0.2,0,0.08,0,nil,thin)) end
+p=assert(strip:projectMain(0,0))
+assert(math.abs(p.modeledCoverage01-0.2)<1e-8)
+assert(math.abs(p.projectedNewDepthM-0.016)<1e-8)
+assert(p.researchTargetM==nil and p.broadModeledCoverage01==0)
+-- Wide new observation qualifies only incremental growth.
+assert(strip:observe("strip0",0,0,0.09,0,nil,broad))
+p=assert(strip:projectMain(0,0))
+assert(math.abs(p.broadProjectedDepthM-0.0004)<1e-8)
+assert(strip:onHistoryRecovered("strip0",0.08,0.01))
+assert(strip:projectMain(0,0).broadProjectedDepthM<1e-8)
+-- Nonaligned 0.2m cells can straddle MAIN boundaries. A centered cell
+-- at x=.5 uses half its area on either side, without depth creation.
+local seam=assert(P.new({unitM=1,logicalCellSizeM=0.2}))
+-- Logical center .6 spans [.5,.7]; choose 0.25m grid for exact seam.
+seam=assert(P.new({unitM=1,logicalCellSizeM=0.25}))
+assert(seam:observe("seam",0.5,0,0.04,0,nil,broad))
+local left,right=seam:projectMain(0,0),seam:projectMain(1,0)
+assert(math.abs(left.projectedNewDepthM-0.00125)<1e-8)
+assert(math.abs(right.projectedNewDepthM-0.00125)<1e-8)
+-- Actual worked polygon clears virtual cell and projected support too.
+assert(seam:onWorkedArea({xs=-1,zs=-1,ux=3,uz=0,vx=0,vz=2})==1)
+assert(seam:projectMain(0,0).cellCount==0 and seam:projectMain(1,0).cellCount==0)
+assert(seam:projectMain(0/0,0)==nil)
 print("terrain_absolute_height_planner_harness: OK")
