@@ -1,5 +1,9 @@
 # Current development handoff — experimental terrain, 2026-11-13
 
+## 27-Nov-2026 — real roundtrip passed; staged persistence research
+
+Real test: PR #64 comment 7225328557, x360 z389, one down/up native quantum each 0.0038909912109375m, nine original vertices restored. Do not repeat immediate test. New isolated optional commands absoluteStageDown q COPY and absoluteStageUp q COPY: save/quit/reload DOWN first and verify; only then restore that exact persisted depression in a new session with a private journal reconstructed from a strict staged witness. Save/quit/reload UP and verify distinct direction and all nine heights. Stage DOWN requires a new disposable copy without an existing witness; legacy witness cannot grant UP permission. The UP save replaces the DOWN witness only via explicit absolutePersist COPY. Record both logs; not proof of a process restart from Lua, collision, fine mesh or career ownership. SHADOW unchanged. No new live test until CI and next review.
+
 ## 27-Nov-2026 — CI regression: retain both geometry and exclusivity checks
 
 PR #86 run 46046658157 failed in terrain_absolute_height_experimental_backend_harness.lua:88. Cause: the prior reordering let a session/MP transition inside validateBeforeSubmit bypass the final exclusivity check. Restore preflight -> exclusivity recheck -> direct full-footprint comparison (no rebase) in both absolute candidates. Preserve the existing late-neighbor regression and add symmetric recovery exclusivity regression. Existing backend assertion unchanged. No SHADOW or gameplay policy change. CI must pass before issuing a new test ZIP.

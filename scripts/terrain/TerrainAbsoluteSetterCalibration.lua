@@ -362,7 +362,10 @@ end
 -- most one verified up step. A private, non-persisted journal owns the
 -- temporary reference; no live career recovery permission is issued.
 -- COPY is an operator declaration, NOT proof of a disposable save.
-function Cal.runRoundTrip(quantumInput,confirmation)
+function Cal.runRoundTrip(quantumInput,confirmation,stage)
+    if stage~=nil and stage~="RECOVERY_DOWN" and stage~="RECOVERY_UP" then
+        return false,report("INVALID_RECOVERY_STAGE")
+    end
     if confirmation~="COPY" then return false,report("ROUNDTRIP COPY_REQUIRED") end
     local q=tonumber(quantumInput)
     if not finite(q) or q<0.003 or q>0.012 then
@@ -387,7 +390,30 @@ function Cal.runRoundTrip(quantumInput,confirmation)
         or directory=="" or map==nil then
         return false,report("ROUNDTRIP SAVE_IDENTITY_REQUIRED")
     end
+    local W=RealismExtensionsTerrainAbsolutePersistenceWitness
+    local savedBase=nil
+    if stage~=nil then
+        if W==nil or type(W.capture)~="function" then
+            return false,report("STAGED_WITNESS_UNAVAILABLE")
+        end
+        if stage=="RECOVERY_DOWN" then
+            local path=W.path(info)
+            if path==nil or type(fileExists)~="function" or fileExists(path) then
+                return false,report("RECOVERY_DOWN_REQUIRES_FRESH_COPY_WITHOUT_WITNESS")
+            end
+        else
+            if Cal.witnessOriginMission==mission then
+                return false,report("RECOVERY_UP_REQUIRES_RELOAD")
+            end
+            savedBase,why=W.readRecoveryBase(info,ctx.journal)
+            if savedBase==nil or savedBase.x~=ctx.x or savedBase.z~=ctx.z
+                or math.abs(savedBase.requestedM-q)>0.000000001 then
+                return false,report("RECOVERY_UP_BASE_REFUSED "..tostring(why))
+            end
+        end
+    end
     local original={}
+    local baseByKey={}
     local key
     for _,v in ipairs(ctx.points) do
         if ctx.journal.observations[v.key]~=nil
@@ -396,18 +422,58 @@ function Cal.runRoundTrip(quantumInput,confirmation)
         end
         local y=ctx.journal:getHeight(v.x,v.z)
         if not finite(y) then return false,report("ROUNDTRIP HEIGHT_UNAVAILABLE") end
-        original[#original+1]={x=v.x,z=v.z,key=v.key,y=y}
+        local originalY=y
+        if savedBase~=nil then
+            local found
+            for _,p in ipairs(savedBase.points) do
+                if p.x==v.x and p.z==v.z then found=p;break end
+            end
+            if not found or math.abs(y-found.afterY)>0.000001 then
+                return false,report("RECOVERY_UP_BASE_HEIGHT_MISMATCH")
+            end
+            originalY=found.beforeY
+        end
+        original[#original+1]={x=v.x,z=v.z,key=v.key,y=originalY}
+        baseByKey[v.key]=originalY
         if v.x==ctx.x and v.z==ctx.z then key=v.key end
     end
     if key==nil then return false,report("ROUNDTRIP CENTER_UNAVAILABLE") end
+    -- Reconstruct the historical baseline in a PRIVATE journal ONLY
+    -- from the strict DOWN receipt; never inject ownership into career data.
+    local readHistorical=savedBase~=nil
     local journal=J.new(ctx.journal.terrain,{unitM=ctx.unitM,
         maxObservations=9,maxRecoveryFences=1,
-        sample=function(x,z) return ctx.journal:getHeight(x,z) end})
+        sample=function(x,z)
+            if readHistorical then
+                local ix,iz=math.floor(x/ctx.unitM+0.5),math.floor(z/ctx.unitM+0.5)
+                return baseByKey[tostring(ix)..":"..tostring(iz)]
+            end
+            return ctx.journal:getHeight(x,z)
+        end})
     local budget,err=B.new({quantumM=q,toleranceM=0.00005})
     if budget==nil then return false,report("ROUNDTRIP "..tostring(err)) end
-    local phase="DOWN"
+    local phase=savedBase~=nil and "UP" or "DOWN"
     local calls=0
     local lower,upper
+    local witnessSnapshot=nil
+    if savedBase~=nil then
+        local token,tokenWhy=journal:begin("PRIVATE_SAVED_DOWN",ctx.x,ctx.z,ctx.radius)
+        readHistorical=false
+        if token==nil then return false,report(tostring(tokenWhy)) end
+        local receipt=journal:complete(token,true,0.000001)
+        local center=ctx.journal:getHeight(ctx.x,ctx.z)
+        local depth=baseByKey[key]-center
+        if receipt==nil or receipt.movedVertices~=1 or receipt.loweredVertices~=1
+            or math.abs(depth-q)>0.00001 or depth>q+0.000000001
+            or not budget:seedOwnedTarget(key,depth) then
+            return false,report("RECOVERY_UP_PRIVATE_BASE_REFUSED")
+        end
+        lower={beforeY=baseByKey[key],afterY=center}
+        witnessSnapshot={}
+        for _,p in ipairs(savedBase.points) do
+            witnessSnapshot[#witnessSnapshot+1]={x=p.x,z=p.z,beforeY=p.afterY}
+        end
+    end
     local function matches(centerY)
         for _,v in ipairs(original) do
             local y=ctx.journal:getHeight(v.x,v.z)
@@ -444,7 +510,8 @@ function Cal.runRoundTrip(quantumInput,confirmation)
                 or ctx.journal.recoveryFences[v.key]~=nil then return false end
         end
         if phase=="DOWN" then return calls==0 and matches(nil) end
-        return calls==1 and lower~=nil and matches(lower.afterY)
+        return calls==(savedBase~=nil and 0 or 1)
+            and lower~=nil and matches(lower.afterY)
     end
     local function setter(x,z,target)
         if not exclusive() then return false end
@@ -463,19 +530,31 @@ function Cal.runRoundTrip(quantumInput,confirmation)
     Cal.pendingWitness=nil
     Cal.persistRequested=false
     Cal.witnessSaveAttempted=false
+    Cal.witnessOriginMission=nil
+    Cal.witnessOriginInfo=nil
+    Cal.witnessOriginDirectory=nil
     -- Catch even unexpected Lua failures; never retry a native setter.
     local ok,matched,reason=pcall(function()
-        local errDown
-        lower,errDown=down:applyOne(ctx.x,ctx.z,q,"CUMULATIVE")
-        if lower==nil or not lower.verified or calls~=1
-            or not matches(lower.afterY) then
-            return false,errDown or "DOWN_READBACK_NOT_VERIFIED"
+        if savedBase==nil then
+            local errDown
+            lower,errDown=down:applyOne(ctx.x,ctx.z,q,"CUMULATIVE")
+            if lower==nil or not lower.verified or calls~=1
+                or not matches(lower.afterY) then
+                return false,errDown or "DOWN_READBACK_NOT_VERIFIED"
+            end
+            if stage=="RECOVERY_DOWN" then
+                witnessSnapshot={}
+                for _,p in ipairs(original) do
+                    witnessSnapshot[#witnessSnapshot+1]={x=p.x,z=p.z,beforeY=p.y}
+                end
+                return true,"RECOVERY_DOWN_IMMEDIATE_ONLY"
+            end
         end
         phase="UP"
         local errUp
         upper,errUp=up:applyOnce(ctx.x,ctx.z)
         if upper==nil or not upper.verified or not upper.completed
-            or calls~=2 or not matches(nil) then
+            or calls~=(savedBase~=nil and 1 or 2) or not matches(nil) then
             return false,errUp or "UP_OR_ORIGINAL_3X3_NOT_VERIFIED"
         end
         local item=budget.entries[key]
@@ -484,19 +563,37 @@ function Cal.runRoundTrip(quantumInput,confirmation)
             or journal.pendingCount~=0 then
             return false,"ROUNDTRIP_ACCOUNTING_NOT_CLOSED"
         end
-        return true,"MAIN_ROUNDTRIP_IMMEDIATE_ONLY"
+        return true,savedBase~=nil and "RECOVERY_UP_IMMEDIATE_ONLY"
+            or "MAIN_ROUNDTRIP_IMMEDIATE_ONLY"
     end)
     ctx.rt.nativeDamageQuarantined=true
     local safe=ok and matched==true
+    if safe and stage~=nil then
+        local captureOk,record,recordWhy=pcall(W.capture,ctx.journal,
+            {points=witnessSnapshot},ctx.x,ctx.z,q,info,0.000001,stage)
+        if captureOk and record~=nil then
+            Cal.pendingWitness=record
+            Cal.witnessOriginMission=mission
+            Cal.witnessOriginInfo=info
+            Cal.witnessOriginDirectory=directory
+        else
+            safe=false
+            reason=captureOk and recordWhy or record
+        end
+    end
     if not safe and calls>0 then
         -- An unknown physical change must not become a new career baseline.
         ctx.journal:quarantine("DISPOSABLE_ROUNDTRIP_UNVERIFIED")
     end
-    report(string.format("ROUNDTRIP RESULT matched=%s calls=%d phase=%s q=%.9f x=%.3f z=%.3f down=%s up=%s reason=%s. PRIVATE JOURNAL ONLY; NO WITNESS; QUIT COPY WITHOUT SAVING. NOT COLLISION OR FINE MESH PROOF.",
+    report(string.format("ROUNDTRIP RESULT matched=%s calls=%d phase=%s q=%.9f x=%.3f z=%.3f down=%s up=%s reason=%s. PRIVATE JOURNAL ONLY; witness=%s. NOT COLLISION OR FINE MESH PROOF.",
         tostring(safe),calls,phase,q,ctx.x,ctx.z,
         tostring(lower and lower.beforeY and lower.afterY
             and lower.beforeY-lower.afterY),
-        tostring(upper and upper.actualRaiseM),tostring(ok and reason or matched)))
+        tostring(upper and upper.actualRaiseM),tostring(ok and reason or matched),
+        Cal.pendingWitness~=nil and stage or "NONE_QUIT_WITHOUT_SAVE"))
+    if Cal.pendingWitness~=nil then
+        report("STAGED WITNESS READY: absolutePersist COPY; manually save disposable copy; quit and reload; absoluteVerify. Never save without explicit opt-in.")
+    end
     return safe,ok and reason or tostring(matched)
 end
 
@@ -631,8 +728,8 @@ function Cal.verifyReload()
     end
     local ok,status,d=W.verifyReload(info,rt.geometryJournal)
     report(string.format(
-        "RELOAD WITNESS status=%s match=%s centerDeltaM=%s maxDriftM=%s neighborsChanged=%s. MAIN height ONLY; command does NOT establish fine mesh persistence, collision, or actual process restart.",
-        tostring(status),tostring(ok),
+        "RELOAD WITNESS status=%s match=%s stage=%s centerDeltaM=%s maxDriftM=%s neighborsChanged=%s. MAIN height ONLY; command does NOT establish fine mesh persistence, collision, or actual process restart.",
+        tostring(status),tostring(ok),d~=nil and tostring(d.stage) or "-",
         d~=nil and tostring(d.centerDeltaM) or "UNAVAILABLE",
         d~=nil and tostring(d.maxDriftM) or "UNAVAILABLE",
         d~=nil and tostring(d.neighborsChanged) or "UNAVAILABLE"))

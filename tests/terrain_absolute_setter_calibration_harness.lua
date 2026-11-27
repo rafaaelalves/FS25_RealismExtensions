@@ -205,4 +205,35 @@ resetRoundtrip()
 rt.geometryJournal.observations["10:20"]={owned=true,x=10,z=20,
     observedHeightM=base,preREHeightM=base+q}
 assert(not C.runRoundTrip(q,"COPY") and calls==0)
+-- Separate saved DOWN and UP states: the final restored height must
+-- be distinguished from the previously observed saved depression.
+resetRoundtrip()
+witnessFiles[witnessPath]=nil
+assert(C.runRoundTrip(q,"COPY","RECOVERY_DOWN") and calls==1)
+assert(C.pendingWitness.stage=="RECOVERY_DOWN")
+assert(C.armPersistence("COPY"))
+assert(C.saveWitness(g_currentMission.missionInfo))
+assert(not C.verifyReload())
+assert(not C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==1)
+-- Fresh session, same persisted native height and strict saved receipt.
+local savedHeight=h["10:20"]
+g_currentMission={time=10000,missionInfo={isMultiplayer=false,
+    isValid=true,mapId="SaoCarlos",savegameDirectory="/copy"}}
+resetRoundtrip()
+h["10:20"]=savedHeight
+assert(C.verifyReload())
+assert(C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==1)
+assert(C.pendingWitness.stage=="RECOVERY_UP")
+assert(math.abs(h["10:20"]-base)<1e-8)
+assert(rt.geometryJournal.observationCount==0)
+assert(C.armPersistence("COPY"))
+assert(C.saveWitness(g_currentMission.missionInfo))
+assert(not C.verifyReload())
+g_currentMission={time=10000,missionInfo={isMultiplayer=false,
+    isValid=true,mapId="SaoCarlos",savegameDirectory="/copy"}}
+resetRoundtrip()
+assert(C.verifyReload())
+h["10:20"]=savedHeight -- stale DOWN disk height MUST fail UP verification
+assert(not C.verifyReload())
+assert(not C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==0)
 print("terrain_absolute_setter_calibration_harness: OK")

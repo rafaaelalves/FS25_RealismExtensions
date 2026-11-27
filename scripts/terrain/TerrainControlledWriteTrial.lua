@@ -189,6 +189,15 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
         local matched,why=c.runRoundTrip(confirmation,extraConfirmation)
         return speak("ROUNDTRIP "..tostring(matched).." "..tostring(why)
             .."; QUIT DISPOSABLE COPY WITHOUT SAVING")
+    elseif action=="absolutestagedown" or action=="absolutestageup" then
+        local c=RealismExtensionsTerrainAbsoluteSetterCalibration
+        if c==nil or type(c.runRoundTrip)~="function" then
+            return speak("STAGED_RECOVERY_UNAVAILABLE")
+        end
+        local stage=action=="absolutestagedown" and "RECOVERY_DOWN" or "RECOVERY_UP"
+        local matched,why=c.runRoundTrip(confirmation,extraConfirmation,stage)
+        return speak(stage.." "..tostring(matched).." "..tostring(why)
+            ..(matched and "; see explicit persistence option" or "; QUIT COPY WITHOUT SAVING"))
     elseif action=="absolutestep" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil or type(c.runOneStep)~="function" then

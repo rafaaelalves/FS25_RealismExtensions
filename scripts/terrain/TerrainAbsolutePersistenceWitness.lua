@@ -44,6 +44,14 @@ local function validate(data)
         or epsilon>Witness.TOLERANCE_M then
         return false,"INVALID_WITNESS_READBACK_LIMIT"
     end
+    local stage=data.stage
+    if stage~=nil and stage~="RECOVERY_DOWN" and stage~="RECOVERY_UP" then
+        return false,"INVALID_WITNESS_STAGE"
+    end
+    if stage~=nil and (epsilon>0.000001
+        or data.requestedM<0.003 or data.requestedM>0.012) then
+        return false,"INVALID_STAGED_WITNESS_LIMIT"
+    end
     local seen,centerCount={},0
     local u=data.unitM
     for _,p in ipairs(data.points) do
@@ -64,9 +72,12 @@ local function validate(data)
         local delta=p.afterY-p.beforeY
         if ix==0 and iz==0 then
             centerCount=centerCount+1
-            if delta>=-epsilon
-                or -delta>Witness.MAX_CENTER_LOWER_M then
+            local movement=stage=="RECOVERY_UP" and delta or -delta
+            if movement<=epsilon or movement>Witness.MAX_CENTER_LOWER_M then
                 return false,"UNTRUSTED_WITNESS_CENTER_AMPLITUDE"
+            end
+            if stage~=nil and math.abs(movement-data.requestedM)>0.00001 then
+                return false,"STAGED_WITNESS_QUANTUM_MISMATCH"
             end
         elseif math.abs(delta)>epsilon then
             return false,"UNTRUSTED_WITNESS_COLLATERAL"
@@ -77,7 +88,7 @@ local function validate(data)
 end
 
 function Witness.capture(journal,token,x,z,requestedM,info,
-    maxReadbackDriftM)
+    maxReadbackDriftM,stage)
     if type(journal)~="table" or type(journal.getHeight)~="function"
         or not finite(journal.unitM)
         or type(token)~="table" or type(token.points)~="table"
@@ -88,7 +99,7 @@ function Witness.capture(journal,token,x,z,requestedM,info,
     if identity==nil then return nil,"WITNESS_MAP_ID_UNAVAILABLE" end
     local data={version=Witness.VERSION,mapId=identity,
         unitM=journal.unitM,x=x,z=z,requestedM=requestedM,points={},
-        maxReadbackDriftM=maxReadbackDriftM}
+        maxReadbackDriftM=maxReadbackDriftM,stage=stage}
     local epsilon=maxReadbackDriftM or Witness.TOLERANCE_M
     if not finite(epsilon) or epsilon<0.0000001
         or epsilon>Witness.TOLERANCE_M then
@@ -103,11 +114,14 @@ function Witness.capture(journal,token,x,z,requestedM,info,
         local delta=after-p.beforeY
         local isCenter=p.x==x and p.z==z
         if isCenter then
-            if delta>=-epsilon then
-                return nil,"WITNESS_NO_MEASURABLE_CENTER_LOWERING"
+            local movement=stage=="RECOVERY_UP" and delta or -delta
+            if movement<=epsilon then
+                return nil,stage=="RECOVERY_UP" and "WITNESS_NO_MEASURABLE_CENTER_RAISING"
+                    or "WITNESS_NO_MEASURABLE_CENTER_LOWERING"
             end
-            if -delta>Witness.MAX_CENTER_LOWER_M then
-                return nil,"WITNESS_EXCESSIVE_CENTER_LOWERING"
+            if movement>Witness.MAX_CENTER_LOWER_M then
+                return nil,stage=="RECOVERY_UP" and "WITNESS_EXCESSIVE_CENTER_RAISING"
+                    or "WITNESS_EXCESSIVE_CENTER_LOWERING"
             end
             changed=changed+1
         elseif math.abs(delta)>epsilon then
@@ -160,6 +174,7 @@ function Witness.save(info,data,journal)
         xml:setFloat(root.."#maxReadbackDriftM",
             data.maxReadbackDriftM)
     end
+    if data.stage~=nil then xml:setString(root.."#stage",data.stage) end
     xml:setInt(root.."#vertexCount",9)
     for i,p in ipairs(data.points) do
         local key=string.format("%s.points.point(%d)",root,i-1)
@@ -191,6 +206,7 @@ local function read(info)
         x=xml:getFloat(root.."#x"),z=xml:getFloat(root.."#z"),
         requestedM=xml:getFloat(root.."#requestedM"),
         maxReadbackDriftM=xml:getFloat(root.."#maxReadbackDriftM"),
+        stage=xml:getString(root.."#stage"),
         points={}}
     local count=xml:getInt(root.."#vertexCount",-1)
     if count==9 then
@@ -241,10 +257,21 @@ function Witness.verifyReload(info,journal)
     end
     return true,"MAIN_HEIGHT_MATCHES_SAVED_WITNESS",{
         matchedVertices=9,centerDeltaM=centerDelta,maxDriftM=maxDrift,
+        stage=data.stage,
         -- We do not know from Lua whether this is a fresh game session;
         -- the user must actually reload the copied save before claiming it.
         provesNativeFinePersistence=false,provesCollision=false,
         provesAgronomicRecovery=false,provesReloadOccurred=false
     }
+end
+-- Re-open a persisted, strict DOWN stage only after matching all nine
+-- real heights. Never treat legacy witness files as recovery authority.
+function Witness.readRecoveryBase(info,journal)
+    local d,why=read(info)
+    if d==nil then return nil,why end
+    if d.stage~="RECOVERY_DOWN" then return nil,"RECOVERY_DOWN_STAGE_REQUIRED" end
+    local ok,status=Witness.verifyReload(info,journal)
+    if not ok then return nil,status end
+    return d,nil
 end
 return Witness
