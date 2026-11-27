@@ -209,6 +209,20 @@ end))
 local tinyResult=assert(tiny:applyOnce(950,950))
 assert(not tinyResult.verified and tinyResult.footprint.collateral==1)
 assert(tiny.quarantined and j.pendingCount==0)
+-- A late neighbor edit during the exclusivity adapter is still detected
+-- before the recovery setter, rather than attributed to RE restitution.
+own(980,980,2*q)
+local lateChecks=0
+local late=assert(A.new({journal=j,quantumM=q,
+    explicitResearchPermission=true,disposableSaveConfirmed=true,
+    verifyExclusive=function()
+        lateChecks=lateChecks+1
+        if lateChecks==2 then set(981,981,base+0.0001) end
+        return true
+    end,writeHeight=writer}))
+local lateCalls=count
+assert(select(2,late:applyOnce(980,980))=="QUEUED_GEOMETRY_DRIFT")
+assert(count==lateCalls and j.pendingCount==0 and late.quarantined)
 -- The isolated candidate can no longer write journal.observations
 -- behind the bounded journal's observationCount accounting.
 local counted=0
