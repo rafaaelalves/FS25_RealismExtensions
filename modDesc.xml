@@ -83,6 +83,7 @@
         <sourceFile filename="scripts/terrain/TerrainMainFootprintGate.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteHeightPlanner.lua"/>
         <sourceFile filename="scripts/terrain/TerrainMainPatchReconciliation.lua"/>
+        <sourceFile filename="scripts/terrain/TerrainMainPatchExecutor.lua"/>
         <sourceFile filename="scripts/terrain/TerrainFreshWheelSource.lua"/>
         <sourceFile filename="scripts/terrain/TerrainQuantizedHeightBudget.lua"/>
         <sourceFile filename="scripts/terrain/TerrainAbsoluteVertexCandidate.lua"/>
