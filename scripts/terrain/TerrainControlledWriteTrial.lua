@@ -202,6 +202,36 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
             result.modeledCoverage01,result.broadModeledCoverage01,
             result.projectedNewDepthM,result.maxSourceDepthM,
             result.broadProjectedDepthM,tostring(result.researchTargetM),result.state))
+    elseif action=="patchplan" then
+        local rt=RealismExtensionsTerrainRuntime
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local planner=rt and rt.absoluteShadow
+        if not planner or type(planner.planMainPatch)~="function"
+            or not gp or not gp.position then
+            return speak("PATCHPLAN_REQUIRES_SHADOW_AND_REGEOMARK")
+        end
+        local u=planner.unitM
+        local x,z=gp.position.x,gp.position.z
+        if type(x)~="number" or type(z)~="number" or x~=x or z~=z
+            or math.abs(x)==math.huge or math.abs(z)==math.huge then
+            return speak("PATCHPLAN_INVALID_MARK")
+        end
+        local result,why=planner:planMainPatch(math.floor(x/u+0.5),
+            math.floor(z/u+0.5),2,tonumber(confirmation),
+            tonumber(extraConfirmation))
+        if not result then return speak("PATCHPLAN_REFUSED "..tostring(why)) end
+        for _,p in ipairs(result.points) do
+            if p.rawTargetM>0 then
+                speak(string.format("PATCHPLAN vertex=%s rawM=%.8f rawSteps=%d plannedSteps=%d plannedM=%.8f withheldM=%.8f broadCoverage=%.4f",
+                    p.key,p.rawTargetM,p.rawSteps,p.steps,p.targetDepthM,
+                    p.withheldM,p.broadCoverage01 or 0))
+            end
+        end
+        return speak(string.format("PATCHPLAN RESULT state=%s q=%.9f gradientLimit=%.5f maxAddedGradient=%.5f vertices=%d steps=%d rawDepthSumM=%.8f plannedDepthSumM=%.8f quantizationWithheldM=%.8f slopeWithheldM=%.8f sweeps=%d NO_WRITE NEW_DEPTH_ONLY NOT_EXECUTION_PLAN",
+            result.state,result.quantumM,result.gradientLimit,
+            result.maxAddedGradient,result.candidateVertices,result.wholeSteps,
+            result.rawDepthSumM,result.plannedDepthSumM,
+            result.quantizationWithheldM,result.slopeWithheldM,result.sweeps))
     elseif action=="absoluteroundtrip" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil or type(c.runRoundTrip)~="function" then
@@ -318,7 +348,7 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
             "ONE-SHOT ARMED ONLY near x=%.3f z=%.3f (wheel center within %.2fm). One <=3mm, <=0.60m-radius LOWER, then auto-disarm. COPIED SAVE ONLY.",
             mark.x,mark.z,Trial.MAX_MARK_OFFSET_M))
     end
-    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+    return speak("Usage: reTerrainTrial [status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absoluteStageDown <quantum_m> COPY|absoluteStageUp <quantum_m> COPY|projection|patchPlan <candidate_q_m> <max_added_gradient>|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
 end
 
 function Trial.installCommands()
@@ -328,7 +358,7 @@ function Trial.installCommands()
     end
     addConsoleCommand("reTerrainTrial",
         "Protected RE terrain A/B test: observe, additive or isolated absolute diagnostic",
-        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
+        "consoleCommand",Trial,"[status|probe|arm|calibrate|absoluteCheck|absoluteStep <quantum_m> COPY|absoluteRoundTrip <quantum_m> COPY|absoluteStageDown <quantum_m> COPY|absoluteStageUp <quantum_m> COPY|projection|patchPlan <candidate_q_m> <max_added_gradient>|absolutePersist COPY|absoluteVerify|contact|lattice [heightScale]|cancel]")
     Trial.commandsInstalled=true
     return true
 end

@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=7
+Planner.VERSION=8
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -498,6 +498,123 @@ function Planner:projectMain(ix,iz)
         state=count==0 and "NO_MODEL_DEMAND"
             or eligible and "BROAD_MODEL_RESEARCH_ONLY"
             or "INSUFFICIENT_BROAD_MODEL_SUPPORT",
+        doesNotWrite=true,authorizesMainWrite=false}
+end
+
+-- Bounded integer-lattice envelope of NEW modeled depth, NOT absolute
+-- terrain elevations or existing paid native debt. All outside vertices
+-- of this research patch are fixed at zero NEW depth. Only reduce targets;
+-- never spread excavation into an unsupported vertex to smooth a ridge.
+-- q and gradient are caller-provided research assumptions, not map proof.
+-- No native calls, reservations, budget mutation, or executable schedule.
+function Planner:planMainPatch(ix,iz,radius,quantumM,maxGradient)
+    local u=self.unitM
+    if not finite(ix) or not finite(iz) or ix~=math.floor(ix)
+        or iz~=math.floor(iz) or math.abs(ix)>1e7-4 or math.abs(iz)>1e7-4
+        or not finite(radius) or radius~=math.floor(radius)
+        or radius<1 or radius>3 or not finite(u) or u<=0 then
+        return nil,"PATCH_GRID_UNAVAILABLE"
+    end
+    if not finite(quantumM) or quantumM<0.00025 or quantumM>0.05
+        or not finite(maxGradient) or maxGradient<=0 or maxGradient>0.20 then
+        return nil,"PATCH_RESEARCH_PARAMETERS_INVALID"
+    end
+    local q=quantumM
+    -- No epsilon upward rounding: every whole step must be funded.
+    local function whole(amount)
+        local n=math.floor(amount/q)
+        if n*q>amount then n=n-1 end
+        return math.max(0,n)
+    end
+    local axial=whole(maxGradient*u)
+    local diagonal=whole(maxGradient*u*math.sqrt(2))
+    local grid,points={},{}
+    local function key(x,z) return tostring(x)..":"..tostring(z) end
+    local inspected=0
+    local rawSum,quantizedSum=0,0
+    for x=ix-radius,ix+radius do
+        for z=iz-radius,iz+radius do
+            local p,why=self:projectMain(x,z)
+            if p==nil then return nil,why end
+            inspected=inspected+(p.inspectedMembers or 0)
+            if inspected>32768 then return nil,"PATCH_MEMBER_LIMIT" end
+            local cap=p.researchTargetM or 0
+            if not finite(cap) or cap<0 or cap>0.10 then
+                return nil,"PATCH_INVALID_PROJECTED_CAP"
+            end
+            local n=whole(cap)
+            local item={ix=x,iz=z,key=key(x,z),x=x*u,z=z*u,
+                rawTargetM=cap,rawSteps=n,steps=n,
+                broadCoverage01=p.broadModeledCoverage01}
+            grid[item.key]=item
+            points[#points+1]=item
+            rawSum=rawSum+cap
+            quantizedSum=quantizedSum+n*q
+        end
+    end
+    -- Shortest-path-style monotone relaxation. The maximal depth envelope
+    -- beneath all input caps is constrained by each 8-neighbor edge.
+    -- A decrease can propagate across the patch; N+1 full sweeps bound
+    -- convergence even for a zero-quantum edge. Zero outside is a fixed
+    -- conservative boundary, not a claim about actual surrounding soil.
+    local converged=false
+    local sweeps=0
+    for pass=1,#points+1 do
+        sweeps=pass
+        local changed=false
+        for _,p in ipairs(points) do
+            local ceiling=p.steps
+            for dx=-1,1 do
+                for dz=-1,1 do
+                    if dx~=0 or dz~=0 then
+                        local other=grid[key(p.ix+dx,p.iz+dz)]
+                        local limit=(dx~=0 and dz~=0) and diagonal or axial
+                        ceiling=math.min(ceiling,(other and other.steps or 0)+limit)
+                    end
+                end
+            end
+            if ceiling<p.steps then
+                p.steps=ceiling
+                changed=true
+            end
+        end
+        if not changed then converged=true;break end
+    end
+    if not converged then return nil,"PATCH_ENVELOPE_NOT_CONVERGED" end
+    local total,count,peak,maxEdge=0,0,0,0
+    local stepCount=0
+    for _,p in ipairs(points) do
+        p.targetDepthM=p.steps*q
+        p.withheldM=p.rawTargetM-p.targetDepthM
+        if p.targetDepthM>p.rawTargetM or p.steps<0 then
+            return nil,"PATCH_DEPTH_INVARIANT"
+        end
+        total=total+p.targetDepthM
+        stepCount=stepCount+p.steps
+        if p.steps>0 then count=count+1 end
+        peak=math.max(peak,p.targetDepthM)
+        for dx=-1,1 do
+            for dz=-1,1 do
+                if dx~=0 or dz~=0 then
+                    local other=grid[key(p.ix+dx,p.iz+dz)]
+                    local dist=u*math.sqrt(dx*dx+dz*dz)
+                    local diff=math.abs(p.steps-(other and other.steps or 0))
+                    local limit=(dx~=0 and dz~=0) and diagonal or axial
+                    if diff>limit then return nil,"PATCH_EDGE_INVARIANT" end
+                    maxEdge=math.max(maxEdge,diff*q/dist)
+                end
+            end
+        end
+    end
+    return {points=points,center=grid[key(ix,iz)],radius=radius,
+        quantumM=q,gradientLimit=maxGradient,axialSteps=axial,
+        diagonalSteps=diagonal,sweeps=sweeps,inspectedMembers=inspected,
+        candidateVertices=count,wholeSteps=stepCount,peakDepthM=peak,
+        -- These sums are comparison metrics, not physical soil volumes.
+        rawDepthSumM=rawSum,quantizedDepthSumM=quantizedSum,
+        plannedDepthSumM=total,quantizationWithheldM=rawSum-quantizedSum,
+        slopeWithheldM=quantizedSum-total,maxAddedGradient=maxEdge,
+        state=count>0 and "PATCH_RESEARCH_ONLY" or "NO_WHOLE_SUPPORTED_PATCH",
         doesNotWrite=true,authorizesMainWrite=false}
 end
 
