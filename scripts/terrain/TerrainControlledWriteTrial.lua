@@ -181,6 +181,27 @@ function Trial:consoleCommand(action,confirmation,extraConfirmation)
         local ok,reason=c.run()
         return ok and speak("Calibration queued with isolated native writer")
             or speak("Calibration refused; check native journal and RE Terrain Calibration output")
+    elseif action=="projection" then
+        local rt=RealismExtensionsTerrainRuntime
+        local gp=RealismExtensionsTerrainGeometryProbe
+        local planner=rt and rt.absoluteShadow
+        if not planner or type(planner.projectMain)~="function"
+            or not gp or not gp.position then
+            return speak("PROJECTION_REQUIRES_SHADOW_AND_REGEOMARK")
+        end
+        local u=planner.unitM
+        local x,z=gp.position.x,gp.position.z
+        if type(x)~="number" or type(z)~="number" or x~=x or z~=z then
+            return speak("PROJECTION_INVALID_MARK")
+        end
+        local result,why=planner:projectMain(math.floor(x/u+0.5),
+            math.floor(z/u+0.5))
+        if not result then return speak("PROJECTION_REFUSED "..tostring(why)) end
+        return speak(string.format("PROJECTION x=%.3f z=%.3f cells=%d inspected=%d coverage=%.4f broadCoverage=%.4f areaDepthM=%.8f peakDepthM=%.8f broadDepthM=%.8f researchTargetM=%s state=%s NO_WRITE NOT_NATIVE_SURFACE",
+            result.x,result.z,result.cellCount,result.inspectedMembers,
+            result.modeledCoverage01,result.broadModeledCoverage01,
+            result.projectedNewDepthM,result.maxSourceDepthM,
+            result.broadProjectedDepthM,tostring(result.researchTargetM),result.state))
     elseif action=="absoluteroundtrip" then
         local c=RealismExtensionsTerrainAbsoluteSetterCalibration
         if c==nil or type(c.runRoundTrip)~="function" then

@@ -5,7 +5,7 @@
 RealismExtensionsTerrainAbsoluteHeightPlanner =
     RealismExtensionsTerrainAbsoluteHeightPlanner or {}
 local Planner=RealismExtensionsTerrainAbsoluteHeightPlanner
-Planner.VERSION=6
+Planner.VERSION=7
 local function finite(v)
     return type(v)=="number" and v==v
         and v~=math.huge and v~=-math.huge
@@ -142,7 +142,7 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
             *self.logicalCellSizeM
         source={vertexKey=vertexKey,targetM=existingDepthM or 0,
             x=sxLogical,z=szLogical,
-            unappliedDemandM=0,modelHistory=nil}
+            unappliedDemandM=0,broadDemandM=0,modelHistory=nil}
         self.sources[sourceKey]=source
         self.sourceCount=self.sourceCount+1
     elseif source.vertexKey~=vertexKey then
@@ -211,6 +211,10 @@ function Planner:observe(sourceKey,x,z,cumulativeTargetM,existingDepthM,nextHist
     st.maxMainCellCoverage01=math.max(st.maxMainCellCoverage01,
         tonumber(geometryScreen.coverage01) or 0)
     if geometryScreen.state=="MAIN_RESEARCH_CANDIDATE" then
+        -- Credit only NEW growth supported by this specific observation.
+        -- A later wide wheel cannot retroactively qualify narrow-wheel debt.
+        source.broadDemandM=math.min(source.unappliedDemandM,
+            (source.broadDemandM or 0)+delta)
         st.mainResearchCandidates=st.mainResearchCandidates+1
     elseif geometryScreen.state=="FINE_ONLY_OR_UNREPRESENTABLE" then
         st.mainFineOnly=st.mainFineOnly+1
@@ -274,6 +278,10 @@ function Planner:onHistoryRecovered(sourceKey,remainingRutM,appliedM)
     -- before tillage. Future model steps restart from real, repaired history.
     source.modelHistory=nil
     source.unappliedDemandM=math.max(0,source.unappliedDemandM-confirmed)
+    -- The repaired part of the logical cell cannot be allocated to a
+    -- particular historical wheel; debit supported demand conservatively.
+    source.broadDemandM=math.min(source.unappliedDemandM,
+        math.max(0,(source.broadDemandM or 0)-confirmed))
     -- Even partial restoration can settle every unit of NEW shadow
     -- demand. Release the inactive source then: future observations seed
     -- their baseline from the CURRENT real SpatialHistory cell, preserving
@@ -410,6 +418,89 @@ end
 function Planner:getVertex(ix,iz)
     return self.vertices[tostring(ix)..":"..tostring(iz)]
 end
+-- Finite-volume-like projection of VIRTUAL logical cell depth onto the
+-- MAIN vertex's square support cell. This is a research approximation,
+-- not the GIANTS interpolation kernel or proof of covered physical ground.
+-- Uncovered area contributes ZERO; duplicate logical coordinates use MAX,
+-- never sum. Neighbor membership is consulted so cells crossing a MAIN
+-- seam contribute their clipped area on both sides. No per-frame scan.
+function Planner:projectMain(ix,iz)
+    local u,c=self.unitM,self.logicalCellSizeM
+    if not finite(ix) or not finite(iz) or ix~=math.floor(ix)
+        or iz~=math.floor(iz) or math.abs(ix)>1e7 or math.abs(iz)>1e7
+        or not finite(c) or c<=0 or c>u then
+        return nil,"PROJECTION_GRID_UNAVAILABLE"
+    end
+    local x,z=ix*u,iz*u
+    local cells={}
+    local inspected=0
+    for nx=ix-1,ix+1 do
+        for nz=iz-1,iz+1 do
+            local vertex=self:getVertex(nx,nz)
+            for key in pairs(vertex and vertex.members or {}) do
+                inspected=inspected+1
+                if inspected>4096 then return nil,"PROJECTION_MEMBER_LIMIT" end
+                local s=self.sources[key]
+                if s~=nil and finite(s.x) and finite(s.z)
+                    and finite(s.unappliedDemandM) and s.unappliedDemandM>0 then
+                    local cx,cz=math.floor(s.x/c+0.5),math.floor(s.z/c+0.5)
+                    local ck=tostring(cx)..":"..tostring(cz)
+                    local item=cells[ck]
+                    if item==nil then
+                        item={x=cx*c,z=cz*c,depth=0,broad=0}
+                        cells[ck]=item
+                    end
+                    item.depth=math.max(item.depth,s.unappliedDemandM)
+                    item.broad=math.max(item.broad,
+                        math.min(s.unappliedDemandM,s.broadDemandM or 0))
+                end
+            end
+        end
+    end
+    local area,weighted,broadArea,broadWeighted,maxDepth,count=0,0,0,0,0,0
+    -- Stable summation order for identical geometry observed in a
+    -- different wheel order. No global source enumeration.
+    local keys={}
+    for key in pairs(cells) do keys[#keys+1]=key end
+    table.sort(keys)
+    for _,key in ipairs(keys) do
+        local item=cells[key]
+        local wx=math.max(0,math.min(x+u*0.5,item.x+c*0.5)
+            -math.max(x-u*0.5,item.x-c*0.5))
+        local wz=math.max(0,math.min(z+u*0.5,item.z+c*0.5)
+            -math.max(z-u*0.5,item.z-c*0.5))
+        local overlap=wx*wz
+        if overlap>1e-12 then
+            count=count+1
+            area=area+overlap
+            weighted=weighted+overlap*item.depth
+            maxDepth=math.max(maxDepth,item.depth)
+            if item.broad>0 then
+                broadArea=broadArea+overlap
+                broadWeighted=broadWeighted+overlap*item.broad
+            end
+        end
+    end
+    local square=u*u
+    if area>square+1e-8 then return nil,"PROJECTION_OVERLAP_INVARIANT" end
+    local coverage=math.min(1,area/square)
+    local broadCoverage=math.min(1,broadArea/square)
+    local eligible=broadCoverage+1e-9>=self.minMainCellCoverage01
+    local projected=weighted/square
+    local supported=broadWeighted/square
+    return {x=x,z=z,cellCount=count,inspectedMembers=inspected,
+        modeledCoverage01=coverage,broadModeledCoverage01=broadCoverage,
+        projectedNewDepthM=projected,maxSourceDepthM=maxDepth,
+        broadProjectedDepthM=supported,
+        -- A ceiling for comparison ONLY; neither area nor the 10cm
+        -- safety cap establishes a safe physical command.
+        researchTargetM=eligible and math.min(0.10,supported) or nil,
+        state=count==0 and "NO_MODEL_DEMAND"
+            or eligible and "BROAD_MODEL_RESEARCH_ONLY"
+            or "INSUFFICIENT_BROAD_MODEL_SUPPORT",
+        doesNotWrite=true,authorizesMainWrite=false}
+end
+
 function Planner:summary()
     local vertices=0
     for _ in pairs(self.vertices) do vertices=vertices+1 end
