@@ -236,4 +236,41 @@ assert(C.verifyReload())
 h["10:20"]=savedHeight -- stale DOWN disk height MUST fail UP verification
 assert(not C.verifyReload())
 assert(not C.runRoundTrip(q,"COPY","RECOVERY_UP") and calls==0)
+-- Full adapter guard + same executor, binary lattice isolates ordering.
+dofile("scripts/terrain/TerrainAbsoluteHeightPlanner.lua")
+dofile("scripts/terrain/TerrainMainPatchReconciliation.lua")
+dofile("scripts/terrain/TerrainMainPatchExecutor.lua")
+local pq=1/256
+local function resetPatch()
+    resetRoundtrip()
+    rt.geometryJournal=J.new(999,{unitM=1,sample=function(x,z)
+        return h[key(x,z)] or 140 end})
+    setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+        calls=calls+1
+        h[key(x,z)]=math.floor(target/pq+0.5)*pq
+    end
+end
+resetPatch()
+assert(not C.runPatchRoundTrip(pq,"NO") and calls==0)
+assert(C.runPatchRoundTrip(pq,"COPY") and calls==4)
+assert(h["10:20"]==140 and h["11:20"]==140)
+assert(C.used and rt.nativeDamageQuarantined and C.pendingWitness==nil)
+assert(rt.geometryJournal.observationCount==0)
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==4)
+assert(not C.armPersistence("COPY"))
+resetPatch()
+local oldContact=RealismExtensionsLoadedContactRegistry.overlapsCircle
+RealismExtensionsLoadedContactRegistry.overlapsCircle=function(x,z,radius,clock)
+    return radius>3
+end
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==0)
+RealismExtensionsLoadedContactRegistry.overlapsCircle=oldContact
+resetPatch()
+setTerrainHeightAtWorldPos=function(_,x,_,z,target)
+    calls=calls+1
+    h[key(x,z)]=math.floor(target/pq+0.5)*pq
+    h["8:18"]=140-pq
+end
+assert(not C.runPatchRoundTrip(pq,"COPY") and calls==1)
+assert(rt.geometryJournal.quarantined and rt.nativeDamageQuarantined)
 print("terrain_absolute_setter_calibration_harness: OK")

@@ -597,6 +597,121 @@ function Cal.runRoundTrip(quantumInput,confirmation,stage)
     return safe,ok and reason or tostring(matched)
 end
 
+-- Controlled two-vertex actuator experiment, NOT a wheel rut or proof of
+-- MAIN representability of a real tyre. A fixed synthetic q-sized demand
+-- exercises the same envelope/reconciliation/executor in the live engine.
+-- Share the absolute calibration one-shot; never persist this experiment.
+function Cal.runPatchRoundTrip(quantumInput,confirmation)
+    if confirmation~="COPY" then return false,report("PATCH ROUNDTRIP COPY_REQUIRED") end
+    local q=tonumber(quantumInput)
+    if not finite(q) or q<0.003 or q>0.012 then
+        return false,report("PATCH ROUNDTRIP INVALID_CANDIDATE_QUANTUM")
+    end
+    local ctx,why=absoluteContext(q)
+    if not ctx then return false,report("PATCH ROUNDTRIP REFUSED "..tostring(why)) end
+    local E=RealismExtensionsTerrainMainPatchExecutor
+    local P=RealismExtensionsTerrainAbsoluteHeightPlanner
+    if not E or not P or ctx.rt.absoluteHeightBudget~=nil
+        or ctx.journal.quarantined or ctx.journal.pendingCount~=0 then
+        return false,report("PATCH ROUNDTRIP IDLE_MODULES_REQUIRED")
+    end
+    local mission=g_currentMission
+    local info=mission and mission.missionInfo
+    local directory=info and info.savegameDirectory
+    local map=info and (info.mapId or info.mapTitle)
+    if not info or info.isValid~=true or type(directory)~="string"
+        or directory=="" or map==nil then
+        return false,report("PATCH ROUNDTRIP SAVE_IDENTITY_REQUIRED")
+    end
+    local u=ctx.unitM
+    local ix,iz=math.floor(ctx.x/u+0.5),math.floor(ctx.z/u+0.5)
+    local planner=assert(P.new({unitM=u}))
+    function planner:projectMain(x,z)
+        local selected=z==iz and (x==ix or x==ix+1)
+        return {researchTargetM=selected and q or nil,
+            broadModeledCoverage01=selected and 1 or 0,inspectedMembers=0}
+    end
+    local plan,planWhy=planner:planMainPatch(ix,iz,1,q,0.02)
+    if not plan or plan.wholeSteps~=2 or plan.candidateVertices~=2 then
+        return false,report("PATCH ROUNDTRIP TWO_STEP_PLAN_REFUSED "..tostring(planWhy))
+    end
+    local function guard()
+        local tr=RealismExtensionsTerrainControlledWriteTrial
+        local cfg=RealismExtensionsConfig and RealismExtensionsConfig.modules
+        local qp=RealismExtensionsTerrainNativeQueueProbe
+        local sp=RealismExtensionsTerrainNativeSpatialProbe
+        local contacts=RealismExtensionsLoadedContactRegistry
+        if g_currentMission~=mission or mission.missionInfo~=info
+            or info.isValid~=true or info.savegameDirectory~=directory
+            or (info.mapId or info.mapTitle)~=map
+            or RealismExtensionsTerrainRuntime~=ctx.rt
+            or ctx.rt.geometryJournal~=ctx.journal or ctx.rt.writer~=ctx.writer
+            or ctx.rt.nativeDamageQuarantined==true or ctx.journal.quarantined
+            or ctx.rt.absoluteHeightBudget~=nil or ctx.journal.pendingCount~=0
+            or ctx.writer.nativeCausalPending or ctx.writer:getQueueSize()~=0
+            or not cfg or cfg.TerrainPermanentActuator~="SHADOW"
+            or cfg.TerrainControlledWriteTrial~=true
+            or not tr or not tr.isSinglePlayer() or tr.armed or tr.pending
+            or tr.reserved~=nil
+            or not qp or not qp.owner or not qp.pollIntegrity()
+            or not sp or not sp.owner or not sp.checkIntegrity()
+            or not contacts or type(contacts.overlapsCircle)~="function" then
+            return false
+        end
+        -- 5x5 monitored halo extends sqrt(8)*unit from the center;
+        -- check the entire halo, not only the initial 3x3 calibration.
+        return contacts.overlapsCircle(ctx.x,ctx.z,3.5*u,
+            tonumber(mission.time) or 0)==false
+    end
+    local ok,clear=pcall(guard)
+    if not ok or not clear then
+        return false,report("PATCH ROUNDTRIP FULL_HALO_EXCLUSIVITY_REQUIRED")
+    end
+    local calls=0
+    local executor,err=E.new({liveJournal=ctx.journal,planner=planner,
+        ix=ix,iz=iz,radius=1,quantumM=q,gradient=0.02,maxCalls=4,
+        roundTrip=true,explicitResearchPermission=true,
+        disposableSaveConfirmed=true,verifyExclusive=guard,
+        writeHeight=function(x,z,target)
+            if calls>=4 or not guard() then return false end
+            calls=calls+1
+            return setTerrainHeightAtWorldPos(ctx.journal.terrain,x,0,z,target)
+        end})
+    if not executor then return false,report("PATCH ROUNDTRIP "..tostring(err)) end
+    Cal.used=true
+    Cal.pendingWitness=nil
+    Cal.persistRequested=false
+    Cal.witnessSaveAttempted=false
+    Cal.witnessOriginMission=nil
+    Cal.witnessOriginInfo=nil
+    Cal.witnessOriginDirectory=nil
+    local ran,out,runWhy=pcall(executor.run,executor)
+    ctx.rt.nativeDamageQuarantined=true
+    local matched=ran and type(out)=="table" and out.state=="RESTORED"
+        and out.downState=="COMPLETE" and out.verified==2
+        and out.recovered==2 and out.calls==4 and calls==4
+    if not matched and calls>0 then
+        ctx.journal:quarantine("DISPOSABLE_PATCH_ROUNDTRIP_UNVERIFIED")
+    end
+    if ran and type(out)=="table" then
+        for _,p in ipairs(out.receipts or {}) do
+            report(string.format("PATCH DOWN vertex=%s before=%.12f after=%.12f actualM=%.12f",
+                p.key,p.beforeY,p.afterY,p.actualLowerM))
+        end
+        for _,p in ipairs(out.recoveryReceipts or {}) do
+            report(string.format("PATCH UP vertex=%s before=%.12f after=%.12f actualM=%.12f",
+                p.key,p.beforeY,p.afterY,p.actualRaiseM))
+        end
+    end
+    report(string.format("PATCH ROUNDTRIP RESULT matched=%s calls=%d state=%s downState=%s verified=%s recovered=%s x=%.3f z=%.3f q=%.9f reason=%s SYNTHETIC_TARGET MAIN_ONLY PRIVATE_JOURNAL NO_WITNESS QUIT_COPY_WITHOUT_SAVE",
+        tostring(matched),calls,tostring(ran and out and out.state),
+        tostring(ran and out and out.downState),tostring(ran and out and out.verified),
+        tostring(ran and out and out.recovered),ctx.x,ctx.z,q,
+        tostring(ran and out and out.reason or runWhy or out)))
+    return matched,matched and "PATCH_MAIN_ROUNDTRIP_IMMEDIATE_ONLY"
+        or "PATCH_ROUNDTRIP_NOT_VERIFIED"
+end
+
 -- Explicit second confirmation AFTER the destructive calibration. Merely
 -- running the old 'absolute' command can never create/save a witness file.
 function Cal.armPersistence(confirmation)
