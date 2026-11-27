@@ -24,6 +24,7 @@ local function fresh()
     return p,j,b
 end
 local p,j,b=fresh()
+assert(select(2,R.capture(p,j,0,0,1,nil,0.02,b))=="PATCH_QUANTUM_INVALID")
 local a=assert(R.capture(p,j,0,0,1,q,0.02,b))
 assert(a.state=="FRESH_RESEARCH_ANCHOR" and #a.points==25)
 local n=assert(R.previewNext(a,j,b))

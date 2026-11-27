@@ -24,9 +24,12 @@ function R.capture(planner,journal,ix,iz,radius,q,gradient,budget)
         or type(journal.recoveryFences)~="table" then
         return nil,"PATCH_JOURNAL_NOT_IDLE"
     end
+    if not finite(q) or q<0.00025 or q>0.05 then
+        return nil,"PATCH_QUANTUM_INVALID"
+    end
     if budget~=nil and (type(budget.entries)~="table"
         or budget.quarantined or not finite(budget.quantumM)
-        or math.abs(budget.quantumM-q)>1e-9) then
+        or budget.quantumM~=q) then
         return nil,"PATCH_BUDGET_NOT_COMPATIBLE"
     end
     local plan,why=planner:planMainPatch(ix,iz,radius,q,gradient)
